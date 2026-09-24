@@ -22,6 +22,9 @@ import type { FunctionType } from './ipcrTargets';
 import {
   RANKING_WEIGHTS,
   actionForGate,
+  compareRank,
+  isDownwardMove,
+  positionLevelRatio,
   educationBeyondMinimumRatio,
   evaluateQualifications,
   experienceScore,
@@ -261,6 +264,13 @@ export interface AutoSuccessorsResult {
   qualified: AutoSuccessor[];
   /** Gate-failures, in alphabetical order. */
   notQualified: GateFailure[];
+  /**
+   * Employees left out because their current position outranks the target
+   * (spec section C). Reported as a count rather than dropped silently — "why
+   * isn't X listed?" should have an answer, and zero here means the SRP simply
+   * has no ranks to compare yet.
+   */
+  downwardMovesExcluded: number;
 }
 
 export interface AutoSuccessor {
@@ -1617,10 +1627,44 @@ export async function listAutoSuccessors(
     // which carried an eligibility weight that no longer exists.
     const W: SuccessionWeights = normalizeWeights(posRow.succession_weights);
 
+    // ── SRP ranks (spec section C) ────────────────────────────────────────
+    // Resolve every position's rank once. Employees are matched by
+    // position_id where it is set, and by lower(name) otherwise —
+    // employees.position is free text and position_id is largely unpopulated,
+    // so the title match is what actually fires today. A miss yields an
+    // unranked candidate, which compareRank reports as 'unknown' and which
+    // therefore never excludes anyone: an SRP gap must not read as a judgement
+    // about a person.
+    const rankById = new Map<string, { salaryGrade: number | null; levelOrder: number | null }>();
+    const rankByName = new Map<string, { salaryGrade: number | null; levelOrder: number | null }>();
+    {
+      const { data: srpRows } = await supabase
+        .from('positions')
+        .select('id, name, salary_grade, level_order');
+      for (const r of (srpRows ?? []) as any[]) {
+        const rank = {
+          salaryGrade: r.salary_grade != null ? Number(r.salary_grade) : null,
+          levelOrder: r.level_order != null ? Number(r.level_order) : null,
+        };
+        rankById.set(String(r.id), rank);
+        const key = String(r.name ?? '').trim().toLowerCase();
+        // First match wins: the same title can exist under several departments,
+        // and their grades agree far more often than not.
+        if (key && !rankByName.has(key)) rankByName.set(key, rank);
+      }
+    }
+    const NO_RANK = { salaryGrade: null, levelOrder: null };
+    const rankForEmployee = (emp: any) =>
+      (emp?.position_id ? rankById.get(String(emp.position_id)) : undefined) ??
+      rankByName.get(String(emp?.position ?? '').trim().toLowerCase()) ??
+      NO_RANK;
+    const targetRank = rankByName.get(positionTitle.trim().toLowerCase()) ?? NO_RANK;
+    let downwardSkipped = 0;
+
     // ── Load all Regular/Permanent, Active employees ───────────────────────
     const { data: empRows, error: empErr } = await supabase
       .from('employees')
-      .select('id, first_name, middle_name, last_name, position, department, employment_status, status, highest_educational_attainment, eligibility, date_hired')
+      .select('id, first_name, middle_name, last_name, position, department, employment_status, status, highest_educational_attainment, eligibility, date_hired, position_id')
       .eq('status', 'Active')
       .in('employment_status', ['Regular', 'Permanent']);
     if (empErr) return { ok: false, error: empErr.message };
@@ -1722,6 +1766,15 @@ export async function listAutoSuccessors(
       const empId = String(e.id);
       const score = scores.get(empId);
       const agg = trainAgg.get(empId) ?? emptyAgg();
+      // Section C: never recommend somebody currently in a higher-ranked
+      // position for a lower-ranked target. Applied to auto-discovered
+      // candidates only — a manually added candidate is HR's deliberate choice,
+      // not a recommendation, so the rule has no business overriding it.
+      if (isDownwardMove(rankForEmployee(e), targetRank)) {
+        downwardSkipped += 1;
+        continue;
+      }
+
       const failedGates: string[] = [];
 
       // Gate 3: Education — course/field match (not a generic attainment ladder).
@@ -1838,10 +1891,12 @@ export async function listAutoSuccessors(
         // means relevance is not established, so the degree earns nothing
         // rather than being credited on an assumption.
         educationRelevant: keyword ? true : null,
-        // No position-level ladder and no work history exist yet, so these two
-        // components are dropped rather than scored zero. See the note on
-        // ExperienceScore.progressionAssessed.
-        positionLevelRatio: null,
+        // Seniority now comes from the SRP; null when either side is unranked,
+        // which drops the component rather than scoring the candidate junior on
+        // missing data. Career progression still has no source — work history
+        // is empty — so it stays null and ReadinessScore.progressionAssessed
+        // reports the judgement as partial.
+        positionLevelRatio: positionLevelRatio(rankForEmployee(e), targetRank),
         progressionSteps: null,
         W,
       });
@@ -1935,7 +1990,7 @@ export async function listAutoSuccessors(
         tenureYears: yearsFromHireDate(mcEmp?.date_hired ?? null),
         requiredYearsExperience,
         educationRelevant: sharedFieldKeyword(String(mcEmp?.position ?? ''), positionTitle) ? true : null,
-        positionLevelRatio: null,
+        positionLevelRatio: positionLevelRatio(rankForEmployee(mcEmp), targetRank),
         progressionSteps: null,
         W,
       });
@@ -1965,7 +2020,7 @@ export async function listAutoSuccessors(
 
     notQualified.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
 
-    return { ok: true, data: { qualified: qualifiedList, notQualified } };
+    return { ok: true, data: { qualified: qualifiedList, notQualified, downwardMovesExcluded: downwardSkipped } };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to load auto-successors.' };
   }

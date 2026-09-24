@@ -1373,6 +1373,10 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                 {positions.map((pos) => {
                   const rows = buildOcboRows(candByPos[pos.id]);
                   const leaving = fmtLeaving(pos.incumbentLeavingDate);
+                  // Section C excludes candidates already in a higher-ranked
+                  // position. Shown as a count so "why isn't X listed?" has an
+                  // answer instead of them vanishing from the pipeline.
+                  const downward = candByPos[pos.id]?.downwardMovesExcluded ?? 0;
                   return (
                     <div key={pos.id} className="mb-5 last:mb-0">
                       <div className="mb-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
@@ -1380,6 +1384,9 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                         <span className="text-xs text-[var(--text-secondary)]">
                           Held by: {pos.incumbentName ?? <em className="text-slate-400">Vacant</em>}
                           {leaving ? ` · leaving ${leaving}` : ''}
+                          {downward > 0
+                            ? ` · ${downward} excluded as downward move${downward === 1 ? '' : 's'}`
+                            : ''}
                         </span>
                       </div>
                       <div className="overflow-x-auto rounded-lg border border-[var(--border-color)]">
