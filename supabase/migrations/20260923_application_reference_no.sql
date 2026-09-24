@@ -29,19 +29,25 @@
 
 BEGIN;
 
+-- Unqualified names resolve through search_path, which is not guaranteed to be
+-- `public` in every SQL editor / connection. Pinned here for the same reason as
+-- in 20260922: so this migration cannot fail to find a table that is sitting
+-- right there in public.
+SET LOCAL search_path = public, pg_temp;
+
 -- ── 1. The column ───────────────────────────────────────────────────────────
-ALTER TABLE applicants
+ALTER TABLE public.applicants
   ADD COLUMN IF NOT EXISTS reference_no text;
 
 -- Applicants read their reference off a printout or an email and type it back
 -- in with whatever spacing and case they please. The normalised form is what
 -- lookups and the uniqueness guarantee actually run on.
-ALTER TABLE applicants
+ALTER TABLE public.applicants
   ADD COLUMN IF NOT EXISTS reference_no_normalized text
   GENERATED ALWAYS AS (upper(regexp_replace(COALESCE(reference_no, ''), '[^A-Za-z0-9]', '', 'g'))) STORED;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_applicants_reference_no_normalized
-  ON applicants (reference_no_normalized)
+  ON public.applicants (reference_no_normalized)
   WHERE reference_no IS NOT NULL AND btrim(reference_no) <> '';
 
 -- ── 2. Generator ────────────────────────────────────────────────────────────
@@ -66,7 +72,7 @@ BEGIN
       || lpad((floor(random() * 1000))::int::text, 3, '0');
 
     EXIT WHEN NOT EXISTS (
-      SELECT 1 FROM applicants
+      SELECT 1 FROM public.applicants
        WHERE reference_no_normalized = upper(regexp_replace(candidate, '[^A-Za-z0-9]', '', 'g'))
     );
 
@@ -147,7 +153,7 @@ BEGIN
     RETURN;
   END IF;
 
-  UPDATE applicants a
+  UPDATE public.applicants a
      SET reference_no = btrim(a.item_number),
          item_number  = 'UNASSIGNED'
    WHERE a.reference_no IS NULL
@@ -158,7 +164,7 @@ BEGIN
      )
      -- Skip anything that would collide; the loop below issues those a new one.
      AND NOT EXISTS (
-       SELECT 1 FROM applicants other
+       SELECT 1 FROM public.applicants other
         WHERE other.id <> a.id
           AND other.reference_no_normalized
               = upper(regexp_replace(btrim(a.item_number), '[^A-Za-z0-9]', '', 'g'))
@@ -169,8 +175,8 @@ DO $$
 DECLARE
   target record;
 BEGIN
-  FOR target IN SELECT id FROM applicants WHERE reference_no IS NULL LOOP
-    UPDATE applicants
+  FOR target IN SELECT id FROM public.applicants WHERE reference_no IS NULL LOOP
+    UPDATE public.applicants
        SET reference_no = generate_application_reference_no()
      WHERE id = target.id;
   END LOOP;
@@ -216,7 +222,7 @@ SELECT
   END AS disqualification_message,
   a.disqualification_message_visible
   -- disqualified_by is intentionally omitted — never exposed to the public tracker.
-FROM applicants a;
+FROM public.applicants a;
 
 GRANT SELECT ON applicant_tracker_view TO anon, authenticated, service_role;
 

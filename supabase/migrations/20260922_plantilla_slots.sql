@@ -27,8 +27,14 @@
 
 BEGIN;
 
+-- Unqualified names resolve through search_path, which is not guaranteed to be
+-- `public` in every SQL editor / connection. Pinning it here, and qualifying
+-- the pre-existing tables below, means this migration cannot fail to find a
+-- table that is sitting right there in public.
+SET LOCAL search_path = public, pg_temp;
+
 -- ── 1. The slots ────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS plantilla_slots (
+CREATE TABLE IF NOT EXISTS public.plantilla_slots (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   job_posting_id      uuid NOT NULL,
   -- Display ordinal ("Plantilla 1", "Plantilla 2"). System-assigned and
@@ -51,13 +57,13 @@ CREATE TABLE IF NOT EXISTS plantilla_slots (
 -- Both are case/whitespace-insensitive so "abyan-2026-451 " cannot slip past
 -- the uniqueness check the admin modal promises.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_plantilla_slots_posting_ordinal
-  ON plantilla_slots (job_posting_id, slot_number);
+  ON public.plantilla_slots (job_posting_id, slot_number);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_plantilla_slots_item_number
-  ON plantilla_slots (lower(btrim(item_number)));
+  ON public.plantilla_slots (lower(btrim(item_number)));
 CREATE INDEX IF NOT EXISTS idx_plantilla_slots_posting
-  ON plantilla_slots (job_posting_id);
+  ON public.plantilla_slots (job_posting_id);
 CREATE INDEX IF NOT EXISTS idx_plantilla_slots_status
-  ON plantilla_slots (status);
+  ON public.plantilla_slots (status);
 
 -- ── 2. Application -> slot(s) ───────────────────────────────────────────────
 -- One application row (applicants) linked to one or more slots. The applicant
@@ -76,24 +82,40 @@ CREATE TABLE IF NOT EXISTS application_plantilla_slots (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_application_plantilla_pair
-  ON application_plantilla_slots (applicant_id, plantilla_slot_id);
+  ON public.application_plantilla_slots (applicant_id, plantilla_slot_id);
 CREATE INDEX IF NOT EXISTS idx_application_plantilla_applicant
-  ON application_plantilla_slots (applicant_id);
+  ON public.application_plantilla_slots (applicant_id);
 CREATE INDEX IF NOT EXISTS idx_application_plantilla_slot
-  ON application_plantilla_slots (plantilla_slot_id);
+  ON public.application_plantilla_slots (plantilla_slot_id);
 
 -- Reports and exports must name the plantilla item a person was actually
 -- placed into. The position title alone is ambiguous once one posting covers
 -- four identical vacancies.
-ALTER TABLE newly_hired
-  ADD COLUMN IF NOT EXISTS plantilla_item_number text;
-ALTER TABLE newly_hired
-  ADD COLUMN IF NOT EXISTS plantilla_slot_number integer;
+--
+-- Guarded, following the precedent migration 005 set for this same table
+-- ("newly_hired may not exist on every install"). Note that ADD COLUMN IF NOT
+-- EXISTS guards the COLUMN, not the TABLE — without this block a missing
+-- newly_hired aborts the entire migration. src/lib/recruitmentData.ts already
+-- retries its upsert without these two columns, so skipping them degrades to
+-- "hires don't record their item number" rather than breaking anything.
+DO $$
+BEGIN
+  IF to_regclass('public.newly_hired') IS NULL THEN
+    RAISE NOTICE 'newly_hired not found in schema public — skipping its plantilla columns.';
+  ELSE
+    ALTER TABLE public.newly_hired ADD COLUMN IF NOT EXISTS plantilla_item_number text;
+    ALTER TABLE public.newly_hired ADD COLUMN IF NOT EXISTS plantilla_slot_number integer;
+  END IF;
+END $$;
 
 -- An applicant whose chosen slot was deleted by the admin keeps their
 -- application and stays attached to the job post, but is flagged so RSP can
 -- move them onto a remaining slot.
-ALTER TABLE applicants
+--
+-- Deliberately NOT guarded: the triggers and backfill below genuinely require
+-- this column, so a missing applicants table must fail loudly rather than
+-- leave a half-applied schema behind.
+ALTER TABLE public.applicants
   ADD COLUMN IF NOT EXISTS needs_slot_reassignment boolean NOT NULL DEFAULT false;
 
 -- ── 3. Foreign keys ─────────────────────────────────────────────────────────
@@ -105,7 +127,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_plantilla_slots_posting') THEN
     ALTER TABLE plantilla_slots
       ADD CONSTRAINT fk_plantilla_slots_posting
-      FOREIGN KEY (job_posting_id) REFERENCES job_postings (id) ON DELETE CASCADE;
+      FOREIGN KEY (job_posting_id) REFERENCES public.job_postings (id) ON DELETE CASCADE;
   END IF;
 EXCEPTION WHEN others THEN
   RAISE NOTICE 'plantilla_slots -> job_postings FK skipped: %', SQLERRM;
@@ -116,7 +138,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_plantilla_slots_filled_by') THEN
     ALTER TABLE plantilla_slots
       ADD CONSTRAINT fk_plantilla_slots_filled_by
-      FOREIGN KEY (filled_by_applicant_id) REFERENCES applicants (id) ON DELETE SET NULL;
+      FOREIGN KEY (filled_by_applicant_id) REFERENCES public.applicants (id) ON DELETE SET NULL;
   END IF;
 EXCEPTION WHEN others THEN
   RAISE NOTICE 'plantilla_slots -> applicants FK skipped: %', SQLERRM;
@@ -127,7 +149,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_app_plantilla_applicant') THEN
     ALTER TABLE application_plantilla_slots
       ADD CONSTRAINT fk_app_plantilla_applicant
-      FOREIGN KEY (applicant_id) REFERENCES applicants (id) ON DELETE CASCADE;
+      FOREIGN KEY (applicant_id) REFERENCES public.applicants (id) ON DELETE CASCADE;
   END IF;
 EXCEPTION WHEN others THEN
   RAISE NOTICE 'application_plantilla_slots -> applicants FK skipped: %', SQLERRM;
@@ -158,7 +180,7 @@ SELECT
   jp.salary_grade,
   jp.monthly_salary,
   CASE WHEN lower(COALESCE(jp.status, '')) = 'closed' THEN 'closed' ELSE 'open' END
-FROM job_postings jp
+FROM public.job_postings jp
 WHERE NOT EXISTS (
   SELECT 1 FROM plantilla_slots ps WHERE ps.job_posting_id = jp.id
 )
@@ -170,7 +192,7 @@ ON CONFLICT DO NOTHING;
 -- walk-in/direct applications that were never tied to a slot to begin with.
 INSERT INTO application_plantilla_slots (applicant_id, plantilla_slot_id, status)
 SELECT a.id, ps.id, 'applied'
-FROM applicants a
+FROM public.applicants a
 JOIN plantilla_slots ps
   ON lower(btrim(ps.item_number)) = lower(btrim(a.item_number))
 WHERE COALESCE(btrim(a.item_number), '') <> ''
@@ -196,7 +218,7 @@ BEGIN
   LIMIT 1;
 
   IF primary_item IS NOT NULL THEN
-    UPDATE job_postings SET item_number = primary_item WHERE id = target_posting;
+    UPDATE public.job_postings SET item_number = primary_item WHERE id = target_posting;
   END IF;
 
   RETURN NULL;
@@ -214,7 +236,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  UPDATE applicants a
+  UPDATE public.applicants a
      SET needs_slot_reassignment = true
    WHERE a.id IN (
      SELECT aps.applicant_id
@@ -297,7 +319,7 @@ SELECT
       WHERE s.job_posting_id = jp.id),
     0
   )                                       AS applicant_count
-FROM job_postings jp
+FROM public.job_postings jp
 LEFT JOIN plantilla_slots ps ON ps.job_posting_id = jp.id
 GROUP BY jp.id;
 

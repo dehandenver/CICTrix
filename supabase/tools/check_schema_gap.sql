@@ -1,0 +1,135 @@
+-- ============================================================================
+-- Schema gap report — run this in ANY project's SQL editor
+-- ============================================================================
+-- Lists every table/view this application actually queries (harvested from the
+-- .from('…') calls in src/, scripts/ and backend/) and reports whether each
+-- one exists in the database you are connected to.
+--
+-- `repo_creates_it = false` means NO migration in supabase/migrations creates
+-- that object — it was made by hand in the original project. Those are exactly
+-- the ones a cloned/fresh project will be missing, because running the repo's
+-- migrations cannot conjure them.
+--
+-- Read-only. Safe to run anywhere.
+-- ============================================================================
+
+WITH expected(table_name, repo_creates_it) AS (VALUES
+  ('access_change_audit',                         true),
+  ('accounts',                                    true),
+  ('applicant_attachments',                       false),
+  ('applicant_tracker_view',                      true),
+  ('applicants',                                  false),
+  ('application_activity_log',                    true),
+  ('application_documents',                       true),
+  ('application_plantilla_slots',                 true),
+  ('cold_storage_vault',                          true),
+  ('competencies',                                true),
+  ('competency_change_log',                       true),
+  ('competency_dictionary',                       false),
+  ('competency_requirement_proposals',            true),
+  ('competency_standards',                        true),
+  ('critical_position_competency_requirements',   true),
+  ('critical_position_training_requirements',     true),
+  ('critical_positions',                          true),
+  ('cycle_compilations',                          true),
+  ('cycle_log',                                   true),
+  ('demo_offices',                                true),
+  ('demo_settings',                               true),
+  ('department_weighting_configs',                true),
+  ('departments',                                 true),
+  ('employee_children',                           true),
+  ('employee_competencies',                       true),
+  ('employee_competency_summaries',               true),
+  ('employee_documents',                          true),
+  ('employee_education',                          true),
+  ('employee_eligibility',                        true),
+  ('employee_history',                            true),
+  ('employee_ld_interventions',                   true),
+  ('employee_leave_balances',                     true),
+  ('employee_notifications',                      true),
+  ('employee_password_resets',                    true),
+  ('employee_portal_accounts',                    true),
+  ('employee_references',                         true),
+  ('employee_training',                           true),
+  ('employee_training_competencies',              true),
+  ('employee_voluntary_work',                     true),
+  ('employee_work_experience',                    true),
+  ('employees',                                   true),
+  ('employees_with_department',                   true),
+  ('evaluations',                                 false),
+  ('fgd_notes',                                   true),
+  ('idp_entries',                                 true),
+  ('idp_form_config',                             true),
+  ('idp_submissions',                             true),
+  ('ipcr_accomplishments',                        true),
+  ('ipcr_audit_log',                              true),
+  ('ipcr_competency_matches',                     true),
+  ('ipcr_designated_approvers',                   true),
+  ('ipcr_notifications',                          true),
+  ('ipcr_performance',                            false),
+  ('ipcr_schedules',                              true),
+  ('ipcr_submissions',                            true),
+  ('ipcr_targets',                                true),
+  ('ipcr_vault',                                  false),
+  ('ipcr_workspace',                              true),
+  ('job_postings',                                false),
+  ('jobs',                                        false),
+  ('locked_targets',                              true),
+  ('mfos',                                        true),
+  ('new_entrant_onboarding',                      true),
+  ('newly_hired',                                 false),
+  ('notifications',                               true),
+  ('office_cycle_closeouts',                      true),
+  ('office_role_assignments',                     true),
+  ('performance_cycles',                          true),
+  ('performance_evaluations',                     true),
+  ('phase_schedules',                             true),
+  ('plantilla_slots',                             true),
+  ('pm_lnd_reports',                              false),
+  ('position_competencies',                       true),
+  ('position_competency_requirements',            true),
+  ('positions',                                   true),
+  ('probationary_ipcr_schedules',                 true),
+  ('profiles',                                    false),
+  ('promotional_applications',                    true),
+  ('raters',                                      false),
+  ('semester_transition_state',                   true),
+  ('seminar_batches',                             true),
+  ('seminar_recommendation_events',               true),
+  ('success_indicator_ratings',                   true),
+  ('success_indicators',                          true),
+  ('succession_candidate_remarks',                true),
+  ('succession_candidates',                       true),
+  ('supervisor_password_resets',                  true),
+  ('supervisors',                                 true),
+  ('target_settings',                             true),
+  ('training_attendance_days',                    true),
+  ('training_competencies',                       true),
+  ('training_competency_tags',                    true),
+  ('training_course_draft_member_events',         true),
+  ('training_course_draft_members',               true),
+  ('training_course_drafts',                      true),
+  ('training_enrollments',                        true),
+  ('training_evaluations',                        true),
+  ('training_plan_entries',                       true),
+  ('training_plan_publications',                  true),
+  ('training_programs',                           true),
+  ('training_recommendations',                    true),
+  ('training_report_notes',                       true),
+  ('training_requests',                           true),
+  ('training_sessions',                           true),
+  ('trainings',                                   false),
+  ('user_roles',                                  true),
+  ('v_competency_gap_analysis',                   false),
+  ('weighting_schema_options',                    true)
+)
+SELECT
+  e.table_name,
+  CASE WHEN c.oid IS NULL THEN '### MISSING ###' ELSE 'present' END AS status,
+  CASE WHEN e.repo_creates_it THEN 'yes' ELSE 'NO — hand-made, never captured' END AS created_by_a_migration
+FROM expected e
+LEFT JOIN pg_class c
+       ON c.relname = e.table_name
+      AND c.relnamespace = 'public'::regnamespace
+      AND c.relkind IN ('r','v','m','p','f')
+ORDER BY (c.oid IS NULL) DESC, e.repo_creates_it, e.table_name;
