@@ -37,6 +37,7 @@ import {
   type CriticalPosition,
   type AutoSuccessor,
   type AutoSuccessorsResult,
+  type ExperiencePart,
   type GateFailure,
   type EmployeeOption,
   type CompetencyRequirement,
@@ -1212,18 +1213,48 @@ type OcboRow = {
   department: string | null;
   /** 1-based place in the ranked pool. */
   rank: number;
-  /** Weighted score out of 100, from the five criteria in specification B. */
+  /** Total weighted score out of 100 — what determines rank order. */
   score: number;
-  /** Per-criterion contribution, for the expanded breakdown. */
-  criteria: { label: string; value: number; max: number }[];
-  /** False when career progression could not be assessed — no work history. */
-  progressionAssessed: boolean;
-  trainingPct: number | null;
+  /** Per-criterion contribution, one column each. */
+  criteria: { key: string; label: string; value: number; max: number }[];
+  /** Inputs to the experience score, shown when a candidate is expanded. */
+  experienceParts: ExperiencePart[];
   status: string;
   statusTone: string;
   gapAnalysis: string[];
   requiredActions: string[];
   timeline: string | null;
+};
+
+/**
+ * The five ranking criteria, in the order specification B lists them, with the
+ * weight shown in the header so an admin never has to look it up elsewhere.
+ */
+const CRITERIA_COLUMNS = [
+  { key: 'ipcr', label: 'Performance', weight: 30 },
+  { key: 'experience', label: 'Experience', weight: 25 },
+  { key: 'training', label: 'Training', weight: 20 },
+  { key: 'education', label: 'Education', weight: 15 },
+  { key: 'tenure', label: 'Tenure', weight: 10 },
+] as const;
+
+/**
+ * Apply a column sort on top of the model's ranking.
+ *
+ * Re-sorting is for analysis; it does not renumber anyone. Rank is assigned by
+ * total score before this runs and travels with the row, so a table sorted by
+ * Tenure still shows who actually ranks first.
+ */
+const applySort = (rows: OcboRow[], sort: { key: string; dir: 'asc' | 'desc' } | undefined): OcboRow[] => {
+  if (!sort) return rows;
+  const valueOf = (r: OcboRow) =>
+    sort.key === 'total' ? r.score : (r.criteria.find((c) => c.key === sort.key)?.value ?? 0);
+  return [...rows].sort((a, b) => {
+    const diff = valueOf(b) - valueOf(a);
+    const ordered = sort.dir === 'desc' ? diff : -diff;
+    // Stable and explainable when a column ties: fall back to the ranking.
+    return ordered !== 0 ? ordered : a.rank - b.rank;
+  });
 };
 
 const ocboStatusTone = (s: string): string => {
@@ -1258,33 +1289,19 @@ const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
     score: c.readiness.total,
     // Ordered as specification B lists them.
     criteria: [
-      { label: 'Performance', value: c.readiness.ipcr, max: c.readiness.ipcrMax },
-      { label: 'Experience', value: c.readiness.experience, max: c.readiness.experienceMax },
-      { label: 'Training', value: c.readiness.training, max: c.readiness.trainingMax },
-      { label: 'Education', value: c.readiness.education, max: c.readiness.educationMax },
-      { label: 'Tenure', value: c.readiness.tenure, max: c.readiness.tenureMax },
+      { key: 'ipcr', label: 'Performance', value: c.readiness.ipcr, max: c.readiness.ipcrMax },
+      { key: 'experience', label: 'Experience', value: c.readiness.experience, max: c.readiness.experienceMax },
+      { key: 'training', label: 'Training', value: c.readiness.training, max: c.readiness.trainingMax },
+      { key: 'education', label: 'Education', value: c.readiness.education, max: c.readiness.educationMax },
+      { key: 'tenure', label: 'Tenure', value: c.readiness.tenure, max: c.readiness.tenureMax },
     ],
-    progressionAssessed: c.readiness.progressionAssessed,
-    trainingPct: c.readiness.competencyMatchPct,
+    experienceParts: c.readiness.experienceParts,
     status: c.readiness.tier ?? 'Developmental',
     statusTone: ocboStatusTone(c.readiness.tier ?? 'Developmental'),
     gapAnalysis: c.gapAnalysis,
     requiredActions: c.requiredActions,
     timeline: c.timeline,
   }));
-};
-
-const TrainingCell = ({ pct }: { pct: number | null }) => {
-  if (pct == null) return <span className="text-xs text-slate-400">n/a</span>;
-  const color = pct >= 100 ? '#16a34a' : pct >= 50 ? '#3b82f6' : '#f59e0b';
-  return (
-    <div className="flex items-center gap-1.5">
-      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <span className="text-[10px] font-semibold tabular-nums text-slate-600">{pct}%</span>
-    </div>
-  );
 };
 
 const OcboTableView = ({ admin }: { admin: string }) => {
@@ -1297,6 +1314,24 @@ const OcboTableView = ({ admin }: { admin: string }) => {
   // saveCandidateRemark are left in the API, and succession_candidate_remarks
   // keeps whatever was already written, so the column can come back without
   // anything having been lost.
+  // Per-position sort override. Absent means the default: total score
+  // descending, which is the ranking the model produced.
+  const [sortBy, setSortBy] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({});
+  const toggleSort = (positionId: string, key: string) => {
+    setSortBy((prev) => {
+      const cur = prev[positionId];
+      // Numeric columns are most useful highest-first, so start there and
+      // toggle to ascending on a second click.
+      const dir: 'asc' | 'desc' = cur?.key === key && cur.dir === 'desc' ? 'asc' : 'desc';
+      return { ...prev, [positionId]: { key, dir } };
+    });
+  };
+  const sortIndicator = (positionId: string, key: string) => {
+    const cur = sortBy[positionId];
+    if (!cur || cur.key !== key) return '';
+    return cur.dir === 'desc' ? ' ↓' : ' ↑';
+  };
+
   // Which candidates have their detail open, keyed position:employee. A Set
   // rather than one id at a time because the point is comparing several.
   const [openDetail, setOpenDetail] = useState<Set<string>>(() => new Set());
@@ -1357,9 +1392,11 @@ const OcboTableView = ({ admin }: { admin: string }) => {
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
         Official succession-plan view. Only employees who meet <strong>all four</strong> minimum requirements —
         Education, Eligibility, Experience and Training — appear here; anyone failing one is filtered out and
-        counted beside the position. Those who qualify are ranked by weighted score: Performance 30, Relevant
-        Experience 25, Relevant Training 20, Education beyond minimum 15, Tenure 10. Click a name for the score
-        breakdown, gap analysis and required actions — several can be open at once for comparison.
+        counted beside the position. Those who qualify are ranked by <strong>Total Score</strong>, highest first;
+        where two candidates tie, the higher Performance score ranks first. Each criterion column shows that
+        candidate&rsquo;s contribution against its weight — this is a comparison between candidates for one
+        position, not progress toward a target. Column headers re-sort for analysis without changing anyone&rsquo;s
+        rank. Click a name for the full breakdown, gap analysis and required actions — several can be open at once.
       </p>
       {departments.map((dept) => {
         const open = expanded.has(dept.departmentId);
@@ -1383,7 +1420,7 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                   <p className="text-sm text-[var(--text-secondary)]">No critical positions flagged for this office.</p>
                 )}
                 {positions.map((pos) => {
-                  const rows = buildOcboRows(candByPos[pos.id]);
+                  const rows = applySort(buildOcboRows(candByPos[pos.id]), sortBy[pos.id]);
                   const leaving = fmtLeaving(pos.incumbentLeavingDate);
                   // Section C excludes candidates already in a higher-ranked
                   // position. Shown as a count so "why isn't X listed?" has an
@@ -1409,19 +1446,39 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                         </span>
                       </div>
                       <div className="overflow-x-auto rounded-lg border border-[var(--border-color)]">
-                        <table className="w-full min-w-[640px] border-collapse text-xs">
+                        <table className="w-full min-w-[900px] border-collapse text-xs">
                           <thead>
                             <tr className="border-b border-[var(--border-color)] bg-slate-50 text-left text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
                               <th className="px-3 py-2 text-center">Rank</th>
                               <th className="px-3 py-2">Candidate / Present Position</th>
-                              <th className="px-3 py-2">Weighted Score</th>
-                              <th className="px-3 py-2">Competency Match</th>
+                              {CRITERIA_COLUMNS.map((c) => (
+                                <th key={c.key} className="px-3 py-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleSort(pos.id, c.key)}
+                                    className="font-semibold uppercase tracking-wide hover:text-[var(--text-primary)]"
+                                    title={`Sort by ${c.label}`}
+                                  >
+                                    {c.label} ({c.weight}%){sortIndicator(pos.id, c.key)}
+                                  </button>
+                                </th>
+                              ))}
+                              <th className="px-3 py-2 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort(pos.id, 'total')}
+                                  className="font-bold uppercase tracking-wide text-[var(--text-primary)]"
+                                  title="Sort by total score"
+                                >
+                                  Total Score{sortIndicator(pos.id, 'total')}
+                                </button>
+                              </th>
                               <th className="px-3 py-2">Readiness</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 && (
-                              <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">No employee meets all four minimum requirements for this position.</td></tr>
+                              <tr><td colSpan={9} className="px-3 py-4 text-center text-slate-400">No employee meets all four minimum requirements for this position.</td></tr>
                             )}
                             {rows.map((r) => {
                               const detailOpen = openDetail.has(`${pos.id}:${r.employeeId}`);
@@ -1446,35 +1503,27 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                                       </button>
                                       <div className="pl-[14px] text-[10px] text-slate-400">{r.presentPosition ?? '—'}</div>
                                     </td>
-                                    <td className="px-3 py-2">
-                                      <div className="flex items-center gap-2">
-                                        <span className="w-10 text-right text-[13px] font-bold tabular-nums text-slate-800">
-                                          {r.score.toFixed(1)}
-                                        </span>
-                                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
-                                          <span
-                                            className="block h-full rounded-full bg-blue-500"
-                                            style={{ width: `${Math.max(0, Math.min(r.score, 100))}%` }}
-                                          />
-                                        </span>
-                                      </div>
-                                      {!r.progressionAssessed && (
-                                        <span
-                                          title="Career progression could not be assessed — no work history on file."
-                                          className="cursor-help pl-[2px] text-[9px] font-semibold text-amber-600"
-                                        >
-                                          partial
-                                        </span>
-                                      )}
+                                    {r.criteria.map((c) => (
+                                      <td key={c.key} className="px-3 py-2 text-right tabular-nums text-slate-700">
+                                        {/* Always a number, never blank: an absent record must read
+                                            as 0, not as a rendering fault. */}
+                                        {c.value.toFixed(1)}
+                                        <span className="ml-0.5 text-[9px] text-slate-400">/{c.max}</span>
+                                      </td>
+                                    ))}
+                                    <td className="px-3 py-2 text-right">
+                                      <span className="text-[13px] font-bold tabular-nums text-slate-900">
+                                        {r.score.toFixed(1)}
+                                      </span>
+                                      <span className="text-[9px] text-slate-400"> / 100</span>
                                     </td>
-                                    <td className="px-3 py-2"><TrainingCell pct={r.trainingPct} /></td>
                                     <td className="px-3 py-2">
                                       <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${r.statusTone}`}>{r.status}</span>
                                     </td>
                                   </tr>
                                   {detailOpen && (
                                     <tr className="bg-slate-50">
-                                      <td colSpan={5} className="px-3 pb-3 pt-0">
+                                      <td colSpan={9} className="px-3 pb-3 pt-0">
                                         <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2">
                                           {/* Specification B's five criteria, each showing what it
                                               contributed out of its weight — so a rank can be
@@ -1483,28 +1532,44 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                                             <p className="!mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
                                               Score breakdown &mdash; {r.score.toFixed(1)} / 100
                                             </p>
-                                            <div className="grid grid-cols-1 gap-x-5 gap-y-1 sm:grid-cols-2">
+                                            {/* Numeric, not bars: the panel explains a ranking
+                                                between candidates, and a fill would read as
+                                                progress toward a target. */}
+                                            <div className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
                                               {r.criteria.map((c) => (
-                                                <div key={c.label} className="flex items-center gap-2">
-                                                  <span className="w-20 shrink-0 text-[11px] text-slate-600">{c.label}</span>
-                                                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
-                                                    <span
-                                                      className="block h-full rounded-full bg-blue-400"
-                                                      style={{ width: `${c.max > 0 ? Math.min((c.value / c.max) * 100, 100) : 0}%` }}
-                                                    />
-                                                  </span>
-                                                  <span className="w-14 shrink-0 text-right text-[10px] tabular-nums text-slate-500">
-                                                    {c.value.toFixed(1)} / {c.max}
+                                                <div key={c.key} className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-0.5 last:border-0">
+                                                  <span className="text-[11px] text-slate-600">{c.label}</span>
+                                                  <span className="text-[11px] tabular-nums text-slate-700">
+                                                    <strong className="font-semibold">{c.value.toFixed(1)}</strong>
+                                                    <span className="text-slate-400"> / {c.max}</span>
                                                   </span>
                                                 </div>
                                               ))}
                                             </div>
-                                            {!r.progressionAssessed && (
-                                              <p className="!mb-0 mt-1.5 text-[10px] text-amber-700">
-                                                Experience is scored on years and current position only &mdash; no work
-                                                history on file, so career progression could not be assessed.
-                                              </p>
-                                            )}
+                                            {/* How the Experience figure above was arrived at.
+                                                Every input is listed, including those with no
+                                                data, so the reader sees what could not be
+                                                assessed rather than a narrower judgement
+                                                presented as a whole one. */}
+                                            <p className="!mb-1 mt-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                              How Experience was scored
+                                            </p>
+                                            <ul className="!mb-0 space-y-0.5">
+                                              {r.experienceParts.map((part) => (
+                                                <li key={part.label} className="flex flex-wrap items-baseline gap-x-2 text-[10px]">
+                                                  <span className={part.ratio == null ? 'text-slate-400' : 'text-slate-700'}>
+                                                    {part.label}
+                                                  </span>
+                                                  <span className={part.ratio == null ? 'font-semibold text-amber-700' : 'font-semibold tabular-nums text-slate-700'}>
+                                                    {part.ratio == null ? 'not assessed' : `${Math.round(part.ratio * 100)}%`}
+                                                  </span>
+                                                  {part.ratio != null && part.weight > 0 && (
+                                                    <span className="text-slate-400">weight {Math.round(part.weight * 100)}%</span>
+                                                  )}
+                                                  <span className="text-slate-400">· {part.detail}</span>
+                                                </li>
+                                              ))}
+                                            </ul>
                                           </div>
                                           <div>
                                             <p className="!mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Gap Analysis</p>

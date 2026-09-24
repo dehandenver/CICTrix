@@ -313,6 +313,17 @@ export interface ExperienceInput {
   progressionSteps: number | null;
 }
 
+/** One input to the relevant-experience score, for an auditable breakdown. */
+export interface ExperiencePart {
+  label: string;
+  /** 0–1 contribution, or null when there is no data for it. */
+  ratio: number | null;
+  /** Share of the experience score this part carries when it is available. */
+  weight: number;
+  /** What the ratio was derived from, e.g. "10 yrs vs 5 required". */
+  detail: string;
+}
+
 export interface ExperienceScore {
   ratio: number;
   /**
@@ -322,6 +333,12 @@ export interface ExperienceScore {
    * the caller should say so rather than present the score as a full judgement.
    */
   progressionAssessed: boolean;
+  /**
+   * Every input considered, including those with no data. Unavailable parts are
+   * kept in the list rather than omitted, so a breakdown shows what could not
+   * be assessed instead of silently presenting a narrower judgement as whole.
+   */
+  parts: ExperiencePart[];
 }
 
 /** Upward moves at which the progression component is full. */
@@ -336,36 +353,66 @@ export const PROGRESSION_FULL_STEPS = 3;
  * equally for a record nobody has would just add noise to the ranking.
  */
 export function experienceScore(input: ExperienceInput): ExperienceScore {
-  const parts: { value: number; weight: number }[] = [];
-
   // Years — relative to the requirement when one is set, else against a
   // ten-year expectation so the component still discriminates.
   const years = input.relevantYears ?? 0;
   const req = input.requiredYears;
-  const yearsValue =
+  const yearsRatio =
     req != null && req > 0
       ? Math.min(years / (req * 2), 1) // twice the minimum reads as full marks
       : Math.min(years / 10, 1);
-  parts.push({ value: yearsValue, weight: 0.45 });
 
-  if (input.positionLevelRatio != null && Number.isFinite(input.positionLevelRatio)) {
-    parts.push({ value: Math.max(0, Math.min(input.positionLevelRatio, 1)), weight: 0.25 });
-  }
-
+  const levelOk = input.positionLevelRatio != null && Number.isFinite(input.positionLevelRatio);
   const progressionAssessed = input.progressionSteps != null;
-  if (progressionAssessed) {
-    parts.push({
-      value: Math.min((input.progressionSteps ?? 0) / PROGRESSION_FULL_STEPS, 1),
-      weight: 0.3,
-    });
-  }
 
-  const totalWeight = parts.reduce((sum, p) => sum + p.weight, 0);
+  const parts: ExperiencePart[] = [
+    {
+      label: 'Relevant years',
+      ratio: yearsRatio,
+      weight: 0.45,
+      detail:
+        req != null && req > 0
+          ? `${years.toFixed(1)} yrs · full marks at ${(req * 2).toFixed(0)} (twice the ${req} required)`
+          : `${years.toFixed(1)} yrs · no minimum set, full marks at 10`,
+    },
+    {
+      label: 'Position level',
+      ratio: levelOk ? Math.max(0, Math.min(input.positionLevelRatio as number, 1)) : null,
+      weight: 0.25,
+      detail: levelOk
+        ? 'Seniority of current position against the target, from the SRP'
+        : 'No SRP rank for this position or the target',
+    },
+    {
+      label: 'Career progression',
+      ratio: progressionAssessed
+        ? Math.min((input.progressionSteps ?? 0) / PROGRESSION_FULL_STEPS, 1)
+        : null,
+      weight: 0.3,
+      detail: progressionAssessed
+        ? `${input.progressionSteps} upward move(s) · full marks at ${PROGRESSION_FULL_STEPS}`
+        : 'No work history on file',
+    },
+    {
+      // Named so the breakdown accounts for every input specification B lists,
+      // rather than leaving the reader to wonder whether it was considered.
+      label: 'Responsibility relevance',
+      ratio: null,
+      weight: 0,
+      detail: 'Not yet implemented — no source for previous responsibilities',
+    },
+  ];
+
+  // Parts with no data are dropped and the rest reweighted, rather than scored
+  // as zero: penalising every candidate equally for a record nobody has would
+  // only add noise to the ranking.
+  const scored = parts.filter((p) => p.ratio != null && p.weight > 0);
+  const totalWeight = scored.reduce((sum, p) => sum + p.weight, 0);
   const ratio = totalWeight > 0
-    ? Number((parts.reduce((sum, p) => sum + p.value * p.weight, 0) / totalWeight).toFixed(4))
+    ? Number((scored.reduce((sum, p) => sum + (p.ratio as number) * p.weight, 0) / totalWeight).toFixed(4))
     : 0;
 
-  return { ratio, progressionAssessed };
+  return { ratio, progressionAssessed, parts };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
