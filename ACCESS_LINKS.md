@@ -4,10 +4,27 @@ Reference for local development access to frontend pages and backend API endpoin
 
 ## Live Production URLs (Vercel)
 
-> Canonical production host is **cic-trix.vercel.app** — the Vercel project that
-> auto-deploys from `main`. The separate `cictrix.vercel.app` and
-> `cic-trix-jet.vercel.app` projects do not track `main` and serve stale builds;
-> do not use them.
+> Canonical production host is **cic-trix.vercel.app**, served by the Vercel
+> project **`abyan-hris-iloilo`** — note the project is NOT named after the
+> host. That project holds the environment variables (`VITE_SUPABASE_URL`,
+> `VITE_SUPABASE_ANON_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`,
+> `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_*`), so it is where credentials are
+> rotated and where a failed deploy has to be investigated.
+>
+> Three other Vercel projects build from the same repo and should not be used.
+> Verified 2026-09-24 by reading each deployed bundle:
+>
+> | Vercel project | Serves | State |
+> |---|---|---|
+> | `abyan-hris-iloilo` | **cic-trix.vercel.app** | the real production site |
+> | `cic-trix` | cic-trix-five.vercel.app | **broken** — no env vars, so the page throws `FATAL: Supabase credentials are not configured` on load |
+> | `cictrix` | cictrix.vercel.app | stale build |
+> | `cic-trix-jet` | cic-trix-jet.vercel.app | stale build |
+>
+> `cic-trix` tracks `main` and builds every commit successfully, which makes it
+> look healthy in the Vercel dashboard while shipping a site that cannot load.
+> It is worth deleting: if that domain is ever pointed at it, production breaks
+> with no obvious cause.
 
 | Service / Portal | Live URL | Description / Access |
 |---|---|---|

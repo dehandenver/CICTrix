@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAdminEmail } from '../lib/adminSession';
 import {
@@ -31,8 +31,6 @@ import {
   listEmployeeOptions,
   listCompetencyRequirements,
   listPositionQualificationsForDepartment,
-  getCandidateRemarks,
-  saveCandidateRemark,
   diffQualifications,
   sharedFieldKeyword,
   type DepartmentSummary,
@@ -686,7 +684,7 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
       </div>
 
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Two-stage model. Stage A — qualifications are minimum requirements, not weighted (Employment · Position Match · Education field-match · CSC Eligibility · Minimum Experience · Training): fail any one and the employee drops to "Not Yet Qualified" below, never ranked here. Stage B — only qualified employees are ranked, on Performance 35 + Relevant Experience 25 + Training 20 + Education beyond minimum 12 + Tenure 8. Education and Training count only what is above the minimum the filter already checked, so clearing the bar is not paid for twice. Performance is ranked but never gates: an unrated employee who meets the four minimums is still ranked, scoring zero on that criterion.
+        Two-stage model. Stage A — qualifications are minimum requirements, not weighted (Employment · Position Match · Education field-match · CSC Eligibility · Minimum Experience · Training): fail any one and the employee drops to "Not Yet Qualified" below, never ranked here. Stage B — only qualified employees are ranked, on Performance 30 + Relevant Experience 25 + Training 20 + Education beyond minimum 15 + Tenure 10. Education and Training count only what is above the minimum the filter already checked, so clearing the bar is not paid for twice. Performance is ranked but never gates: an unrated employee who meets the four minimums is still ranked, scoring zero on that criterion.
       </p>
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Discovering eligible successors…</p>}
@@ -867,6 +865,20 @@ const AutoSuccessorRow = ({
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Experience</span>
                   <ScoreBar value={r.experience} max={r.experienceMax} color="#f59e0b" />
+                  {/* Career progression is one of the three things relevant
+                      experience is meant to weigh, and it can only be read from
+                      work history. Where none exists, two candidates with the
+                      same years score identically however differently their
+                      careers actually went — so say so rather than present a
+                      partial score as a finished judgement. */}
+                  {!r.progressionAssessed && (
+                    <span
+                      title="Scored on years and current position only — no work history on file, so career progression could not be assessed."
+                      className="cursor-help text-[10px] font-semibold text-amber-600"
+                    >
+                      partial
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Tenure</span>
@@ -1218,13 +1230,26 @@ const ocboStatusTone = (s: string): string => {
   return 'bg-red-100 text-red-700'; // Not Qualified
 };
 
+/**
+ * The succession pool: only candidates who clear all four minimum requirements.
+ *
+ * Specification section A treats the qualifications as a filter — meet all four
+ * and you enter the pool, fail one and you do not. Listing gate-failures here
+ * alongside qualified candidates made the table a roster of everyone in the
+ * office rather than a shortlist, and put names in front of HR that the model
+ * had already ruled out.
+ *
+ * res.notQualified is still returned by the API and is not discarded; it is
+ * counted beside the position so the exclusions remain visible.
+ */
 const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
   if (!res) return [];
-  const q: OcboRow[] = res.qualified.map((c) => ({
+  return res.qualified.map((c) => ({
     employeeId: c.employeeId,
     name: c.employeeName,
     presentPosition: c.currentPosition,
     department: c.department,
+    // Always true: a candidate only reaches this list by passing every gate.
     education: true,
     eligibility: true,
     experience: true,
@@ -1235,25 +1260,6 @@ const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
     requiredActions: c.requiredActions,
     timeline: c.timeline,
   }));
-  const nq: OcboRow[] = res.notQualified.map((f) => {
-    const status = f.pendingEvaluation ? 'Incomplete — Pending Evaluation' : 'Not Qualified';
-    return {
-      employeeId: f.employeeId,
-      name: f.employeeName,
-      presentPosition: f.currentPosition,
-      department: f.department,
-      education: f.gates.education,
-      eligibility: f.gates.eligibility,
-      experience: f.gates.experience,
-      trainingPct: f.competencyMatchPct,
-      status,
-      statusTone: ocboStatusTone(status),
-      gapAnalysis: f.gapAnalysis,
-      requiredActions: f.requiredActions,
-      timeline: null,
-    };
-  });
-  return [...q, ...nq];
 };
 
 const Tick = ({ ok }: { ok: boolean }) =>
@@ -1278,7 +1284,22 @@ const OcboTableView = ({ admin }: { admin: string }) => {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [posByDept, setPosByDept] = useState<Record<string, CriticalPosition[]>>({});
   const [candByPos, setCandByPos] = useState<Record<string, AutoSuccessorsResult>>({});
-  const [remarksByPos, setRemarksByPos] = useState<Record<string, Record<string, string>>>({});
+  // Per-candidate remarks were dropped from this table. getCandidateRemarks and
+  // saveCandidateRemark are left in the API, and succession_candidate_remarks
+  // keeps whatever was already written, so the column can come back without
+  // anything having been lost.
+  // Which candidates have their detail open, keyed position:employee. A Set
+  // rather than one id at a time because the point is comparing several.
+  const [openDetail, setOpenDetail] = useState<Set<string>>(() => new Set());
+  const toggleDetail = (positionId: string, employeeId: string) => {
+    const key = `${positionId}:${employeeId}`;
+    setOpenDetail((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const [loadingDept, setLoadingDept] = useState<Record<string, boolean>>({});
   const navigate = useNavigate();
 
@@ -1304,17 +1325,11 @@ const OcboTableView = ({ admin }: { admin: string }) => {
     setPosByDept((p) => ({ ...p, [deptId]: positions }));
     await Promise.all(
       positions.map(async (pos) => {
-        const [cr, rm] = await Promise.all([listAutoSuccessors(pos.id), getCandidateRemarks(pos.id)]);
+        const cr = await listAutoSuccessors(pos.id);
         if (cr.ok) setCandByPos((p) => ({ ...p, [pos.id]: cr.data }));
-        setRemarksByPos((p) => ({ ...p, [pos.id]: Object.fromEntries(rm) }));
       }),
     );
     setLoadingDept((p) => ({ ...p, [deptId]: false }));
-  };
-
-  const saveRemark = async (positionId: string, employeeId: string, value: string) => {
-    setRemarksByPos((p) => ({ ...p, [positionId]: { ...(p[positionId] || {}), [employeeId]: value } }));
-    await saveCandidateRemark({ criticalPositionId: positionId, employeeId, remarks: value, updatedBy: admin });
   };
 
   const openArchive = (r: OcboRow) => {
@@ -1331,9 +1346,11 @@ const OcboTableView = ({ admin }: { admin: string }) => {
   return (
     <div className="space-y-3">
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Official succession-plan view. Every potential candidate is shown — qualified or not — for full pipeline
-        transparency. Education / Eligibility / Experience are mandatory pass/fail gates; Training is a graded
-        competency-readiness match. Remarks are editable.
+        Official succession-plan view. Only employees who meet <strong>all four</strong> minimum requirements —
+        Education, Eligibility, Experience and Training — appear here; anyone failing one is filtered out and
+        counted beside the position. Training shows the graded competency-readiness match. Click a name to see
+        that candidate&rsquo;s gap analysis and required actions, and click again to close — several can be open
+        at once for comparison.
       </p>
       {departments.map((dept) => {
         const open = expanded.has(dept.departmentId);
@@ -1359,6 +1376,14 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                 {positions.map((pos) => {
                   const rows = buildOcboRows(candByPos[pos.id]);
                   const leaving = fmtLeaving(pos.incumbentLeavingDate);
+                  // Section C excludes candidates already in a higher-ranked
+                  // position. Shown as a count so "why isn't X listed?" has an
+                  // answer instead of them vanishing from the pipeline.
+                  const downward = candByPos[pos.id]?.downwardMovesExcluded ?? 0;
+                  // Gate-failures no longer appear as rows, so their count is
+                  // shown instead — the shortlist stays a shortlist without HR
+                  // losing sight of how many people were considered.
+                  const filtered = candByPos[pos.id]?.notQualified.length ?? 0;
                   return (
                     <div key={pos.id} className="mb-5 last:mb-0">
                       <div className="mb-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
@@ -1366,10 +1391,16 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                         <span className="text-xs text-[var(--text-secondary)]">
                           Held by: {pos.incumbentName ?? <em className="text-slate-400">Vacant</em>}
                           {leaving ? ` · leaving ${leaving}` : ''}
+                          {filtered > 0
+                            ? ` · ${filtered} did not meet the minimum requirements`
+                            : ''}
+                          {downward > 0
+                            ? ` · ${downward} excluded as downward move${downward === 1 ? '' : 's'}`
+                            : ''}
                         </span>
                       </div>
                       <div className="overflow-x-auto rounded-lg border border-[var(--border-color)]">
-                        <table className="w-full min-w-[1040px] border-collapse text-xs">
+                        <table className="w-full min-w-[640px] border-collapse text-xs">
                           <thead>
                             <tr className="border-b border-[var(--border-color)] bg-slate-50 text-left text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
                               <th className="px-3 py-2">Candidate / Present Position</th>
@@ -1378,48 +1409,83 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                               <th className="px-3 py-2 text-center">Exp.</th>
                               <th className="px-3 py-2">Training</th>
                               <th className="px-3 py-2">Overall Status</th>
-                              <th className="px-3 py-2">Gap Analysis</th>
-                              <th className="px-3 py-2">Required Actions</th>
-                              <th className="px-3 py-2">Timeline</th>
-                              <th className="px-3 py-2">Remarks</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 && (
-                              <tr><td colSpan={10} className="px-3 py-4 text-center text-slate-400">No candidates whose position field matches this role.</td></tr>
+                              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">No employee meets all four minimum requirements for this position.</td></tr>
                             )}
-                            {rows.map((r) => (
-                              <tr key={r.employeeId} className="align-top hover:bg-slate-50/50">
-                                <td className="px-3 py-2">
-                                  <button onClick={() => openArchive(r)} className="text-left font-medium text-blue-600 hover:underline" title="Open L&D Archive">
-                                    {r.name}
-                                  </button>
-                                  <div className="text-[10px] text-slate-400">{r.presentPosition ?? '—'}</div>
-                                </td>
-                                <td className="px-3 py-2 text-center"><Tick ok={r.education} /></td>
-                                <td className="px-3 py-2 text-center"><Tick ok={r.eligibility} /></td>
-                                <td className="px-3 py-2 text-center"><Tick ok={r.experience} /></td>
-                                <td className="px-3 py-2"><TrainingCell pct={r.trainingPct} /></td>
-                                <td className="px-3 py-2">
-                                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${r.statusTone}`}>{r.status}</span>
-                                </td>
-                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.gapAnalysis.length ? r.gapAnalysis.join('; ') : '—'}</td>
-                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.requiredActions.length ? r.requiredActions.join('; ') : '—'}</td>
-                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.timeline ?? '—'}</td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    defaultValue={remarksByPos[pos.id]?.[r.employeeId] ?? ''}
-                                    placeholder="Add remark…"
-                                    onBlur={(e) => {
-                                      const v = e.target.value;
-                                      if (v !== (remarksByPos[pos.id]?.[r.employeeId] ?? '')) void saveRemark(pos.id, r.employeeId, v);
-                                    }}
-                                    className="w-40 rounded border border-slate-200 px-2 py-1 text-[11px] focus:border-blue-400 focus:outline-none"
-                                  />
-                                </td>
-                              </tr>
-                            ))}
+                            {rows.map((r) => {
+                              const detailOpen = openDetail.has(`${pos.id}:${r.employeeId}`);
+                              return (
+                                <Fragment key={r.employeeId}>
+                                  <tr className={`align-top hover:bg-slate-50/50 ${detailOpen ? 'bg-slate-50' : ''}`}>
+                                    <td className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleDetail(pos.id, r.employeeId)}
+                                        aria-expanded={detailOpen}
+                                        title={detailOpen ? 'Hide gap analysis' : 'Show gap analysis and required actions'}
+                                        className="flex items-start gap-1 text-left font-medium text-blue-600 hover:underline"
+                                      >
+                                        <span className={`mt-[3px] inline-block text-[9px] transition-transform ${detailOpen ? 'rotate-90' : ''}`}>&#9654;</span>
+                                        {r.name}
+                                      </button>
+                                      <div className="pl-[14px] text-[10px] text-slate-400">{r.presentPosition ?? '—'}</div>
+                                    </td>
+                                    <td className="px-3 py-2 text-center"><Tick ok={r.education} /></td>
+                                    <td className="px-3 py-2 text-center"><Tick ok={r.eligibility} /></td>
+                                    <td className="px-3 py-2 text-center"><Tick ok={r.experience} /></td>
+                                    <td className="px-3 py-2"><TrainingCell pct={r.trainingPct} /></td>
+                                    <td className="px-3 py-2">
+                                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${r.statusTone}`}>{r.status}</span>
+                                    </td>
+                                  </tr>
+                                  {detailOpen && (
+                                    <tr className="bg-slate-50">
+                                      <td colSpan={6} className="px-3 pb-3 pt-0">
+                                        <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2">
+                                          <div>
+                                            <p className="!mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Gap Analysis</p>
+                                            {r.gapAnalysis.length ? (
+                                              <ul className="!mb-0 list-disc space-y-0.5 pl-4 text-[11px] text-slate-700">
+                                                {r.gapAnalysis.map((g, i) => <li key={i}>{g}</li>)}
+                                              </ul>
+                                            ) : (
+                                              <p className="!mb-0 text-[11px] text-slate-400">No gaps recorded.</p>
+                                            )}
+                                          </div>
+                                          <div>
+                                            <p className="!mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Required Actions</p>
+                                            {r.requiredActions.length ? (
+                                              <ul className="!mb-0 list-disc space-y-0.5 pl-4 text-[11px] text-slate-700">
+                                                {r.requiredActions.map((a, i) => <li key={i}>{a}</li>)}
+                                              </ul>
+                                            ) : (
+                                              <p className="!mb-0 text-[11px] text-slate-400">No actions required.</p>
+                                            )}
+                                          </div>
+                                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 sm:col-span-2">
+                                            <span className="text-[10px] text-slate-500">
+                                              {r.timeline ? `Estimated timeline: ${r.timeline}` : 'No timeline estimate.'}
+                                            </span>
+                                            {/* The name used to open this. It toggles now, so the
+                                                archive gets its own control rather than vanishing. */}
+                                            <button
+                                              type="button"
+                                              onClick={() => openArchive(r)}
+                                              className="text-[11px] font-semibold text-blue-600 hover:underline"
+                                            >
+                                              Open L&amp;D Archive →
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
