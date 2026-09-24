@@ -446,3 +446,78 @@ function actionForGate(gate: string): string {
   if (g.includes('training')) return "Attend the training needed to meet the position's requirement.";
   return 'Address the noted requirement.';
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C. System of Ranking Positions — relative rank
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A position's place in the ladder, from the SRP. */
+export interface PositionRank {
+  /** Civil-service salary grade, 1–33. The signal to trust when present. */
+  salaryGrade: number | null;
+  /** Ordering of the position_level label. Higher is more senior. */
+  levelOrder: number | null;
+}
+
+/**
+ * 'unknown' is a real answer, not a failure. A position with neither signal
+ * cannot be compared, and saying so is different from calling it a peer.
+ */
+export type RankComparison = 'higher' | 'equal' | 'lower' | 'unknown';
+
+const usable = (n: number | null | undefined): n is number =>
+  typeof n === 'number' && Number.isFinite(n);
+
+/**
+ * Where the candidate's current position sits relative to the target.
+ *
+ * Salary grade decides when both sides have one — it is externally defined and
+ * ordinal. level_order is the fallback for positions with no grade on file,
+ * which on current data is about a third of them. Mixing the two scales is
+ * refused: a salary grade of 24 and a level_order of 2 are not comparable
+ * numbers, and pretending otherwise produces confident nonsense.
+ */
+export function compareRank(candidate: PositionRank, target: PositionRank): RankComparison {
+  const pick = (a: number | null, b: number | null): RankComparison | null => {
+    if (!usable(a) || !usable(b)) return null;
+    if (a > b) return 'higher';
+    if (a < b) return 'lower';
+    return 'equal';
+  };
+  return (
+    pick(candidate.salaryGrade, target.salaryGrade) ??
+    pick(candidate.levelOrder, target.levelOrder) ??
+    'unknown'
+  );
+}
+
+/**
+ * Should this candidate be kept out of the pool as a downward move?
+ *
+ * Section C: the system should not recommend someone currently occupying a
+ * higher-ranked position for a lower-ranked target.
+ *
+ * Only a KNOWN downward move excludes. When rank cannot be established the
+ * candidate stays in, because excluding on 'unknown' would quietly drop
+ * everybody whose position has no grade recorded — which is most of them today
+ * — and an SRP gap would read as a judgement about the person.
+ */
+export function isDownwardMove(candidate: PositionRank, target: PositionRank): boolean {
+  return compareRank(candidate, target) === 'higher';
+}
+
+/**
+ * Seniority of the candidate's current position relative to the target, 0–1,
+ * for the relevant-experience score.
+ *
+ * Someone already at or above the target's level scores full: their experience
+ * is being exercised at the right altitude. Below it, the ratio falls away with
+ * the distance. Returns null when rank is unknown, so experienceScore drops the
+ * component and reweights rather than scoring the candidate as junior on
+ * missing data.
+ */
+export function positionLevelRatio(candidate: PositionRank, target: PositionRank): number | null {
+  const pair = (a: number | null, b: number | null) =>
+    usable(a) && usable(b) && b > 0 ? Math.min(a / b, 1) : null;
+  return pair(candidate.salaryGrade, target.salaryGrade) ?? pair(candidate.levelOrder, target.levelOrder);
+}

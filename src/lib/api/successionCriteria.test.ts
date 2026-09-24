@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   RANKING_WEIGHTS,
   actionForGate,
+  compareRank,
+  isDownwardMove,
+  positionLevelRatio,
   educationBeyondMinimumRatio,
   evaluateQualifications,
   experienceScore,
@@ -331,5 +334,77 @@ describe('actionForGate', () => {
 
   it('falls back to the generic line for anything unrecognised', () => {
     expect(actionForGate('Something nobody has written a case for')).toBe('Address the noted requirement.');
+  });
+});
+
+describe('C. System of Ranking Positions', () => {
+  const sg = (n: number | null) => ({ salaryGrade: n, levelOrder: null });
+  const lvl = (n: number | null) => ({ salaryGrade: null, levelOrder: n });
+
+  it('ranks by salary grade when both sides have one', () => {
+    expect(compareRank(sg(24), sg(21))).toBe('higher');
+    expect(compareRank(sg(3), sg(21))).toBe('lower');
+    expect(compareRank(sg(15), sg(15))).toBe('equal');
+  });
+
+  it('falls back to level order when a salary grade is missing', () => {
+    // About a third of real positions have no grade on file.
+    expect(compareRank(lvl(3), lvl(1))).toBe('higher');
+    expect(compareRank(lvl(1), lvl(4))).toBe('lower');
+  });
+
+  it('prefers salary grade over level order when both exist', () => {
+    const candidate = { salaryGrade: 24, levelOrder: 1 };
+    const target = { salaryGrade: 21, levelOrder: 4 };
+    // Grade says higher, level says lower. Grade wins.
+    expect(compareRank(candidate, target)).toBe('higher');
+  });
+
+  it('refuses to compare a salary grade against a level order', () => {
+    // SG 24 and level_order 2 are different scales; comparing them would be
+    // confident nonsense.
+    expect(compareRank(sg(24), lvl(2))).toBe('unknown');
+    expect(compareRank(lvl(2), sg(24))).toBe('unknown');
+  });
+
+  it('returns unknown when neither side is ranked', () => {
+    expect(compareRank(sg(null), sg(null))).toBe('unknown');
+  });
+
+  describe('isDownwardMove', () => {
+    it('excludes a candidate ranked above the target', () => {
+      // Section C: never recommend a Division Chief for a Staff post.
+      expect(isDownwardMove(sg(24), sg(10))).toBe(true);
+    });
+
+    it('keeps lateral and upward moves', () => {
+      expect(isDownwardMove(sg(10), sg(10))).toBe(false);
+      expect(isDownwardMove(sg(10), sg(24))).toBe(false);
+    });
+
+    it('keeps a candidate whose rank cannot be established', () => {
+      // An SRP gap must not read as a judgement about the person.
+      expect(isDownwardMove(sg(null), sg(20))).toBe(false);
+      expect(isDownwardMove(sg(24), sg(null))).toBe(false);
+    });
+  });
+
+  describe('positionLevelRatio', () => {
+    it('gives full marks at or above the target level', () => {
+      expect(positionLevelRatio(sg(20), sg(20))).toBe(1);
+      expect(positionLevelRatio(sg(24), sg(20))).toBe(1);
+    });
+
+    it('falls away with distance below the target', () => {
+      const near = positionLevelRatio(sg(18), sg(20))!;
+      const far = positionLevelRatio(sg(4), sg(20))!;
+      expect(near).toBeGreaterThan(far);
+      expect(far).toBeGreaterThan(0);
+    });
+
+    it('returns null when rank is unknown, so the component is dropped', () => {
+      expect(positionLevelRatio(sg(null), sg(20))).toBeNull();
+      expect(positionLevelRatio(sg(24), lvl(3))).toBeNull();
+    });
   });
 });
