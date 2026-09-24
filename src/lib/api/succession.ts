@@ -31,8 +31,13 @@ import {
   normalizeWeights,
   tenureRatio,
   trainingBeyondMinimumRatio,
+  type ExperiencePart,
   type RankingWeights,
 } from './successionCriteria';
+
+// Re-exported: ReadinessScore carries these, so a consumer of this module
+// should not have to import from the criteria module to describe one.
+export type { ExperiencePart } from './successionCriteria';
 
 const supabase = supabaseClient as any;
 
@@ -190,6 +195,8 @@ export interface ReadinessScore {
    * present it as a complete judgement.
    */
   progressionAssessed: boolean;
+  /** Inputs to the experience score, so a rank can be audited, not just read. */
+  experienceParts: ExperiencePart[];
   // Eligibility is a qualification gate, not a ranking criterion — it has no
   // score here. eligibilityLabel below is still shown as context.
   /** Readiness tier from the total. */
@@ -1494,6 +1501,7 @@ function computeReadinessScore(input: {
     tenureMax: input.W.tenure,
     tenureYears: input.tenureYears,
     progressionAssessed: exp.progressionAssessed,
+    experienceParts: exp.parts,
     tier,
     competencyMatchPct,
     competencyBreakdown,
@@ -2018,9 +2026,8 @@ export async function listAutoSuccessors(
       // training, education and tenure combined. Competency match is Stage-2
       // readiness, not one of the ranking criteria, so it drops to a tiebreak.
       if (b.readiness.total !== a.readiness.total) return b.readiness.total - a.readiness.total;
-      const am = a.readiness.competencyMatchPct;
-      const bm = b.readiness.competencyMatchPct;
-      if (am != null && bm != null && bm !== am) return bm - am;
+      // Documented tiebreak: the higher Performance score wins. Surfaced in the
+      // table footnote so the order is explainable rather than arbitrary.
       if (b.readiness.ipcr !== a.readiness.ipcr) return b.readiness.ipcr - a.readiness.ipcr;
       return a.employeeName.localeCompare(b.employeeName);
     });
