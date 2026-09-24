@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   RANKING_WEIGHTS,
+  actionForGate,
   educationBeyondMinimumRatio,
   evaluateQualifications,
   experienceScore,
@@ -291,5 +292,34 @@ describe('normalizeWeights', () => {
     const w = normalizeWeights({ ipcr: -5, tenure: 'abc' });
     expect(w.ipcr).toBeGreaterThan(0);
     expect(w.tenure).toBeGreaterThan(0);
+  });
+});
+
+describe('actionForGate', () => {
+  it('gives a course-mismatch failure the education action', () => {
+    // Regression: this message never contains the word "education", so it used
+    // to fall through to the generic "Address the noted requirement."
+    const a = actionForGate('Course mismatch — position requires BS Civil Engineering, candidate holds BS Biology');
+    expect(a).toMatch(/units|certification/i);
+    expect(a).not.toBe('Address the noted requirement.');
+  });
+
+  it('gives a missing education record the education action', () => {
+    expect(actionForGate('No education record on file')).toMatch(/units|certification/i);
+  });
+
+  it('gives an experience shortfall its own action', () => {
+    const a = actionForGate('Experience: 3.0/5 required years');
+    expect(a).toMatch(/years of relevant experience/i);
+    expect(a).not.toBe('Address the noted requirement.');
+  });
+
+  it('gives eligibility and training their own actions', () => {
+    expect(actionForGate('No eligibility on record')).toMatch(/CSC eligibility/i);
+    expect(actionForGate('Training: 10/40 required hours')).toMatch(/training/i);
+  });
+
+  it('falls back to the generic line for anything unrecognised', () => {
+    expect(actionForGate('Something nobody has written a case for')).toBe('Address the noted requirement.');
   });
 });

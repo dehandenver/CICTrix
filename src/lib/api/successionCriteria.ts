@@ -415,3 +415,30 @@ export function rankingScore(input: {
     progressionAssessed: input.experience.progressionAssessed,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Required actions
+// ─────────────────────────────────────────────────────────────────────────────
+
+export /**
+ * The next step for one failed qualification, shown in Required Actions.
+ *
+ * Matched against the authored gate message, so the patterns here have to stay
+ * in step with the strings pushed into failedGates above. There is no IPCR case
+ * any more: performance ranks candidates, it no longer disqualifies them, so it
+ * can never appear here.
+ */
+function actionForGate(gate: string): string {
+  const g = gate.toLowerCase();
+  // 'course mismatch' is matched explicitly: that message never contains the
+  // word "education", so it used to fall through to the generic line.
+  if (g.includes('education') || g.includes('course mismatch')) {
+    return 'Complete relevant units/certification in the required field, or consider an alternate candidate.';
+  }
+  if (g.includes('eligibility')) return 'Take and pass the required CSC eligibility exam.';
+  if (g.includes('experience')) {
+    return "Accrue the remaining years of relevant experience, or consider a candidate who already meets the position's minimum.";
+  }
+  if (g.includes('training')) return "Attend the training needed to meet the position's requirement.";
+  return 'Address the noted requirement.';
+}

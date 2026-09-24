@@ -21,6 +21,7 @@ import { embeddedRating } from './ipcrRatings';
 import type { FunctionType } from './ipcrTargets';
 import {
   RANKING_WEIGHTS,
+  actionForGate,
   educationBeyondMinimumRatio,
   evaluateQualifications,
   experienceScore,
@@ -1363,14 +1364,7 @@ function educationFieldMatches(empEdu: string | null, requiredEdu: string | null
 }
 
 /** Auto-suggested next step for a failed gate (Part 4 Required Actions). */
-function actionForGate(gate: string): string {
-  const g = gate.toLowerCase();
-  if (g.includes('education')) return 'Complete relevant units/certification in the required field, or consider an alternate candidate.';
-  if (g.includes('eligibility')) return 'Take and pass the required CSC eligibility exam.';
-  if (g.includes('ipcr')) return g.includes('missing') ? 'Complete the current IPCR cycle so a rating is finalized.' : 'Sustain improved performance through the next rating cycle(s).';
-  if (g.includes('training')) return "Attend the training needed to meet the position's requirement.";
-  return 'Address the noted requirement.';
-}
+
 
 function computeReadinessScore(input: {
   ipcrScore: number | null;

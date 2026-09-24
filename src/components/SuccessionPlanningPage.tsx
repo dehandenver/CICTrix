@@ -867,6 +867,20 @@ const AutoSuccessorRow = ({
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Experience</span>
                   <ScoreBar value={r.experience} max={r.experienceMax} color="#f59e0b" />
+                  {/* Career progression is one of the three things relevant
+                      experience is meant to weigh, and it can only be read from
+                      work history. Where none exists, two candidates with the
+                      same years score identically however differently their
+                      careers actually went — so say so rather than present a
+                      partial score as a finished judgement. */}
+                  {!r.progressionAssessed && (
+                    <span
+                      title="Scored on years and current position only — no work history on file, so career progression could not be assessed."
+                      className="cursor-help text-[10px] font-semibold text-amber-600"
+                    >
+                      partial
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Tenure</span>
