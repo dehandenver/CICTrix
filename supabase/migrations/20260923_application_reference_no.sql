@@ -66,27 +66,35 @@ DECLARE
   attempts  integer := 0;
 BEGIN
   LOOP
-    candidate := 'ABYAN-'
-      || lpad((floor(random() * 1000))::int::text, 3, '0')
-      || '-'
-      || lpad((floor(random() * 1000))::int::text, 3, '0');
-
-    EXIT WHEN NOT EXISTS (
-      SELECT 1 FROM public.applicants
-       WHERE reference_no_normalized = upper(regexp_replace(candidate, '[^A-Za-z0-9]', '', 'g'))
-    );
-
-    attempts := attempts + 1;
-    -- The 6-digit space is exhausted or nearly so. Widen rather than spin
-    -- forever: a longer reference is better than a failed submission.
-    IF attempts > 50 THEN
+    -- After 50 collisions the 6-digit space is effectively exhausted, so widen
+    -- to a third segment rather than spinning forever. A longer reference is
+    -- better than a failed submission.
+    IF attempts < 50 THEN
+      candidate := 'ABYAN-'
+        || lpad((floor(random() * 1000))::int::text, 3, '0')
+        || '-'
+        || lpad((floor(random() * 1000))::int::text, 3, '0');
+    ELSE
       candidate := 'ABYAN-'
         || lpad((floor(random() * 1000))::int::text, 3, '0')
         || '-'
         || lpad((floor(random() * 1000))::int::text, 3, '0')
         || '-'
         || lpad((floor(random() * 1000))::int::text, 3, '0');
-      EXIT;
+    END IF;
+
+    -- EVERY candidate is verified, including the widened ones. Returning an
+    -- unchecked value would surface as a 23505 on the applicant's INSERT,
+    -- i.e. a failed submission — the exact failure this loop exists to avoid.
+    EXIT WHEN NOT EXISTS (
+      SELECT 1 FROM public.applicants
+       WHERE reference_no_normalized = upper(regexp_replace(candidate, '[^A-Za-z0-9]', '', 'g'))
+    );
+
+    attempts := attempts + 1;
+    IF attempts > 500 THEN
+      RAISE EXCEPTION
+        'Could not generate a unique application reference number after % attempts', attempts;
     END IF;
   END LOOP;
 
@@ -142,6 +150,19 @@ CREATE TRIGGER trg_freeze_application_reference_no
 --
 -- (b) runs first: it claims the unique index with the codes applicants
 -- actually hold, and (a) then generates around them.
+--
+-- DUPLICATE LEGACY CODES. The old wizard generated these client-side with no
+-- uniqueness check, so the same code can sit on more than one row — real data
+-- here had two applicants both holding APP-2026-JZ6LJEL. Such a code never
+-- identified a single application to begin with, so it cannot become a unique
+-- reference for all of them. Exactly one row per duplicate group keeps it
+-- (oldest first, deterministic), and the rest fall through to the generator
+-- below and get a fresh ABYAN-000-000.
+--
+-- Deduplicating has to happen WITHIN this statement: an anti-join against
+-- reference_no_normalized cannot see values the same UPDATE is about to
+-- assign, only ones already committed.
+--
 -- Wrapped because plantilla_slots only exists once 20260922 has been applied.
 -- Filename order runs that first, but these migrations still get pasted in by
 -- hand, and a missing table should not abort the whole run. Without it, every
@@ -153,22 +174,38 @@ BEGIN
     RETURN;
   END IF;
 
+  WITH rescuable AS (
+    SELECT
+      a.id,
+      btrim(a.item_number) AS legacy_code,
+      row_number() OVER (
+        PARTITION BY upper(regexp_replace(btrim(a.item_number), '[^A-Za-z0-9]', '', 'g'))
+        ORDER BY a.created_at NULLS LAST, a.id
+      ) AS rank_in_group
+    FROM public.applicants a
+    WHERE a.reference_no IS NULL
+      AND COALESCE(btrim(a.item_number), '') NOT IN ('', 'UNASSIGNED')
+      -- A code that matches a plantilla slot is a POSITION code, not a
+      -- tracking code. Leave it in item_number where it belongs.
+      AND NOT EXISTS (
+        SELECT 1 FROM public.plantilla_slots ps
+         WHERE lower(btrim(ps.item_number)) = lower(btrim(a.item_number))
+      )
+      -- Re-run safety: never claim a code some row already holds.
+      AND NOT EXISTS (
+        SELECT 1 FROM public.applicants other
+         WHERE other.id <> a.id
+           AND other.reference_no IS NOT NULL
+           AND other.reference_no_normalized
+               = upper(regexp_replace(btrim(a.item_number), '[^A-Za-z0-9]', '', 'g'))
+      )
+  )
   UPDATE public.applicants a
-     SET reference_no = btrim(a.item_number),
+     SET reference_no = r.legacy_code,
          item_number  = 'UNASSIGNED'
-   WHERE a.reference_no IS NULL
-     AND COALESCE(btrim(a.item_number), '') NOT IN ('', 'UNASSIGNED')
-     AND NOT EXISTS (
-       SELECT 1 FROM plantilla_slots ps
-        WHERE lower(btrim(ps.item_number)) = lower(btrim(a.item_number))
-     )
-     -- Skip anything that would collide; the loop below issues those a new one.
-     AND NOT EXISTS (
-       SELECT 1 FROM public.applicants other
-        WHERE other.id <> a.id
-          AND other.reference_no_normalized
-              = upper(regexp_replace(btrim(a.item_number), '[^A-Za-z0-9]', '', 'g'))
-     );
+    FROM rescuable r
+   WHERE a.id = r.id
+     AND r.rank_in_group = 1;
 END $$;
 
 DO $$
