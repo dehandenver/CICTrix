@@ -1230,13 +1230,26 @@ const ocboStatusTone = (s: string): string => {
   return 'bg-red-100 text-red-700'; // Not Qualified
 };
 
+/**
+ * The succession pool: only candidates who clear all four minimum requirements.
+ *
+ * Specification section A treats the qualifications as a filter — meet all four
+ * and you enter the pool, fail one and you do not. Listing gate-failures here
+ * alongside qualified candidates made the table a roster of everyone in the
+ * office rather than a shortlist, and put names in front of HR that the model
+ * had already ruled out.
+ *
+ * res.notQualified is still returned by the API and is not discarded; it is
+ * counted beside the position so the exclusions remain visible.
+ */
 const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
   if (!res) return [];
-  const q: OcboRow[] = res.qualified.map((c) => ({
+  return res.qualified.map((c) => ({
     employeeId: c.employeeId,
     name: c.employeeName,
     presentPosition: c.currentPosition,
     department: c.department,
+    // Always true: a candidate only reaches this list by passing every gate.
     education: true,
     eligibility: true,
     experience: true,
@@ -1247,25 +1260,6 @@ const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
     requiredActions: c.requiredActions,
     timeline: c.timeline,
   }));
-  const nq: OcboRow[] = res.notQualified.map((f) => {
-    const status = f.pendingEvaluation ? 'Incomplete — Pending Evaluation' : 'Not Qualified';
-    return {
-      employeeId: f.employeeId,
-      name: f.employeeName,
-      presentPosition: f.currentPosition,
-      department: f.department,
-      education: f.gates.education,
-      eligibility: f.gates.eligibility,
-      experience: f.gates.experience,
-      trainingPct: f.competencyMatchPct,
-      status,
-      statusTone: ocboStatusTone(status),
-      gapAnalysis: f.gapAnalysis,
-      requiredActions: f.requiredActions,
-      timeline: null,
-    };
-  });
-  return [...q, ...nq];
 };
 
 const Tick = ({ ok }: { ok: boolean }) =>
@@ -1352,9 +1346,11 @@ const OcboTableView = ({ admin }: { admin: string }) => {
   return (
     <div className="space-y-3">
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Official succession-plan view. Every potential candidate is shown — qualified or not — for full pipeline
-        transparency. Education / Eligibility / Experience are mandatory pass/fail gates; Training is a graded
-        competency-readiness match. Remarks are editable.
+        Official succession-plan view. Only employees who meet <strong>all four</strong> minimum requirements —
+        Education, Eligibility, Experience and Training — appear here; anyone failing one is filtered out and
+        counted beside the position. Training shows the graded competency-readiness match. Click a name to see
+        that candidate&rsquo;s gap analysis and required actions, and click again to close — several can be open
+        at once for comparison.
       </p>
       {departments.map((dept) => {
         const open = expanded.has(dept.departmentId);
@@ -1384,6 +1380,10 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                   // position. Shown as a count so "why isn't X listed?" has an
                   // answer instead of them vanishing from the pipeline.
                   const downward = candByPos[pos.id]?.downwardMovesExcluded ?? 0;
+                  // Gate-failures no longer appear as rows, so their count is
+                  // shown instead — the shortlist stays a shortlist without HR
+                  // losing sight of how many people were considered.
+                  const filtered = candByPos[pos.id]?.notQualified.length ?? 0;
                   return (
                     <div key={pos.id} className="mb-5 last:mb-0">
                       <div className="mb-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
@@ -1391,6 +1391,9 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                         <span className="text-xs text-[var(--text-secondary)]">
                           Held by: {pos.incumbentName ?? <em className="text-slate-400">Vacant</em>}
                           {leaving ? ` · leaving ${leaving}` : ''}
+                          {filtered > 0
+                            ? ` · ${filtered} did not meet the minimum requirements`
+                            : ''}
                           {downward > 0
                             ? ` · ${downward} excluded as downward move${downward === 1 ? '' : 's'}`
                             : ''}
@@ -1410,7 +1413,7 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 && (
-                              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">No candidates whose position field matches this role.</td></tr>
+                              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">No employee meets all four minimum requirements for this position.</td></tr>
                             )}
                             {rows.map((r) => {
                               const detailOpen = openDetail.has(`${pos.id}:${r.employeeId}`);
