@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAdminEmail } from '../lib/adminSession';
 import {
@@ -31,8 +31,6 @@ import {
   listEmployeeOptions,
   listCompetencyRequirements,
   listPositionQualificationsForDepartment,
-  getCandidateRemarks,
-  saveCandidateRemark,
   diffQualifications,
   sharedFieldKeyword,
   type DepartmentSummary,
@@ -1292,7 +1290,22 @@ const OcboTableView = ({ admin }: { admin: string }) => {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [posByDept, setPosByDept] = useState<Record<string, CriticalPosition[]>>({});
   const [candByPos, setCandByPos] = useState<Record<string, AutoSuccessorsResult>>({});
-  const [remarksByPos, setRemarksByPos] = useState<Record<string, Record<string, string>>>({});
+  // Per-candidate remarks were dropped from this table. getCandidateRemarks and
+  // saveCandidateRemark are left in the API, and succession_candidate_remarks
+  // keeps whatever was already written, so the column can come back without
+  // anything having been lost.
+  // Which candidates have their detail open, keyed position:employee. A Set
+  // rather than one id at a time because the point is comparing several.
+  const [openDetail, setOpenDetail] = useState<Set<string>>(() => new Set());
+  const toggleDetail = (positionId: string, employeeId: string) => {
+    const key = `${positionId}:${employeeId}`;
+    setOpenDetail((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const [loadingDept, setLoadingDept] = useState<Record<string, boolean>>({});
   const navigate = useNavigate();
 
@@ -1318,17 +1331,11 @@ const OcboTableView = ({ admin }: { admin: string }) => {
     setPosByDept((p) => ({ ...p, [deptId]: positions }));
     await Promise.all(
       positions.map(async (pos) => {
-        const [cr, rm] = await Promise.all([listAutoSuccessors(pos.id), getCandidateRemarks(pos.id)]);
+        const cr = await listAutoSuccessors(pos.id);
         if (cr.ok) setCandByPos((p) => ({ ...p, [pos.id]: cr.data }));
-        setRemarksByPos((p) => ({ ...p, [pos.id]: Object.fromEntries(rm) }));
       }),
     );
     setLoadingDept((p) => ({ ...p, [deptId]: false }));
-  };
-
-  const saveRemark = async (positionId: string, employeeId: string, value: string) => {
-    setRemarksByPos((p) => ({ ...p, [positionId]: { ...(p[positionId] || {}), [employeeId]: value } }));
-    await saveCandidateRemark({ criticalPositionId: positionId, employeeId, remarks: value, updatedBy: admin });
   };
 
   const openArchive = (r: OcboRow) => {
@@ -1390,7 +1397,7 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                         </span>
                       </div>
                       <div className="overflow-x-auto rounded-lg border border-[var(--border-color)]">
-                        <table className="w-full min-w-[1040px] border-collapse text-xs">
+                        <table className="w-full min-w-[640px] border-collapse text-xs">
                           <thead>
                             <tr className="border-b border-[var(--border-color)] bg-slate-50 text-left text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
                               <th className="px-3 py-2">Candidate / Present Position</th>
@@ -1399,48 +1406,83 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                               <th className="px-3 py-2 text-center">Exp.</th>
                               <th className="px-3 py-2">Training</th>
                               <th className="px-3 py-2">Overall Status</th>
-                              <th className="px-3 py-2">Gap Analysis</th>
-                              <th className="px-3 py-2">Required Actions</th>
-                              <th className="px-3 py-2">Timeline</th>
-                              <th className="px-3 py-2">Remarks</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 && (
-                              <tr><td colSpan={10} className="px-3 py-4 text-center text-slate-400">No candidates whose position field matches this role.</td></tr>
+                              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">No candidates whose position field matches this role.</td></tr>
                             )}
-                            {rows.map((r) => (
-                              <tr key={r.employeeId} className="align-top hover:bg-slate-50/50">
-                                <td className="px-3 py-2">
-                                  <button onClick={() => openArchive(r)} className="text-left font-medium text-blue-600 hover:underline" title="Open L&D Archive">
-                                    {r.name}
-                                  </button>
-                                  <div className="text-[10px] text-slate-400">{r.presentPosition ?? '—'}</div>
-                                </td>
-                                <td className="px-3 py-2 text-center"><Tick ok={r.education} /></td>
-                                <td className="px-3 py-2 text-center"><Tick ok={r.eligibility} /></td>
-                                <td className="px-3 py-2 text-center"><Tick ok={r.experience} /></td>
-                                <td className="px-3 py-2"><TrainingCell pct={r.trainingPct} /></td>
-                                <td className="px-3 py-2">
-                                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${r.statusTone}`}>{r.status}</span>
-                                </td>
-                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.gapAnalysis.length ? r.gapAnalysis.join('; ') : '—'}</td>
-                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.requiredActions.length ? r.requiredActions.join('; ') : '—'}</td>
-                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.timeline ?? '—'}</td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    defaultValue={remarksByPos[pos.id]?.[r.employeeId] ?? ''}
-                                    placeholder="Add remark…"
-                                    onBlur={(e) => {
-                                      const v = e.target.value;
-                                      if (v !== (remarksByPos[pos.id]?.[r.employeeId] ?? '')) void saveRemark(pos.id, r.employeeId, v);
-                                    }}
-                                    className="w-40 rounded border border-slate-200 px-2 py-1 text-[11px] focus:border-blue-400 focus:outline-none"
-                                  />
-                                </td>
-                              </tr>
-                            ))}
+                            {rows.map((r) => {
+                              const detailOpen = openDetail.has(`${pos.id}:${r.employeeId}`);
+                              return (
+                                <Fragment key={r.employeeId}>
+                                  <tr className={`align-top hover:bg-slate-50/50 ${detailOpen ? 'bg-slate-50' : ''}`}>
+                                    <td className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleDetail(pos.id, r.employeeId)}
+                                        aria-expanded={detailOpen}
+                                        title={detailOpen ? 'Hide gap analysis' : 'Show gap analysis and required actions'}
+                                        className="flex items-start gap-1 text-left font-medium text-blue-600 hover:underline"
+                                      >
+                                        <span className={`mt-[3px] inline-block text-[9px] transition-transform ${detailOpen ? 'rotate-90' : ''}`}>&#9654;</span>
+                                        {r.name}
+                                      </button>
+                                      <div className="pl-[14px] text-[10px] text-slate-400">{r.presentPosition ?? '—'}</div>
+                                    </td>
+                                    <td className="px-3 py-2 text-center"><Tick ok={r.education} /></td>
+                                    <td className="px-3 py-2 text-center"><Tick ok={r.eligibility} /></td>
+                                    <td className="px-3 py-2 text-center"><Tick ok={r.experience} /></td>
+                                    <td className="px-3 py-2"><TrainingCell pct={r.trainingPct} /></td>
+                                    <td className="px-3 py-2">
+                                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${r.statusTone}`}>{r.status}</span>
+                                    </td>
+                                  </tr>
+                                  {detailOpen && (
+                                    <tr className="bg-slate-50">
+                                      <td colSpan={6} className="px-3 pb-3 pt-0">
+                                        <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2">
+                                          <div>
+                                            <p className="!mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Gap Analysis</p>
+                                            {r.gapAnalysis.length ? (
+                                              <ul className="!mb-0 list-disc space-y-0.5 pl-4 text-[11px] text-slate-700">
+                                                {r.gapAnalysis.map((g, i) => <li key={i}>{g}</li>)}
+                                              </ul>
+                                            ) : (
+                                              <p className="!mb-0 text-[11px] text-slate-400">No gaps recorded.</p>
+                                            )}
+                                          </div>
+                                          <div>
+                                            <p className="!mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Required Actions</p>
+                                            {r.requiredActions.length ? (
+                                              <ul className="!mb-0 list-disc space-y-0.5 pl-4 text-[11px] text-slate-700">
+                                                {r.requiredActions.map((a, i) => <li key={i}>{a}</li>)}
+                                              </ul>
+                                            ) : (
+                                              <p className="!mb-0 text-[11px] text-slate-400">No actions required.</p>
+                                            )}
+                                          </div>
+                                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 sm:col-span-2">
+                                            <span className="text-[10px] text-slate-500">
+                                              {r.timeline ? `Estimated timeline: ${r.timeline}` : 'No timeline estimate.'}
+                                            </span>
+                                            {/* The name used to open this. It toggles now, so the
+                                                archive gets its own control rather than vanishing. */}
+                                            <button
+                                              type="button"
+                                              onClick={() => openArchive(r)}
+                                              className="text-[11px] font-semibold text-blue-600 hover:underline"
+                                            >
+                                              Open L&amp;D Archive →
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
