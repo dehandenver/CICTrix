@@ -16,7 +16,10 @@ interface Applicant {
   id: string;
   full_name: string;
   email: string;
+  /** The Plantilla Item No. applied for — a position code. */
   item_number: string;
+  /** This application's system-issued tracking code, ABYAN-000-000. */
+  reference_no: string;
   position: string;
   office: string;
   status: string;
@@ -45,6 +48,10 @@ const isDisqualifiedStatus = (status: string) => {
 };
 
 const ITEMS_PER_PAGE = 10;
+
+/** Reference numbers get quoted back with arbitrary case and punctuation. */
+const normalizeReference = (value: string) =>
+  String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -119,7 +126,8 @@ export const ApplicationsListPage = () => {
           id:               String(r.id ?? ''),
           full_name:        [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || String(r.full_name ?? '—'),
           email:            String(r.email ?? ''),
-          item_number:      String(r.item_number ?? r.application_number ?? ''),
+          item_number:      String(r.item_number ?? ''),
+          reference_no:     String(r.reference_no ?? ''),
           position:         String(r.position ?? ''),
           office:           String(r.office ?? ''),
           status:           String(r.status ?? ''),
@@ -162,9 +170,20 @@ export const ApplicationsListPage = () => {
       if (officeFilter   !== 'all' && a.office   !== officeFilter)   return false;
       if (positionFilter !== 'all' && a.position !== positionFilter) return false;
       if (typeFilter     !== 'all' && normalizeType(a.application_type) !== typeFilter) return false;
-      if (term && !a.full_name.toLowerCase().includes(term) &&
-          !a.email.toLowerCase().includes(term) &&
-          !a.position.toLowerCase().includes(term)) return false;
+      if (term) {
+        // Reference No. is matched on its normalised form so an admin can
+        // paste whatever an applicant quoted at them — "abyan 123 456"
+        // included. An empty normalisation (the term was all punctuation)
+        // must not turn into a match-everything.
+        const referenceTerm = normalizeReference(term);
+        const matches =
+          a.full_name.toLowerCase().includes(term) ||
+          a.email.toLowerCase().includes(term) ||
+          a.position.toLowerCase().includes(term) ||
+          a.item_number.toLowerCase().includes(term) ||
+          (referenceTerm.length > 0 && normalizeReference(a.reference_no).includes(referenceTerm));
+        if (!matches) return false;
+      }
       return true;
     });
   }, [applicants, search, officeFilter, positionFilter, typeFilter]);
@@ -272,7 +291,7 @@ export const ApplicationsListPage = () => {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input type="text" placeholder="Search name, email, position…"
+                  <input type="text" placeholder="Search name, email, position, or Reference No.…"
                     value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
                     className="w-full rounded-xl border border-slate-300 py-2.5 pl-9 pr-3 text-sm focus:border-[#363EE8] focus:outline-none" />
                 </div>
@@ -308,6 +327,7 @@ export const ApplicationsListPage = () => {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
+                    <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Reference No.</th>
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
@@ -323,8 +343,14 @@ export const ApplicationsListPage = () => {
                         <button type="button" className="group text-left"
                           onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, { state: { from: '/admin/rsp/applications' } })}>
                           <p className="font-semibold text-sm text-[#363EE8] group-hover:underline underline-offset-2">{a.full_name}</p>
-                          <p className="mt-0.5 text-xs text-slate-400">{a.item_number || '—'}</p>
+                          <p className="mt-0.5 text-xs text-slate-400">{a.email || '—'}</p>
                         </button>
+                      </td>
+
+                      {/* Reference No. — what an applicant quotes when they
+                          write in asking about their status */}
+                      <td className="px-5 py-4">
+                        <span className="font-mono text-xs text-slate-600">{a.reference_no || '—'}</span>
                       </td>
 
                       {/* Position */}
@@ -349,7 +375,7 @@ export const ApplicationsListPage = () => {
                   ))}
                   {paged.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-5 py-12 text-center text-slate-500">
+                      <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
                         <Search className="mx-auto mb-2 h-8 w-8 text-slate-300" />
                         <p className="font-medium">No applicants found for the selected filters.</p>
                       </td>
@@ -397,6 +423,7 @@ export const ApplicationsListPage = () => {
                         />
                       </th>
                       <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
+                      <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Reference No.</th>
                       <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
                       <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
                       <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
@@ -419,8 +446,11 @@ export const ApplicationsListPage = () => {
                           <button type="button" className="group text-left"
                             onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, { state: { from: '/admin/rsp/applications' } })}>
                             <p className="font-semibold text-sm text-[#363EE8] group-hover:underline underline-offset-2">{a.full_name}</p>
-                            <p className="mt-0.5 text-xs text-slate-400">{a.item_number || '—'}</p>
+                            <p className="mt-0.5 text-xs text-slate-400">{a.email || '—'}</p>
                           </button>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="font-mono text-xs text-slate-600">{a.reference_no || '—'}</span>
                         </td>
                         <td className="px-5 py-4 text-sm text-slate-700">
                           {a.position || '—'}
@@ -437,7 +467,7 @@ export const ApplicationsListPage = () => {
                     ))}
                     {shortlisted.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
+                        <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
                           <p className="font-medium">No shortlisted applicants yet.</p>
                           <p className="text-xs text-slate-400 mt-1">
                             Click Shortlist on an applicant's profile to move them here.

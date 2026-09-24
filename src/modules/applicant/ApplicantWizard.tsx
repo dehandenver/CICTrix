@@ -124,15 +124,6 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   gov_id_expiration: '',
 };
 
-const buildApplicantItemNumber = (): string => {
-  const year = new Date().getFullYear();
-  // Random 7-char alphanumeric suffix — avoids collision with plantilla item numbers
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let suffix = '';
-  for (let i = 0; i < 7; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
-  return `APP-${year}-${suffix}`;
-};
-
 const normalizeAuthValue = (value: string) => String(value ?? '').trim().toLowerCase();
 
 const saveApplicantAppointmentType = (applicantId: string, applicationType: 'job' | 'promotion') => {
@@ -186,7 +177,6 @@ export const ApplicantWizard: React.FC = () => {
   const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
   const [slotSelectionError, setSlotSelectionError] = useState('');
   const [isLoadingPrefill, setIsLoadingPrefill] = useState(false);
-  const isGeneratingItemNumberRef = useRef(false);
   const lastPrefilledRef = useRef<{ employeeId: string; username: string } | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -651,9 +641,12 @@ const handleNextToReview = () => {
   };
 
   const submitWithClient = async (): Promise<string> => {
-    // Generate a unique random application tracking code.
-    // Use the one already shown in the form if set, otherwise generate fresh.
-    const itemNumber = formData.item_number || buildApplicantItemNumber();
+    // The Plantilla Item No. of the position being applied for. Prefer the
+    // first slot actually ticked — on a multi-slot post that is the specific
+    // plantilla this application leads with. The applicant's own tracking code
+    // is NOT this: the database issues `reference_no` on insert.
+    const selectedSlot = postingSlots.find((slot) => selectedSlotIds.includes(slot.id));
+    const plantillaItemNo = selectedSlot?.itemNumber || formData.item_number || '';
     const safe = (val: string | null | undefined) => (val == null ? '' : String(val));
 
     const experienceYears = parseInt(formData.work_experience_years || '0', 10) || 0;
@@ -669,7 +662,9 @@ const handleNextToReview = () => {
       contact_number: safe(formData.contact_number).trim(),
       email: formData.email.trim().toLowerCase(),
       position: safe(formData.position).trim(),
-      item_number: itemNumber,
+      // Position code only. A general application that isn't tied to a posting
+      // has none — the column is NOT NULL, so it takes the table's sentinel.
+      item_number: plantillaItemNo || 'UNASSIGNED',
       office: safe(POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office).trim(),
       is_pwd: formData.is_pwd,
       application_type: applicationType,
@@ -693,28 +688,40 @@ const handleNextToReview = () => {
 
     let applicantData;
     try {
-      let { data, error } = await (supabase as any)
-        .from('applicants')
-        .insert(applicantPayload)
-        .select('id, item_number')
-        .single();
+      // reference_no is assigned by a DB trigger, so it can only be read back —
+      // never sent. Selecting it fails outright if migration 20260923 has not
+      // been applied, hence the narrower retry below.
+      const insertWith = async (columns: string) =>
+        await (supabase as any)
+          .from('applicants')
+          .insert(applicantPayload)
+          .select(columns)
+          .single();
+
+      const isMissingColumn = (err: any, ...names: string[]) => {
+        if (!err) return false;
+        const code = String(err?.code ?? '');
+        if (code !== '42703' && code !== 'PGRST204' && code !== '42P10') return false;
+        const text = String(err?.message ?? '').toLowerCase();
+        return names.some((name) => text.includes(name));
+      };
+
+      let { data, error } = await insertWith('id, item_number, reference_no');
+
+      if (isMissingColumn(error, 'reference_no')) {
+        ({ data, error } = await insertWith('id, item_number'));
+      }
 
       // If the education_degree / education_school columns aren't there yet
       // (migration 20260812 not run), drop them and retry so a submission never
       // fails just because the schema hasn't caught up to the form.
-      const msg = String(error?.message ?? '').toLowerCase();
-      const missingNewCols =
-        error &&
-        (String(error?.code ?? '') === '42703' || String(error?.code ?? '') === 'PGRST204') &&
-        (msg.includes('education_degree') || msg.includes('education_school'));
-      if (missingNewCols) {
+      if (isMissingColumn(error, 'education_degree', 'education_school')) {
         delete applicantPayload.education_degree;
         delete applicantPayload.education_school;
-        ({ data, error } = await (supabase as any)
-          .from('applicants')
-          .insert(applicantPayload)
-          .select('id, item_number')
-          .single());
+        ({ data, error } = await insertWith('id, item_number, reference_no'));
+        if (isMissingColumn(error, 'reference_no')) {
+          ({ data, error } = await insertWith('id, item_number'));
+        }
       }
 
       if (error || !data?.id) {
@@ -810,11 +817,14 @@ const handleNextToReview = () => {
       })(),
     });
 
-    return applicantData.item_number || itemNumber;
+    // What the applicant walks away with: their Reference No. Before migration
+    // 20260923 there is none, so fall back to the row id — still unique, still
+    // lets them find themselves, and never a plantilla code.
+    return String(applicantData.reference_no ?? '').trim() || String(applicantData.id ?? '');
   };
 
-  const completeSuccess = (itemNumber: string) => {
-    setSubmissionReference(itemNumber);
+  const completeSuccess = (referenceNo: string) => {
+    setSubmissionReference(referenceNo);
     setShowSuccessDialog(true);
     setFormData(INITIAL_FORM_DATA);
     setFiles([]);
@@ -845,8 +855,8 @@ const handleNextToReview = () => {
     setSubmitError('');
 
     try {
-      const itemNumber = await submitWithClient();
-      completeSuccess(itemNumber);
+      const referenceNo = await submitWithClient();
+      completeSuccess(referenceNo);
     } catch (error) {
       console.error('Submission error:', error);
 
@@ -1034,34 +1044,11 @@ const handleNextToReview = () => {
     return `${(kb / 1024).toFixed(1)} MB`;
   };
 
-  const hasStartedAssessment = useMemo(() => {
-    const fields = [
-      formData.first_name,
-      formData.middle_name,
-      formData.last_name,
-      formData.gender,
-      formData.address,
-      formData.contact_number,
-      formData.email,
-      formData.position,
-      formData.office,
-    ];
-
-    return fields.some((value) => value.trim().length > 0) || Boolean(formData.is_pwd);
-  }, [formData]);
-
-  useEffect(() => {
-    if (entryMode !== 'wizard' || currentStep !== 1 || !hasStartedAssessment || formData.item_number) {
-      return;
-    }
-    if (isGeneratingItemNumberRef.current) return;
-    isGeneratingItemNumberRef.current = true;
-    setFormData((prev) => {
-      if (prev.item_number) return prev;
-      return { ...prev, item_number: buildApplicantItemNumber() };
-    });
-    isGeneratingItemNumberRef.current = false;
-  }, [currentStep, entryMode, formData.item_number, hasStartedAssessment]);
+  // The wizard used to mint a tracking code here and write it into
+  // item_number, which is what conflated the applicant's reference with the
+  // position's plantilla code. Reference numbers are now issued by the
+  // database on insert (migration 20260923), so there is nothing to generate
+  // client-side and item_number holds only the Plantilla Item No. applied for.
 
   useEffect(() => {
     if (entryMode === 'landing') {
@@ -1313,7 +1300,7 @@ const handleNextToReview = () => {
                     files={files}
                     onFilesChange={handleFilesChange}
                     error={fileError}
-                    itemNumber={formData.item_number}
+                    plantillaItemNo={formData.item_number}
                     applicationType={applicationType}
                     formData={formData}
                     onChange={handleFormChange}
@@ -1395,8 +1382,14 @@ const handleNextToReview = () => {
                       <p>{formData.office || '-'}</p>
                     </div>
                     <div>
-                      <label>Item Number (Application ID)</label>
-                      <p className="font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded inline-block cursor-not-allowed select-none">{formData.item_number || '-'}</p>
+                      <label>Plantilla Item No.</label>
+                      <p className="font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded inline-block cursor-not-allowed select-none">{formData.item_number || 'Not tied to a plantilla item'}</p>
+                    </div>
+                    <div>
+                      <label>Reference No.</label>
+                      {/* Issued by the system on submission, so there is nothing
+                          truthful to show here yet. */}
+                      <p className="italic text-slate-500">Assigned when you submit</p>
                     </div>
                     <div>
                       <label>Contact Number</label>
@@ -1583,10 +1576,10 @@ const handleNextToReview = () => {
             Your application has been received and is now under review.
           </p>
           <div className="submission-reference-box">
-            <p className="submission-reference-label">Your Application Item Number</p>
+            <p className="submission-reference-label">Your Reference No.</p>
             <p className="submission-reference">{submissionReference}</p>
             <p className="submission-reference-hint">
-              You can track your application status anytime using this code or your email address.
+              Keep this number. You can track your application status anytime using it or your email address.
             </p>
           </div>
           <div className="flex gap-3 mt-6">
@@ -1599,7 +1592,10 @@ const handleNextToReview = () => {
             </Button>
             <Button
               onClick={() => {
-                navigate('/track');
+                // Carry the Reference No. over so the tracker looks it up on
+                // arrival — the applicant has just been shown it and should
+                // not have to copy it across by hand.
+                navigate('/track', { state: { referenceNo: submissionReference } });
                 setShowSuccessDialog(false);
               }}
               style={{ flex: 1 }}

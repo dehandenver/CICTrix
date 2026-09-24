@@ -7,7 +7,8 @@ interface AttachmentsUploadFormProps {
   files: UploadedFile[];
   onFilesChange: (files: UploadedFile[]) => void;
   error?: string;
-  itemNumber?: string;
+  /** The position's Plantilla Item No., when applying through a job post. */
+  plantillaItemNo?: string;
   applicationType?: 'job' | 'promotion';
   formData?: ApplicantFormData;
   onChange?: (field: keyof ApplicantFormData, value: string | boolean) => void;
@@ -108,7 +109,7 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
   files,
   onFilesChange,
   error,
-  itemNumber,
+  plantillaItemNo,
   applicationType = 'job',
   formData,
   onChange,
@@ -223,7 +224,7 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
       <Card title="Upload Supporting Documents">
         <div className="info-notice">
           <p className="notice-title">Internal Promotional Application</p>
-          <p className="notice-number">{itemNumber || 'ITEM-0000-0000'}</p>
+          {plantillaItemNo && <p className="notice-number">Plantilla Item No. {plantillaItemNo}</p>}
           <p className="notice-subtitle">Upload all files that support your promotional application in one batch.</p>
         </div>
 
@@ -293,9 +294,11 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
   return (
     <Card title="Upload Required Documents">
       <div className="info-notice">
-        <p className="notice-title">📋 Your Application Item Number</p>
-        <p className="notice-number">{itemNumber || 'ITEM-0000-0000'}</p>
-        <p className="notice-subtitle">This number will be assigned to your application automatically.</p>
+        <p className="notice-title">📋 {plantillaItemNo ? 'Plantilla Item No. You Are Applying For' : 'General Application'}</p>
+        {plantillaItemNo && <p className="notice-number">{plantillaItemNo}</p>}
+        <p className="notice-subtitle">
+          Your Reference No. for tracking this application is issued once you submit.
+        </p>
       </div>
 
       <div className="upload-section">

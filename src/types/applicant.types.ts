@@ -7,6 +7,12 @@ export interface ApplicantFormData {
   contact_number: string;
   email: string;
   position: string;
+  /**
+   * The official Plantilla Item No. of the position applied for
+   * (e.g. ABYAN-2026-985). Tied to the job post's slot, NOT to the applicant —
+   * the applicant's own tracking code is `reference_no`, which the database
+   * issues on submission. Empty for a general/walk-in application.
+   */
   item_number: string;
   office: string;
   is_pwd: boolean;

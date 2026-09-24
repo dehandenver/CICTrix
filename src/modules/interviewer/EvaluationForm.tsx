@@ -634,7 +634,7 @@ export function EvaluationForm() {
 
                 <div className="pcpt-info-row">
                   <div className="pcpt-info-group full-width">
-                    <label className="pcpt-label">Item Number:</label>
+                    <label className="pcpt-label">Plantilla Item No.:</label>
                     <span className="pcpt-value">{applicant.item_number || 'N/A'}</span>
                   </div>
                 </div>
@@ -904,7 +904,7 @@ export function EvaluationForm() {
 
                 <div className="oral-info-row">
                   <div className="oral-info-group full-width">
-                    <label className="oral-label">Item Number:</label>
+                    <label className="oral-label">Plantilla Item No.:</label>
                     <span className="oral-value">{applicant.item_number || 'N/A'}</span>
                   </div>
                 </div>

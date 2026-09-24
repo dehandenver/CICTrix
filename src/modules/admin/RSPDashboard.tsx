@@ -3685,7 +3685,7 @@ export const RSPDashboard = () => {
                           <h3 className="!mb-0 text-2xl font-semibold text-[var(--text-primary)]">{job.title}</h3>
                           <span className={`rounded-full px-4 py-1 text-base font-semibold ${getStatusClass(job.status)}`}>{job.status}</span>
                         </div>
-                        <p className="!mb-3 text-lg text-[var(--text-secondary)]">Item No. {job.item_number}</p>
+                        <p className="!mb-3 text-lg text-[var(--text-secondary)]">Plantilla Item No. {job.item_number}</p>
                         <p className="!mb-1 flex items-center gap-2 text-base text-[var(--text-secondary)]"><Building2 size={18} /> {job.department}</p>
                         <p className="!mb-1 flex items-center gap-2 text-base text-[var(--text-secondary)]"><Calendar size={18} /> Posted {formatDate(job.created_at)}</p>
                         <p className="!mb-5 flex items-center gap-2 text-base text-[var(--text-secondary)]"><Users size={18} /> {job.applicant_count} Applicants</p>
@@ -4687,7 +4687,7 @@ export const RSPDashboard = () => {
                                 <tr className="border-b border-slate-200 bg-slate-50">
                                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position Title</th>
                                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
-                                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Item No.</th>
+                                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Plantilla Item No.</th>
                                   <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Date</th>
                                   <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                                 </tr>

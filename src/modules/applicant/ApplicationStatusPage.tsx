@@ -1,14 +1,25 @@
 import { AlertCircle, CheckCircle2, CircleX, FileText, Lock, Mail, RefreshCw, Search, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import { getApplicants, saveApplicants } from '../../lib/recruitmentData';
 import { parseDisqualificationReason, getDisqualificationReasonLabel } from '../../lib/applicationActivity';
 import { fetchApplicantSlotLinks, fetchSlotsByJobPosting } from '../../lib/plantillaSlots';
 import type { ApplicationSlotStatus, PlantillaSlot } from '../../types/recruitment.types';
 
+/** The columns the tracker is allowed to look an application up by. */
+type TrackerLookupColumn = 'reference_no_normalized' | 'item_number' | 'email';
+
+/** Reference numbers get read off a printout and typed back in. */
+const normalizeReference = (value: string) =>
+  String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 interface ApplicationRecord {
   id: string;
+  /** The Plantilla Item No. applied for — a position code. */
   item_number: string;
+  /** This application's system-issued tracking code, ABYAN-000-000. */
+  reference_no: string;
   first_name: string;
   last_name: string;
   email: string;
@@ -242,6 +253,7 @@ const getBadge = (status: string) =>
   STATUS_BADGE[status] ?? { label: status || 'Pending', tone: 'new' as BadgeTone };
 
 export const ApplicationStatusPage = () => {
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [record, setRecord] = useState<ApplicationRecord | null>(null);
@@ -261,11 +273,12 @@ export const ApplicationStatusPage = () => {
   // the SAME query path that handleSearch already uses (which we know works).
   // Querying by UUID (.eq('id',...)) can silently fail on some Supabase RLS configs;
   // querying by item_number / email always works because handleSearch proved it.
-  const searchParamsRef = useRef<{ col: 'item_number' | 'email'; val: string } | null>(null);
+  const searchParamsRef = useRef<{ col: TrackerLookupColumn; val: string } | null>(null);
 
   const mapRow = (row: Record<string, unknown>): ApplicationRecord => ({
     id: String(row.id ?? ''),
     item_number: String(row.item_number ?? ''),
+    reference_no: String(row.reference_no ?? ''),
     first_name: String(row.first_name ?? ''),
     last_name: String(row.last_name ?? ''),
     email: String(row.email ?? ''),
@@ -416,11 +429,18 @@ export const ApplicationStatusPage = () => {
 
   const getReviewKey = (applicantId: string, filePath: string) => `${applicantId}::${filePath}`;
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = query.trim();
+  /**
+   * Look an application up by Reference No. or email.
+   *
+   * Split out from the form handler so the page can also run itself — an
+   * applicant arriving straight from the submission dialog, or following a
+   * /track?ref=ABYAN-123-456 link, should not have to retype the number they
+   * were just given.
+   */
+  const runSearch = async (rawQuery: string) => {
+    const trimmed = rawQuery.trim();
     if (!trimmed) {
-      setError('Please enter your application number or email.');
+      setError('Please enter your Reference No. or email.');
       return;
     }
 
@@ -436,15 +456,32 @@ export const ApplicationStatusPage = () => {
 
     try {
       const looksLikeEmail = trimmed.includes('@');
-      const lookupColumn = looksLikeEmail ? 'email' : 'item_number';
-      const lookupValue = looksLikeEmail ? trimmed.toLowerCase() : trimmed.toUpperCase();
+      // Reference numbers are matched on their normalised form, so
+      // "abyan 123 456", "ABYAN-123-456" and "abyan123456" all find the same
+      // application. The DB holds that normalised form in a generated column.
+      const lookupColumn = looksLikeEmail ? 'email' : 'reference_no_normalized';
+      const lookupValue = looksLikeEmail ? trimmed.toLowerCase() : normalizeReference(trimmed);
 
-      const { data, error: dbError } = await (supabase as any)
-        .from('applicant_tracker_view')
-        .select('*')
-        .eq(lookupColumn, lookupValue)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      const runLookup = async (col: string, val: string) =>
+        await (supabase as any)
+          .from('applicant_tracker_view')
+          .select('*')
+          .eq(col, val)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+      let activeColumn = lookupColumn;
+      let activeValue = lookupValue;
+      let { data, error: dbError } = await runLookup(activeColumn, activeValue);
+
+      // Before migration 20260923 there is no reference_no column, and the old
+      // tracking codes still live in item_number. Fall back so anyone holding
+      // a pre-split code can still find themselves.
+      if (!looksLikeEmail && (dbError || !(Array.isArray(data) && data.length > 0))) {
+        activeColumn = 'item_number';
+        activeValue = trimmed.toUpperCase();
+        ({ data, error: dbError } = await runLookup(activeColumn, activeValue));
+      }
 
       if (dbError) throw new Error(dbError.message);
       const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
@@ -457,7 +494,7 @@ export const ApplicationStatusPage = () => {
       const mapped = mapRow(row as Record<string, unknown>);
 
       // Store search params so polling can reuse the same query (not UUID lookup)
-      searchParamsRef.current = { col: lookupColumn as 'item_number' | 'email', val: lookupValue };
+      searchParamsRef.current = { col: activeColumn as TrackerLookupColumn, val: activeValue };
       setRecord(mapped);
       await fetchAttachments(mapped.id);
 
@@ -471,6 +508,28 @@ export const ApplicationStatusPage = () => {
       setSearched(true);
     }
   };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runSearch(query);
+  };
+
+  // Arriving with a Reference No. already in hand — straight from the
+  // submission dialog, or via a /track?ref=... link — looks it up immediately.
+  // Runs once: re-running on every render would fight the applicant's typing.
+  const autoSearchedRef = useRef(false);
+  useEffect(() => {
+    if (autoSearchedRef.current) return;
+
+    const fromState = (location.state as { referenceNo?: string } | null)?.referenceNo;
+    const fromQuery = new URLSearchParams(location.search).get('ref');
+    const incoming = String(fromState ?? fromQuery ?? '').trim();
+    if (!incoming) return;
+
+    autoSearchedRef.current = true;
+    setQuery(incoming);
+    void runSearch(incoming);
+  }, [location.search, location.state]);
 
   const handleReupload = async (doc: AttachmentRow, file: File) => {
     if (!record) return;
@@ -705,14 +764,14 @@ export const ApplicationStatusPage = () => {
         {/* Search card */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <h2 className="text-lg font-bold" style={{ color: '#040E6B' }}>Search Application</h2>
-          <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Enter your application number to view detailed status</p>
+          <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Enter your Reference No. to view detailed status</p>
 
           <form onSubmit={handleSearch} className="mt-5 flex flex-col gap-3 sm:flex-row">
             <input
               type="text"
               value={query}
               onChange={(e) => { setQuery(e.target.value); setError(''); }}
-              placeholder="e.g., ITEM-2026-0001 or your.email@example.com"
+              placeholder="e.g., ABYAN-123-456 or your.email@example.com"
               className="flex-1 rounded-xl px-4 py-3 text-sm outline-none ring-1 ring-transparent focus:ring-2"
               style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}
             />
@@ -742,7 +801,7 @@ export const ApplicationStatusPage = () => {
             <FileText size={40} className="mx-auto mb-3" style={{ color: '#C8D1FF' }} />
             <p className="font-semibold" style={{ color: '#040E6B' }}>No application found</p>
             <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>
-              Double-check your application number or email address and try again.
+              Double-check your Reference No. or email address and try again.
             </p>
           </div>
         )}
@@ -818,7 +877,9 @@ export const ApplicationStatusPage = () => {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Application Details</h3>
-                  <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>{record.item_number || '—'}</p>
+                  <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>
+                    Reference No. {record.reference_no || '—'}
+                  </p>
                 </div>
                 <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${BADGE_CLASS[badge.tone]}`}>
                   {badge.tone === 'approved' && <CheckCircle2 size={14} />}

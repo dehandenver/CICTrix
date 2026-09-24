@@ -626,6 +626,7 @@ export const getApplicantsFromSupabase = async (): Promise<Applicant[]> => {
     
     const transformedApplicants: Applicant[] = data.map((row: any) => ({
       id: row.id,
+      referenceNo: row.reference_no || undefined,
       personalInfo: {
         firstName: row.first_name || '',
         lastName: row.last_name || '',
@@ -674,27 +675,47 @@ export const saveApplicants = (rows: Applicant[], options?: { broadcast?: boolea
   // Also persist to Supabase (source of truth) so changes are visible across tabs/sessions
   void (async () => {
     try {
-      const supabaseRows = rows.map((applicant) => ({
-        id: applicant.id,
-        first_name: applicant.personalInfo?.firstName || '',
-        last_name: applicant.personalInfo?.lastName || '',
-        email: applicant.personalInfo?.email || '',
-        contact_number: applicant.personalInfo?.phone || '',
-        address: applicant.personalInfo?.address || '',
-        dob: applicant.personalInfo?.dateOfBirth || '',
-        item_number: applicant.personalInfo?.itemNumber || '',
-        job_posting_id: applicant.jobPostingId || 'unposted',
-        application_type: applicant.applicationType || 'job',
-        status: applicant.status || 'New Application',
-        created_at: applicant.applicationDate || new Date().toISOString(),
-        notes: applicant.notes || [],
-        timeline: applicant.timeline || [],
-      }));
+      const supabaseRows = rows.map((applicant) => {
+        const row: Record<string, any> = {
+          id: applicant.id,
+          first_name: applicant.personalInfo?.firstName || '',
+          last_name: applicant.personalInfo?.lastName || '',
+          email: applicant.personalInfo?.email || '',
+          contact_number: applicant.personalInfo?.phone || '',
+          address: applicant.personalInfo?.address || '',
+          dob: applicant.personalInfo?.dateOfBirth || '',
+          job_posting_id: applicant.jobPostingId || 'unposted',
+          application_type: applicant.applicationType || 'job',
+          status: applicant.status || 'New Application',
+          created_at: applicant.applicationDate || new Date().toISOString(),
+          notes: applicant.notes || [],
+          timeline: applicant.timeline || [],
+        };
 
-      // Upsert (update if exists, insert if new) to Supabase
-      const { error } = await (supabase as any).from('applicants').upsert(supabaseRows, { 
-        onConflict: 'id' 
+        // item_number is the Plantilla Item No. of the position applied for —
+        // it belongs to the posting, not to this local record. Most callers
+        // here are status changes carrying a half-populated Applicant, so
+        // writing a blank would erase it. Only send it when we actually have
+        // one. reference_no is never sent at all: the DB owns it.
+        const plantillaItemNo = String(applicant.personalInfo?.itemNumber ?? '').trim();
+        if (plantillaItemNo) row.item_number = plantillaItemNo;
+
+        return row;
       });
+
+      // PostgREST rejects a bulk payload whose objects don't all carry the
+      // same keys (PGRST102), so the rows that have a Plantilla Item No. and
+      // the rows that don't go up as two uniform batches.
+      const withItemNumber = supabaseRows.filter((row) => 'item_number' in row);
+      const withoutItemNumber = supabaseRows.filter((row) => !('item_number' in row));
+
+      const results = await Promise.all(
+        [withItemNumber, withoutItemNumber]
+          .filter((batch) => batch.length > 0)
+          .map((batch) => (supabase as any).from('applicants').upsert(batch, { onConflict: 'id' })),
+      );
+
+      const error = results.find((result: any) => result?.error)?.error ?? null;
 
       if (error) {
         console.warn('[RECRUITMENT] Failed to save applicants to Supabase:', error);

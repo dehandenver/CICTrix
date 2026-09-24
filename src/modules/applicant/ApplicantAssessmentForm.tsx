@@ -343,9 +343,12 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           })()
         )}
 
+        {/* The position's official staffing-pattern code, shown only when the
+            applicant came in through a job post. Their own tracking code is
+            the Reference No., which the system issues on submission. */}
         <Input
-          label="Item Number"
-          placeholder="Generated automatically while filling out the form"
+          label="Plantilla Item No."
+          placeholder="Applies only when you apply through a specific job posting"
           value={formData.item_number}
           readOnly
         />

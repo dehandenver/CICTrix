@@ -48,6 +48,10 @@ const ITEMS_PER_PAGE = 10;
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
 
+/** Reference numbers get quoted back with arbitrary case and punctuation. */
+const normalizeReference = (value: string) =>
+  String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 const normalizeRomanNumeralsInText = (value: string) =>
   String(value ?? '')
     .split(/(\s+)/)
@@ -199,7 +203,7 @@ export const JobPostingsPage = () => {
   // are silently dropped before counting.
   const [allApplicantsRaw, setAllApplicantsRaw] = useState<any[]>([]);
   const [viewingApplicantsFor, setViewingApplicantsFor] = useState<JobPosting | null>(null);
-  const [jobApplicantsRows, setJobApplicantsRows] = useState<Array<{ id: string; full_name: string; email: string; contact_number: string; status: string; created_at: string; total_score: number | null; position: string; office: string; matched: boolean; slotIds: string[]; needsSlotReassignment: boolean }>>([]);
+  const [jobApplicantsRows, setJobApplicantsRows] = useState<Array<{ id: string; full_name: string; email: string; contact_number: string; status: string; created_at: string; total_score: number | null; position: string; office: string; matched: boolean; slotIds: string[]; needsSlotReassignment: boolean; referenceNo: string }>>([]);
   /** Plantilla slot id, or 'all', for the per-job applicants list. */
   const [jobApplicantsSlotFilter, setJobApplicantsSlotFilter] = useState<string>('all');
   const [jobApplicantsLoading, setJobApplicantsLoading] = useState(false);
@@ -222,7 +226,7 @@ export const JobPostingsPage = () => {
   const [savingJob, setSavingJob] = useState(false);
   /** Applicant counts per slot id, so removing a slot can warn about them. */
   const [slotApplicantCounts, setSlotApplicantCounts] = useState<Map<string, number>>(new Map());
-  /** Job post ids whose Item No. cell is expanded to the full list. */
+  /** Job post ids whose Plantilla Item No. cell is expanded to the full list. */
   const [expandedSlotJobIds, setExpandedSlotJobIds] = useState<Set<string>>(new Set());
 
   const resolveLiveApplicants = async (jobRows: JobPosting[]) => {
@@ -296,11 +300,27 @@ export const JobPostingsPage = () => {
     const tokensOf = (value: string) =>
       new Set(expandAbbrev(value).split(/\s+/).filter((t) => t.length >= 3));
 
+    // A real application -> slot link beats every heuristic below it. Once an
+    // applicant has ticked a plantilla item there is nothing to guess at, so
+    // this is consulted first and the string matching only covers rows that
+    // predate the slots (or walk-in applications filed outside a posting).
+    const slotLinksByApplicant = await fetchApplicantSlotLinks();
+    const jobIdBySlotId = new Map<string, string>();
+    activeJobs.forEach((job) => {
+      (job.plantillaSlots ?? []).forEach((slot) => jobIdBySlotId.set(slot.id, job.id));
+    });
+
     const findJobIdFromRow = (row: any) => {
       const position = normalizeText(String(row?.position ?? ''));
       const office = normalizeText(String(row?.office ?? ''));
       const itemKey = normalizeFuzzy(String(row?.item_number ?? ''));
       const explicitJobId = String(row?.job_posting_id ?? '').trim();
+
+      const linkedSlots = slotLinksByApplicant.get(String(row?.id ?? '')) ?? [];
+      for (const link of linkedSlots) {
+        const jobId = jobIdBySlotId.get(link.slotId);
+        if (jobId) return jobId;
+      }
 
       if (explicitJobId) {
         const byId = activeJobs.find((job) => String(job.id) === explicitJobId);
@@ -658,9 +678,21 @@ export const JobPostingsPage = () => {
 
         const jobTitleKey = normalize(job.title);
         const jobTitleExpanded = expandAbbrev(job.title);
-        const jobItemKey = normalize(job.jobCode);
+        // Every plantilla item on this posting, not just slot 1's mirror —
+        // an applicant who ticked Plantilla 3 carries THAT item number.
+        const jobItemKeys = new Set(
+          [job.jobCode, ...(job.plantillaSlots ?? []).map((slot) => slot.itemNumber)]
+            .map(normalize)
+            .filter(Boolean),
+        );
         const jobOfficeKey = normalize(job.division || job.department || '');
         const jobTitleTokens = tokens(job.title);
+
+        // Which plantilla slot(s) each applicant ticked. An applicant can be in
+        // the running for several slots on this same posting under one
+        // application, so this is a list, not a single value.
+        const slotIdsOnThisJob = new Set((job.plantillaSlots ?? []).map((slot) => slot.id));
+        const slotLinks = await fetchApplicantSlotLinks();
 
         // IDs that the page's existing loader already matched to this job via
         // findJobIdFromRow (handles position+office fallback resolution).
@@ -674,8 +706,12 @@ export const JobPostingsPage = () => {
           const rowId = String(row?.id ?? '');
           if (preMatchedIds.has(rowId)) return true;
 
+          // A real slot link is proof, not a guess.
+          const linked = slotLinks.get(rowId) ?? [];
+          if (linked.some((link) => slotIdsOnThisJob.has(link.slotId))) return true;
+
           const rowItem = normalize(row?.item_number);
-          if (jobItemKey && rowItem && rowItem === jobItemKey) return true;
+          if (rowItem && jobItemKeys.has(rowItem)) return true;
 
           const rowPositionNormalized = normalize(row?.position);
           const rowPositionExpanded = expandAbbrev(row?.position);
@@ -705,12 +741,6 @@ export const JobPostingsPage = () => {
           if (entry?.id && entry?.status) localStatusById.set(String(entry.id), String(entry.status));
         }
 
-        // Which plantilla slot(s) each applicant ticked. An applicant can be in
-        // the running for several slots on this same posting under one
-        // application, so this is a list, not a single value.
-        const slotIdsOnThisJob = new Set((job.plantillaSlots ?? []).map((slot) => slot.id));
-        const slotLinks = await fetchApplicantSlotLinks();
-
         const mapped = data.map((row: any) => {
           const firstName = String(row.first_name ?? '').trim();
           const middleName = String(row.middle_name ?? '').trim();
@@ -734,6 +764,7 @@ export const JobPostingsPage = () => {
               .map((link) => link.slotId)
               .filter((slotId) => slotIdsOnThisJob.has(slotId)),
             needsSlotReassignment: Boolean(row.needs_slot_reassignment),
+            referenceNo: String(row.reference_no ?? ''),
           };
         });
 
@@ -1268,12 +1299,16 @@ export const JobPostingsPage = () => {
           const jobSlots = job.plantillaSlots ?? [];
           const slotById = new Map(jobSlots.map((slot) => [slot.id, slot]));
           const term = jobApplicantsSearch.trim().toLowerCase();
+          // Reference No. matches on its normalised form, so an admin can
+          // paste it exactly as the applicant quoted it.
+          const referenceTerm = normalizeReference(term);
           const bySearch = term
             ? jobApplicantsRows.filter((r) =>
                 r.full_name.toLowerCase().includes(term) ||
                 r.email.toLowerCase().includes(term) ||
                 r.status.toLowerCase().includes(term) ||
-                r.position.toLowerCase().includes(term),
+                r.position.toLowerCase().includes(term) ||
+                (referenceTerm.length > 0 && normalizeReference(r.referenceNo).includes(referenceTerm)),
               )
             : jobApplicantsRows;
 
@@ -1318,6 +1353,12 @@ export const JobPostingsPage = () => {
                       {a.email && <span>{a.email}</span>}
                       {a.contact_number && <span>· {a.contact_number}</span>}
                     </p>
+                    {/* The code the applicant quotes when they write in. */}
+                    {a.referenceNo && (
+                      <p className="!mb-1 text-xs text-slate-500">
+                        Reference No. <span className="font-mono text-slate-700">{a.referenceNo}</span>
+                      </p>
+                    )}
                     <p className="!mb-0 text-xs text-slate-400">
                       Applied for <span className="font-semibold text-slate-600">{a.position || '—'}</span>
                       {a.office && <> · {a.office}</>}
@@ -1385,7 +1426,7 @@ export const JobPostingsPage = () => {
                     {formatOfficeLabel(job.department, job.division)} ·{' '}
                     {jobSlots.length > 1
                       ? `${jobSlots.length} plantilla items`
-                      : `Item No. ${jobSlots[0]?.itemNumber || job.jobCode}`}{' '}
+                      : `Plantilla Item No. ${jobSlots[0]?.itemNumber || job.jobCode}`}{' '}
                     · {totalMatched} matched · {totalInDb} in database
                   </p>
                 </div>
@@ -1410,7 +1451,7 @@ export const JobPostingsPage = () => {
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                   <input
                     className="h-10 w-full rounded-xl border border-slate-300 pl-10 pr-3 text-sm"
-                    placeholder="Search applicants by name, email, position, or status…"
+                    placeholder="Search applicants by name, email, position, status, or Reference No.…"
                     value={jobApplicantsSearch}
                     onChange={(event) => setJobApplicantsSearch(event.target.value)}
                   />
@@ -1541,7 +1582,7 @@ export const JobPostingsPage = () => {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position Title</th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Item No.</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Plantilla Item No.</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Office / Department</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Date Posted</th>
                   <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
@@ -1758,7 +1799,7 @@ export const JobPostingsPage = () => {
                               </span>
                               <input
                                 className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                                placeholder="Item No. e.g., ABYAN-2026-451"
+                                placeholder="Plantilla Item No. e.g., ABYAN-2026-451"
                                 value={slot.itemNumber}
                                 onChange={(event) => updateSlot(slot.key, { itemNumber: event.target.value })}
                               />

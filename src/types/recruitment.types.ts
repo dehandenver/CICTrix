@@ -113,9 +113,17 @@ export interface Applicant {
     currentDivision?: string;
     employeeUsername?: string;
   };
+  /**
+   * System-generated tracking code for this one application, format
+   * ABYAN-000-000. Issued by the database on insert, never edited, and never
+   * reissued — one per application no matter how many plantilla slots it
+   * covers. Distinct from the position's Plantilla Item No.
+   */
+  referenceNo?: string;
   personalInfo: {
     firstName: string;
     lastName: string;
+    /** The Plantilla Item No. applied for — a position code, not a tracking code. */
     itemNumber?: string;
     email: string;
     phone: string;
