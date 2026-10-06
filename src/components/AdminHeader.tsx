@@ -44,6 +44,9 @@ export const AdminHeader = ({
           type="button"
           aria-label="ABYAN HRIS — go to portal home"
           className="flex min-w-0 flex-1 items-center gap-3 cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          // Inline, so it beats globals.css `button:hover`, which painted this
+          // whole lockup white (white logo and text on white) on hover.
+          style={{ backgroundColor: 'transparent' }}
           onClick={() => navigate(homeUrl)}
         >
           <img
