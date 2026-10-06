@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDS step list</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; padding: 24px; background: #F1F5F9; font-family: Poppins, sans-serif; color: #28343D; }
+  h1 { font: 600 18px/24px Poppins; color: #040E6B; margin: 0 0 4px; }
+  p.note { font: 500 12px/16px Poppins; color: #515F69; margin: 0 0 20px; max-width: 760px; }
+  .layout { display: flex; gap: 16px; align-items: flex-start; }
+  .steps { width: 230px; flex: none; background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px 12px; position: sticky; top: 16px; }
+  .step { display: flex; gap: 10px; align-items: flex-start; position: relative; padding: 4px 6px 12px; margin: 0 -6px; border-radius: 8px; cursor: pointer; }
+  .step:last-child { padding-bottom: 4px; }
+  .dot { width: 24px; height: 24px; flex: none; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center; font: 600 10px Poppins; z-index: 1; background: #fff; border: 1.5px solid #CBD5E1; color: #515F69; }
+  .lbl { font: 500 13px/24px Poppins; color: #515F69; }
+  .step::after { content: ''; position: absolute; left: 17px; top: 28px; bottom: 0; width: 2px; background: #E2E8F0; }
+  .step:last-child::after { display: none; }
+  .step.done .dot { background: #16A85A; border-color: #16A85A; color: #fff; }
+  .step.done .lbl { color: #28343D; }
+  .step.done::after { background: #16A85A; }
+  .step.current { background: #EEF0FF; }
+  .step.current .dot { background: #363EE8; border-color: #363EE8; color: #fff; }
+  .step.current .lbl { color: #040E6B; font-weight: 600; }
+  .form { flex: 1; background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; }
+  .form h2 { font: 600 18px/24px Poppins; color: #040E6B; margin: 0 0 12px; }
+  .field { height: 40px; border: 1px solid #E2E8F0; border-radius: 8px; margin-top: 10px; }
+  .compact { display: none; background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .compact .top { display: flex; justify-content: space-between; font: 600 12px/16px Poppins; letter-spacing: .4px; text-transform: uppercase; color: #515F69; }
+  .bar { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; margin: 8px 0 12px; }
+  .bar span { height: 6px; border-radius: 3px; background: #E2E8F0; }
+  .bar .d { background: #16A85A; } .bar .c { background: #363EE8; }
+  .nbrs { display: flex; justify-content: space-between; gap: 8px; font: 500 12px Poppins; color: #515F69; }
+  .nbrs b { font: 600 15px/20px Poppins; color: #040E6B; text-align: center; }
+  @media (max-width: 1023px) { .steps { display: none; } .compact { display: block; } .layout { display: block; } }
+</style>
+</head>
+<body>
+<h1>PDS step list (chosen: option D, 2026-10-06)</h1>
+<p class="note">Desktop (≥1024px): vertical step list beside the section card, sticky while scrolling. Below 1024px it collapses to the compact strip (option C): step count, segmented progress bar, previous/current/next, jump dropdown. ✓ = section had saved data on load, or was saved successfully this session (an empty save counts). Every step stays clickable; the order is guidance, not a gate. Resize the window to see both.</p>
+
+<div class="compact">
+  <div class="top"><span>Step 3 of 9</span><span>2 saved</span></div>
+  <div class="bar"><span class="d"></span><span class="d"></span><span class="c"></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  <div class="nbrs"><span>‹ II. Family</span><b>III. Educational Background</b><span style="color:#363EE8">IV. Eligibility ›</span></div>
+  <div style="margin-top:12px;border-top:1px solid #E2E8F0;padding-top:10px;font:500 12px Poppins;color:#363EE8">Jump to section ⌄</div>
+</div>
+
+<div class="layout">
+  <nav class="steps" aria-label="PDS sections">
+    <div class="step done"><span class="dot">✓</span><span class="lbl">Personal Information</span></div>
+    <div class="step done"><span class="dot">✓</span><span class="lbl">Family Background</span></div>
+    <div class="step current" aria-current="step"><span class="dot">III</span><span class="lbl">Educational Background</span></div>
+    <div class="step"><span class="dot">IV</span><span class="lbl">Civil Service Eligibility</span></div>
+    <div class="step"><span class="dot">V</span><span class="lbl">Work Experience</span></div>
+    <div class="step"><span class="dot">VI</span><span class="lbl">Voluntary Work</span></div>
+    <div class="step"><span class="dot">VII</span><span class="lbl">Learning &amp; Development</span></div>
+    <div class="step"><span class="dot" style="font-size:8px">VIII</span><span class="lbl">Other Information</span></div>
+    <div class="step"><span class="dot">IX</span><span class="lbl">Background Information</span></div>
+  </nav>
+  <section class="form">
+    <h2>III. Educational Background</h2>
+    <div class="field"></div><div class="field"></div><div class="field"></div><div class="field"></div>
+  </section>
+</div>
+</body>
+</html>

@@ -63,6 +63,59 @@ export function resolveSchedule(
   return schedules.find((s) => s.scope === 'system' && s.phase === phase) ?? null;
 }
 
+export interface EffectiveSchedules {
+  target: PhaseSchedule | null;
+  rating: PhaseSchedule | null;
+}
+
+/**
+ * The phase windows that apply to one employee: their office's override when
+ * one exists, otherwise the system default. Never throws.
+ */
+export async function loadEffectiveSchedules(employeeId: string | null | undefined): Promise<EffectiveSchedules> {
+  // Resolve the employee's office (departments.id) to match an override row.
+  let officeId: string | null = null;
+  if (employeeId) {
+    try {
+      const { data: empRow, error: empError } = await supabase
+        .from('employees_with_department')
+        .select('department')
+        .eq('id', employeeId)
+        .maybeSingle();
+      if (empError) throw empError;
+      const officeName = String(empRow?.department ?? '').trim();
+      if (officeName) {
+        const { data: dep, error: depError } = await supabase
+          .from('departments')
+          .select('id')
+          .eq('name', officeName)
+          .maybeSingle();
+        if (depError) throw depError;
+        officeId = dep?.id ?? null;
+      }
+    } catch (err) {
+      console.warn('[phaseSchedules] office lookup failed, using system schedules', err);
+      officeId = null;
+    }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('phase_schedules')
+      .select('*')
+      .or(officeId ? `scope.eq.system,office_id.eq.${officeId}` : 'scope.eq.system');
+    if (error) throw error;
+    const rows = (Array.isArray(data) ? data : []) as PhaseSchedule[];
+    return {
+      target: resolveSchedule(rows, officeId, 'target_setting'),
+      rating: resolveSchedule(rows, officeId, 'rating'),
+    };
+  } catch (err) {
+    console.warn('[phaseSchedules] failed to load phase schedules', err);
+    return { target: null, rating: null };
+  }
+}
+
 export async function listSchedules(): Promise<
   { ok: true; data: PhaseSchedule[] } | { ok: false; error: string }
 > {

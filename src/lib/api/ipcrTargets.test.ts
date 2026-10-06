@@ -1,11 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   blankMfo,
   emptyTargets,
   flattenForWorkspace,
   hasSubmittableTarget,
+  saveTargetSetting,
   type TargetsByFunction,
 } from './ipcrTargets';
+
+const { loadEffectiveSchedulesMock } = vi.hoisted(() => ({ loadEffectiveSchedulesMock: vi.fn() }));
+
+vi.mock('./phaseSchedules', async (importActual) => ({
+  ...(await importActual<typeof import('./phaseSchedules')>()),
+  loadEffectiveSchedules: loadEffectiveSchedulesMock,
+}));
+
+// Every query resolves to "no row / query error", so anything past the submit
+// guard fails fast instead of touching a database.
+vi.mock('../supabase', () => {
+  const result = { data: null, error: { message: 'stubbed supabase' } };
+  const chain: any = new Proxy(() => chain, {
+    get: (_t, prop) => (prop === 'then' ? (resolve: any) => resolve(result) : chain),
+  });
+  return { supabase: chain };
+});
 
 describe('emptyTargets', () => {
   it('gives every category exactly one blank MFO with one blank indicator', () => {
@@ -92,5 +110,30 @@ describe('flattenForWorkspace', () => {
       { title: 'Payroll Management', indicators: [{ description: 'Process payroll within 3 days' }] },
     ];
     expect(flattenForWorkspace(targets.core)).toContain('Process payroll within 3 days');
+  });
+});
+
+describe('saveTargetSetting submit guard', () => {
+  const PHASE_CLOSED_ERROR =
+    'Phase 1 (Target Setting) is not currently open. The PM Division will notify you when it opens.';
+  const submittable = (): TargetsByFunction => {
+    const t = emptyTargets();
+    t.core[0].title = 'Payroll';
+    t.core[0].indicators[0].description = 'Pay on time';
+    return t;
+  };
+  const submit = () =>
+    saveTargetSetting({ employeeId: 'emp-1', cycleId: 1, targets: submittable(), submit: true });
+
+  it('lets an employee submit when their resolved (office override) target schedule is Open', async () => {
+    loadEffectiveSchedulesMock.mockResolvedValue({ target: { mode: 'Open' }, rating: null });
+    const res = await submit();
+    expect(loadEffectiveSchedulesMock).toHaveBeenCalledWith('emp-1');
+    expect(res.ok === false && res.error).not.toBe(PHASE_CLOSED_ERROR);
+  });
+
+  it('blocks submit when the resolved target schedule is Closed', async () => {
+    loadEffectiveSchedulesMock.mockResolvedValue({ target: { mode: 'Closed' }, rating: null });
+    expect(await submit()).toEqual({ ok: false, error: PHASE_CLOSED_ERROR });
   });
 });

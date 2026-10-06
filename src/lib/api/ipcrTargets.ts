@@ -9,7 +9,7 @@
  * flattened summary of the MFOs here. See flattenForWorkspace().
  */
 import { supabase } from '../supabase';
-import { listSchedules, effectiveState } from './phaseSchedules';
+import { loadEffectiveSchedules, effectiveState } from './phaseSchedules';
 
 export type FunctionType = 'core' | 'strategic' | 'support';
 // Matches the target_settings.status check in 20260715_ipcr_phase1_workflow_phase2.sql.
@@ -245,14 +245,8 @@ export async function saveTargetSetting(params: {
       }
 
       if (!hasProbationaryWindow) {
-        const { data: systemSched } = await (supabase as any)
-          .from('phase_schedules')
-          .select('*')
-          .eq('scope', 'system')
-          .eq('phase', 'target_setting')
-          .maybeSingle();
-        
-        const isOpen = systemSched ? effectiveState(systemSched) === 'Open' : false;
+        const { target } = await loadEffectiveSchedules(employeeId);
+        const isOpen = target ? effectiveState(target) === 'Open' : false;
         if (!isOpen) {
           return { ok: false, error: 'Phase 1 (Target Setting) is not currently open. The PM Division will notify you when it opens.' };
         }

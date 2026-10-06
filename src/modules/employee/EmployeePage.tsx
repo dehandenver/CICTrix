@@ -71,6 +71,7 @@ import {
   type TargetsByFunction,
   type TargetStatus,
 } from '../../lib/api/ipcrTargets';
+import { loadEffectiveSchedules } from '../../lib/api/phaseSchedules';
 import { generateIpcrPdf } from '../../lib/ipcrPdf';
 import { EmployeePhase2 } from './EmployeePhase2';
 import { supabase as supabaseClient } from '../../lib/supabase';
@@ -399,6 +400,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   };
 
   const latestEmployeeIpcrLoadId = useRef(0);
+  // Shared by the full load and refreshPhaseSchedules so an older phase-window
+  // fetch never overwrites a newer one (each resolve is several round trips).
+  const latestScheduleFetchId = useRef(0);
 
   const loadIPCRData = useCallback(async (isSilent = false) => {
     if (!currentUser.supabaseId) return;
@@ -627,22 +631,19 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   }, [isIpcrFormDirty, loadIPCRData]);
 
   /**
-   * Lightweight phase-gate refresh: re-reads only the two rows that govern this
-   * employee and updates systemSchedules without touching any form state, so
-   * Phase 1/2 open and close for them without waiting for the full reload (which
-   * is deferred while a form is dirty).
-   *
-   * It used to read `scope = 'system'` directly and so discarded the employee's
-   * office override; it now goes through the same resolver as the initial load.
+   * Lightweight phase-gate refresh: re-resolves the two phase windows (office
+   * override first, else system default, same as the full load) and updates
+   * systemSchedules without touching any form state. Called unconditionally
+   * from the realtime onChange so that isTargetSettingActive /
+   * isAccomplishmentRatingActive flip instantly for every employee when the
+   * PM opens or closes a phase — even when the full loadIPCRData reload is
+   * deferred due to a dirty form.
    */
   const refreshPhaseSchedules = useCallback(async () => {
     if (!currentUser.supabaseId) return;
-    try {
-      const gate = await fetchPhaseGate(currentUser.supabaseId);
-      setSystemSchedules((prev) => (sameGateState(prev, gate) ? prev : gate));
-    } catch (err) {
-      console.warn('[EmployeePage] refreshPhaseSchedules failed:', err);
-    }
+    const scheduleFetchId = ++latestScheduleFetchId.current;
+    const schedules = await loadEffectiveSchedules(currentUser.supabaseId);
+    if (scheduleFetchId === latestScheduleFetchId.current) setSystemSchedules(schedules);
   }, [currentUser.supabaseId]);
 
   /**

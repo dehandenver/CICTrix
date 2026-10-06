@@ -35,6 +35,7 @@ import type {
   EmployeeReference,
 } from '../../types/employee.types';
 import { emptyAddress, EDUCATION_LEVEL_LABELS } from '../../types/employee.types';
+import { PdsStepList } from './PdsStepList';
 import { patchPortalEmployee } from '../../lib/api/employeePortal';
 import {
   listChildren, saveChildren,
@@ -322,17 +323,61 @@ type SubTab =
   | 'eligibility' | 'workExperience' | 'voluntaryWork' | 'training'
   | 'otherInfo' | 'background';
 
-const SUB_TABS: { id: SubTab; label: string }[] = [
-  { id: 'personal', label: 'Personal Information' },
-  { id: 'family', label: 'Family Background' },
-  { id: 'education', label: 'Educational Background' },
-  { id: 'eligibility', label: 'Civil Service Eligibility' },
-  { id: 'workExperience', label: 'Work Experience' },
-  { id: 'voluntaryWork', label: 'Voluntary Work' },
-  { id: 'training', label: 'Learning & Development' },
-  { id: 'otherInfo', label: 'Other Information' },
-  { id: 'background', label: 'Background Information' },
+const SUB_TABS: { id: SubTab; label: string; numeral: string }[] = [
+  { id: 'personal', label: 'Personal Information', numeral: 'I' },
+  { id: 'family', label: 'Family Background', numeral: 'II' },
+  { id: 'education', label: 'Educational Background', numeral: 'III' },
+  { id: 'eligibility', label: 'Civil Service Eligibility', numeral: 'IV' },
+  { id: 'workExperience', label: 'Work Experience', numeral: 'V' },
+  { id: 'voluntaryWork', label: 'Voluntary Work', numeral: 'VI' },
+  { id: 'training', label: 'Learning & Development', numeral: 'VII' },
+  { id: 'otherInfo', label: 'Other Information', numeral: 'VIII' },
+  { id: 'background', label: 'Background Information', numeral: 'IX' },
 ];
+
+interface LoadedLists {
+  children?: EmployeeChild[];
+  education?: EmployeeEducation[];
+  eligibility?: EmployeeEligibility[];
+  workExperience?: EmployeeWorkExperience[];
+  voluntaryWork?: EmployeeVoluntaryWork[];
+  ldInterventions?: EmployeeLdIntervention[];
+  references?: EmployeeReference[];
+}
+
+const hasText = (v: string | null | undefined) => !!v && v.trim() !== '';
+
+/**
+ * Sections that already hold saved data. Adjust the field choices here.
+ * Scalar sections read `profile`; list sections read only the lists passed in
+ * (omitted list = unknown, so it never counts).
+ */
+export function getInitiallySavedSections(profile: Employee, lists: LoadedLists): Set<SubTab> {
+  const saved = new Set<SubTab>();
+  // Not the name: HR fills that in at hire. Place of birth only comes from the employee's own PDS save.
+  if (hasText(profile.placeOfBirth)) saved.add('personal');
+  if (
+    [
+      profile.spouseSurname, profile.spouseFirstName,
+      profile.fatherSurname, profile.fatherFirstName,
+      profile.motherSurname, profile.motherFirstName,
+    ].some(hasText) ||
+    (lists.children?.length ?? 0) > 0
+  ) saved.add('family');
+  if (lists.education?.some((r) => hasText(r.school))) saved.add('education');
+  if ((lists.eligibility?.length ?? 0) > 0) saved.add('eligibility');
+  if ((lists.workExperience?.length ?? 0) > 0) saved.add('workExperience');
+  if ((lists.voluntaryWork?.length ?? 0) > 0) saved.add('voluntaryWork');
+  if ((lists.ldInterventions?.length ?? 0) > 0) saved.add('training');
+  if ([profile.specialSkillsHobbies, profile.nonAcademicDistinctions, profile.membershipAssociations].some(hasText)) saved.add('otherInfo');
+  if (
+    profile.relatedThirdDegree != null ||
+    profile.personWithDisability != null ||
+    hasText(profile.govIdType) ||
+    (lists.references?.length ?? 0) > 0
+  ) saved.add('background');
+  return saved;
+}
 
 /** Back/Next between sections, reachable without scrolling back up to the tab bar. Reuses whatever handler the tab bar itself uses, so behavior (including clearing stale save banners) stays identical either way. */
 const TabNavBar: React.FC<{ activeTab: SubTab; onSelect: (t: SubTab) => void }> = ({ activeTab, onSelect }) => {
@@ -399,11 +444,17 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [savedIds, setSavedIds] = useState<Set<SubTab>>(() => getInitiallySavedSections(profile, profile));
+
+  const markSaved = (...ids: SubTab[]) =>
+    setSavedIds((prev) => (ids.every((id) => prev.has(id)) ? prev : new Set([...prev, ...ids])));
 
   useEffect(() => {
     setDraft(getScalarDraft(profile));
     setResidential(profile.residential || emptyAddress());
     setPermanent(profile.permanent || emptyAddress());
+    markSaved(...getInitiallySavedSections(profile, {}));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- markSaved is a stable-enough state updater wrapper
   }, [profile]);
 
   useEffect(() => {
@@ -428,6 +479,15 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       if (voluntaryWorkRes.ok !== false) setVoluntaryWork(voluntaryWorkRes.data);
       if (ldInterventionsRes.ok !== false) setLdInterventions(ldInterventionsRes.data);
       if (referencesRes.ok !== false) setReferences(referencesRes.data);
+      markSaved(...getInitiallySavedSections({} as Employee, {
+        children: childrenRes.ok !== false ? childrenRes.data : undefined,
+        education: educationRes.ok !== false ? educationRes.data : undefined,
+        eligibility: eligibilityRes.ok !== false ? eligibilityRes.data : undefined,
+        workExperience: workExperienceRes.ok !== false ? workExperienceRes.data : undefined,
+        voluntaryWork: voluntaryWorkRes.ok !== false ? voluntaryWorkRes.data : undefined,
+        ldInterventions: ldInterventionsRes.ok !== false ? ldInterventionsRes.data : undefined,
+        references: referencesRes.ok !== false ? referencesRes.data : undefined,
+      }));
       setListsLoading(false);
     })();
     return () => { cancelled = true; };
@@ -519,6 +579,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved(scalarPatch);
     setSaveSuccess('Personal Information saved.');
+    markSaved('personal');
     setSaving(false);
   };
 
@@ -562,6 +623,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved(scalarPatch);
     setSaveSuccess('Family Background saved.');
+    markSaved('family');
     setSaving(false);
   };
 
@@ -579,6 +641,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved({});
     setSaveSuccess('Educational Background saved.');
+    markSaved('education');
     setSaving(false);
   };
 
@@ -596,6 +659,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved({});
     setSaveSuccess('Civil Service Eligibility saved.');
+    markSaved('eligibility');
     setSaving(false);
   };
 
@@ -613,6 +677,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved({});
     setSaveSuccess('Work Experience saved.');
+    markSaved('workExperience');
     setSaving(false);
   };
 
@@ -630,6 +695,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved({});
     setSaveSuccess('Voluntary Work saved.');
+    markSaved('voluntaryWork');
     setSaving(false);
   };
 
@@ -647,6 +713,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved({});
     setSaveSuccess('Learning & Development history saved.');
+    markSaved('training');
     setSaving(false);
   };
 
@@ -670,6 +737,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved(scalarPatch);
     setSaveSuccess('Other Information saved.');
+    markSaved('otherInfo');
     setSaving(false);
   };
 
@@ -726,34 +794,15 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     onSaved(scalarPatch);
     setSaveSuccess('Background Information saved.');
+    markSaved('background');
     setSaving(false);
   };
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap gap-1.5">
-        {SUB_TABS.map((tab) => {
-          const isActive = tab.id === activeTab;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => selectTab(tab.id)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-                borderRadius: 8, padding: '0.45rem 0.9rem',
-                fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
-                border: isActive ? `1.5px solid ${BRAND.blue}` : `1.5px solid ${BRAND.line}`,
-                background: isActive ? BRAND.blue : '#F0F2FD',
-                color: isActive ? '#ffffff' : BRAND.navy,
-                transition: 'all 0.15s',
-              }}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <PdsStepList steps={SUB_TABS} activeId={activeTab} savedIds={savedIds} onSelect={selectTab} />
+        <div className="min-w-0 flex-1 space-y-5">
 
       {saveError && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{saveError}</p>
@@ -1258,6 +1307,8 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <SaveBar saving={saving} onSave={() => void saveBackgroundSection()} label="Save Background Information" />
       </SectionCard>
       )}
+        </div>
+      </div>
     </div>
   );
 };
