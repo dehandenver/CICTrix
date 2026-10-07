@@ -391,14 +391,16 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
                 </button>
               </div>
 
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="mt-2 inline-flex w-full items-center justify-center rounded-xl bg-[#4F46E5] px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-indigo-500/20 transition hover:bg-[#4338CA] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
-              >
-                {loading ? 'Signing in…' : 'Sign in'}
-              </button>
+              {/* Submit — Primary, Large, the page's one primary action (§9.1). */}
+              <div className="abyan-ds mt-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn btn-lg btn-primary w-full"
+                >
+                  {loading ? 'Signing in…' : 'Sign in'}
+                </button>
+              </div>
             </form>
 
           </div>

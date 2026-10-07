@@ -2021,12 +2021,12 @@ export const JobPostingsPage = () => {
               </section>
             </div>
 
-            <div className="flex justify-end gap-3 border-t px-6 py-4" style={{ borderColor: '#C8D1FF' }}>
+            {/* Dialog footer (§9.10): Cancel (secondary) left of the primary action. */}
+            <div className="abyan-ds flex justify-end gap-3 border-t px-6 py-4" style={{ borderColor: 'var(--color-primary-200)' }}>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="rounded-xl border px-5 py-2 text-sm font-semibold"
-                style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
+                className="btn btn-md btn-secondary"
               >
                 Cancel
               </button>
@@ -2034,8 +2034,7 @@ export const JobPostingsPage = () => {
                 type="button"
                 disabled={savingJob}
                 onClick={() => void submitForm('Active')}
-                className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                style={{ backgroundColor: '#363EE8' }}
+                className="btn btn-md btn-primary"
               >
                 <Plus size={15} />
                 {savingJob ? 'Saving…' : editingId ? 'Save Changes' : 'Create Position'}

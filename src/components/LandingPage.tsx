@@ -312,16 +312,18 @@ export const LandingPage = () => {
           <p className="mx-auto mt-5 max-w-2xl text-base text-indigo-100 sm:text-lg">
             Discover open positions, track your application, and manage your employee records through our secure, all-in-one platform. Abyan mo sa pag-asenso.
           </p>
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          {/* On-blue hero CTAs (§9.1): Solid white + Ghost white, Large. */}
+          <div className="abyan-ds mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <button
+              type="button"
               onClick={() => navigate('/job-portal')}
-              className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]"
+              className="btn btn-lg btn-white"
             >
               <Briefcase size={18} /> Apply for a Job
             </button>
             <Link
               to="/track"
-              className="inline-flex items-center gap-2 rounded-[14px] border border-white/40 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+              className="btn btn-lg btn-ghost-white"
             >
               <Search size={18} /> Track Application
             </Link>
@@ -446,23 +448,22 @@ export const LandingPage = () => {
                         <td className="px-4 py-3 text-slate-600">
                           {job.closingDate ? formatDate(job.closingDate) : 'Until filled'}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        {/* Table actions (§9.5): Details = Small secondary, Apply = Small primary. */}
+                        <td className="abyan-ds px-4 py-3 text-center">
                           <button
                             type="button"
                             onClick={() => navigate(`/job-details/${encodeURIComponent(job.originalJob.id)}`, { state: { landingJob: job } })}
-                            className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-50"
+                            className="btn btn-sm btn-secondary"
                           >
                             Details
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="abyan-ds px-4 py-3 text-center">
                           <button
                             type="button"
                             disabled={isClosed}
                             onClick={() => navigate('/apply', { state: { landingJob: job } })}
-                            className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-white transition ${
-                              isClosed ? 'cursor-not-allowed bg-slate-300' : 'cursor-pointer bg-[#363EE8] hover:bg-[#2f35d0]'
-                            }`}
+                            className="btn btn-sm btn-primary"
                           >
                             Apply
                           </button>

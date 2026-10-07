@@ -417,18 +417,19 @@ export function JobPortalPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                {/* Card actions (§9.1): Small secondary + Small primary. */}
+                <div className="abyan-ds grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => navigate(`/job-details/${encodeURIComponent(job.originalJob?.id ?? job.itemNumber)}`, { state: { landingJob: job } })}
-                    className="inline-flex justify-center items-center rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"
+                    className="btn btn-sm btn-secondary w-full"
                   >
                     View Details
                   </button>
                   <button
                     type="button"
                     onClick={() => navigate('/apply', { state: { landingJob: job } })}
-                    className="inline-flex justify-center items-center rounded-xl bg-[#363EE8] py-2.5 text-sm font-semibold text-white transition hover:bg-[#2e35d4] shadow-sm shadow-[#363EE8]/10"
+                    className="btn btn-sm btn-primary w-full"
                   >
                     Apply Now
                   </button>
@@ -469,18 +470,18 @@ export function JobPortalPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
+                      <div className="abyan-ds flex items-center justify-center gap-2">
                         <button
                           type="button"
                           onClick={() => navigate(`/job-details/${encodeURIComponent(job.originalJob?.id ?? job.itemNumber)}`, { state: { landingJob: job } })}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                          className="btn btn-sm btn-secondary"
                         >
                           Details
                         </button>
                         <button
                           type="button"
                           onClick={() => navigate('/apply', { state: { landingJob: job } })}
-                          className="rounded-lg bg-[#363EE8] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2e35d4] transition"
+                          className="btn btn-sm btn-primary"
                         >
                           Apply
                         </button>

@@ -167,3 +167,14 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Scrollbars: brand blue thumb on the page-background track, app-wide in the
+   light theme. Global on purpose (not scoped to .abyan-ds) so every portal and
+   modal matches; the dark theme keeps its own rules in globals.css. Values are
+   --color-primary, --color-primary-700 and --bg-page, written out because the
+   tokens above only exist inside .abyan-ds / .rsp-ds. */
+html:not([data-theme='dark']) * { scrollbar-color: #363EE8 #F1F5F9; }
+html:not([data-theme='dark']) ::-webkit-scrollbar { width: 10px; height: 10px; }
+html:not([data-theme='dark']) ::-webkit-scrollbar-track { background: #F1F5F9; }
+html:not([data-theme='dark']) ::-webkit-scrollbar-thumb { background: #363EE8; border-radius: 999px; border: 2px solid #F1F5F9; }
+html:not([data-theme='dark']) ::-webkit-scrollbar-thumb:hover { background: #191FA8; }
