@@ -44,13 +44,6 @@ interface LoginPageProps {
  * backend-gated routes like the IPCR weighting config. Do not reintroduce it.
  */
 
-const ROLES: { key: Role; label: string; sublabel: string }[] = [
-  { key: 'rsp', label: 'RSP', sublabel: 'Recruitment' },
-  { key: 'lnd', label: 'L&D', sublabel: 'Learning' },
-  { key: 'pm', label: 'PM', sublabel: 'Performance' },
-  { key: 'super-admin', label: 'Admin', sublabel: 'HR Head' },
-];
-
 const INTER_STACK = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 export const LoginPage = ({ onLogin }: LoginPageProps) => {
@@ -58,7 +51,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<Role>('rsp');
   const [rememberMe, setRememberMe] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -124,19 +116,8 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         return;
       }
 
-      if (role !== selectedRole) {
-        // The account is valid — the wrong role button is selected. Saying
-        // "no permission" here reads as a barred account and leaves the user
-        // with nothing to act on, so name the role they need instead. The
-        // selector defaults to RSP, so this is the common first attempt for
-        // every non-RSP admin.
-        await discardSession();
-        const correctLabel = ROLES.find((r) => r.key === role)?.label ?? role;
-        setErrorMsg(`This is a ${correctLabel} account. Select ${correctLabel} above, then sign in.`);
-        setSelectedRole(role);
-        return;
-      }
-
+      // The portal is chosen by the role stored for this account, never by
+      // the client, so the login form does not reveal which roles exist.
       const resolvedEmail = authData.user.email ?? email;
       onLogin(resolvedEmail, role);
       navigateAfterLogin(role);
@@ -326,49 +307,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
                   >
                     {showPassword ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
                   </button>
-                </div>
-              </div>
-
-              {/* Role selection */}
-              <div>
-                <p className="mb-2 text-sm font-semibold text-slate-700">Select Your Role</p>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {ROLES.map((role) => {
-                    const isActive = selectedRole === role.key;
-                    return (
-                      <button
-                        key={role.key}
-                        type="button"
-                        onClick={() => {
-                          setSelectedRole(role.key);
-                          setErrorMsg(null);
-                        }}
-                        className={[
-                          'group flex flex-col items-start gap-0.5 rounded-xl border px-4 py-3 text-left transition',
-                          isActive
-                            ? 'border-[#4F46E5] bg-[#EEF2FF] ring-1 ring-[#4F46E5]/30'
-                            : 'border-gray-200 bg-white hover:border-slate-300 hover:bg-slate-50',
-                        ].join(' ')}
-                      >
-                        <span
-                          className={[
-                            'text-sm font-semibold transition',
-                            isActive ? 'text-[#4338CA]' : 'text-slate-900',
-                          ].join(' ')}
-                        >
-                          {role.label}
-                        </span>
-                        <span
-                          className={[
-                            'text-xs transition',
-                            isActive ? 'text-[#4F46E5]/80' : 'text-slate-500',
-                          ].join(' ')}
-                        >
-                          {role.sublabel}
-                        </span>
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
 
