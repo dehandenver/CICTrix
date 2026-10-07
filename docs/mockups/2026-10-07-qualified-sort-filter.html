@@ -1,0 +1,66 @@
+<h2>Qualified Applicants → Pending Assignment: how should RSP find who to schedule?</h2>
+<p class="subtitle">Every option also gets clickable sort headers (▲▼). The question is how the list is organized when RSP picks applicants and publishes one exam and interview schedule.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a-drilldown" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;font-size:12px;text-align:left">
+      <div style="font-weight:600;margin-bottom:6px">Step 1: Departments (same pattern as Office Directory)</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr style="background:#f1f5f9"><th style="text-align:left;padding:4px">Department ▲</th><th style="padding:4px">Positions</th><th style="padding:4px">Pending</th></tr>
+        <tr><td style="padding:4px">City Engineering Office</td><td style="text-align:center">3</td><td style="text-align:center"><b>8</b></td></tr>
+        <tr><td style="padding:4px">City Health Office</td><td style="text-align:center">2</td><td style="text-align:center"><b>5</b></td></tr>
+        <tr><td style="padding:4px">City Treasurer's Office</td><td style="text-align:center">1</td><td style="text-align:center"><b>2</b></td></tr>
+      </table>
+      <div style="font-weight:600;margin:10px 0 6px">Step 2: Click a department to see its applicants sorted by position</div>
+      <div style="color:#2563eb">‹ Departments › City Health Office</div>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px">
+        <tr style="background:#f1f5f9"><th>☐</th><th style="text-align:left;padding:4px">Applicant</th><th style="text-align:left">Position ▲</th></tr>
+        <tr><td>☐</td><td style="padding:4px">Dela Cruz, Ana</td><td>Nurse I</td></tr>
+        <tr><td>☐</td><td style="padding:4px">Reyes, Mark</td><td>Nurse I</td></tr>
+        <tr><td>☐</td><td style="padding:4px">Santos, Liza</td><td>Midwife II</td></tr>
+      </table>
+    </div>
+    <div class="card-body"><h3>A. Drill down, as in Office Directory</h3><p>Two levels. Each screen stays focused, but you can't schedule across departments in one batch.</p></div>
+  </div>
+
+  <div class="card" data-choice="b-grouped" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;font-size:12px;text-align:left">
+      <div style="margin-bottom:6px">Group by: <b style="background:#363EE8;color:#fff;padding:2px 6px;border-radius:4px">Department</b> <span style="padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px">Position</span> <span style="padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px">None</span></div>
+      <div style="background:#eef2ff;padding:5px;font-weight:600">▾ ☐ City Engineering Office · 8</div>
+      <div style="padding:3px 0 3px 14px;color:#475569;font-weight:600">☐ Engineer II · 5</div>
+      <div style="padding:2px 0 2px 28px">☐ Bautista, Jon &nbsp;·&nbsp; Original &nbsp;·&nbsp; Sep 30</div>
+      <div style="padding:2px 0 2px 28px">☐ Garcia, Ella &nbsp;·&nbsp; Promotional &nbsp;·&nbsp; Oct 1</div>
+      <div style="padding:3px 0 3px 14px;color:#475569;font-weight:600">☐ Draftsman I · 3</div>
+      <div style="padding:2px 0 2px 28px">☐ Lim, Paolo &nbsp;·&nbsp; Original &nbsp;·&nbsp; Oct 2</div>
+      <div style="background:#eef2ff;padding:5px;font-weight:600;margin-top:4px">▸ ☐ City Health Office · 5</div>
+      <div style="background:#eef2ff;padding:5px;font-weight:600;margin-top:4px">▸ ☐ City Treasurer's Office · 2</div>
+    </div>
+    <div class="card-body"><h3>B. One table, collapsible groups</h3><p>Department, then position. A checkbox on a group header selects everyone in it, so "schedule all Engineer II" takes one click. A toggle switches the top level to Position.</p></div>
+  </div>
+
+  <div class="card" data-choice="c-flat-sort" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;font-size:12px;text-align:left">
+      <div style="margin-bottom:6px;display:flex;gap:6px">
+        <span style="border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px">All Departments ▾</span>
+        <span style="border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px">All Positions ▾</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr style="background:#f1f5f9"><th>☐</th><th style="text-align:left;padding:4px">Applicant</th><th style="text-align:left">Position</th><th style="text-align:left">Department ▲</th></tr>
+        <tr><td>☐</td><td style="padding:4px">Bautista, Jon</td><td>Engineer II</td><td>City Eng'g</td></tr>
+        <tr><td>☐</td><td style="padding:4px">Garcia, Ella</td><td>Engineer II</td><td>City Eng'g</td></tr>
+        <tr><td>☐</td><td style="padding:4px">Lim, Paolo</td><td>Draftsman I</td><td>City Eng'g</td></tr>
+        <tr><td>☐</td><td style="padding:4px">Dela Cruz, Ana</td><td>Nurse I</td><td>City Health</td></tr>
+        <tr><td>☐</td><td style="padding:4px">Santos, Liza</td><td>Midwife II</td><td>City Health</td></tr>
+      </table>
+      <div style="color:#64748b;margin-top:4px">Sorting by Department also orders by Position within it.</div>
+    </div>
+    <div class="card-body"><h3>C. Flat table with sort and filters</h3><p>The smallest change. Department and Position filters plus sortable headers. Applicants sit together but without group headers or group select.</p></div>
+  </div>
+
+</div>
+
+<div class="section">
+  <h3>Applies to all options</h3>
+  <p>The <b>Scheduled</b> sub-tab gets the same organization. Applications → applicant table gets sortable headers (Name, Reference No., Position, Department, Type, Applied), and its 10-per-page pager moves directly under the table. Right now that pager sits below the Shortlisted section, so it reads as belonging to the wrong table.</p>
+</div>
