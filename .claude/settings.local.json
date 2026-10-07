@@ -69,5 +69,8 @@
     "additionalDirectories": [
       "\\tmp"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }
