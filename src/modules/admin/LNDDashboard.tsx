@@ -58,6 +58,8 @@ import { OfficeDirectorySection } from '../../components/OfficeDirectorySection'
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingNeeds } from './LndTrainingNeeds';
 import { LndArchive } from './LndArchive';
+import { cycleYearFor, listSubmissions, type IdpSubmission } from '../../lib/api/idpSubmissions';
+import { idpOffices, matchOffice, officeTagShares, tagSelectionsByOffice, topTagPerOffice } from '../../lib/idpAnalytics';
 
 type MenuId =
   | 'dashboard'
@@ -201,6 +203,16 @@ const DEPT_PALETTE = [
   '#db2777', '#0891b2', '#65a30d', '#ea580c', '#6366f1',
 ];
 
+/** IDP tag bars: career tags dark, personal tags light, so the two form sections read apart. */
+const IDP_KIND_COLORS = { career: '#7c3aed', personal: '#c4b5fd' } as const;
+
+/** Small label marking which side of a TNA | IDP row a panel is on. */
+const PanelTag = ({ kind }: { kind: 'tna' | 'idp' }) => (
+  <p className={`text-[11px] font-semibold uppercase tracking-wide ${kind === 'tna' ? 'text-blue-600' : 'text-purple-600'}`}>
+    {kind === 'tna' ? 'TNA · assessed gaps' : 'IDP · employee requests'}
+  </p>
+);
+
 // ── Dismissible warning (DESIGN_IDENTITY.md §9.9, warning) ───────────────────
 
 type WarningItem = { id: string; title: string; category: string | null; startDate: string };
@@ -287,18 +299,24 @@ const LndDashboardContent = () => {
    * offices thought to ask for, whereas this is what the ratings actually show.
    */
   const [needs, setNeeds] = useState<CompetencyNeed[]>([]);
+  /** Filed IDPs for this cycle — what employees asked for, shown beside the TNA. */
+  const [idpSubs, setIdpSubs] = useState<IdpSubmission[]>([]);
+  const [selectedIdpOffice, setSelectedIdpOffice] = useState('');
+  const idpCycle = cycleYearFor();
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [data, locked, soon, assessed] = await Promise.all([
+        const [data, locked, soon, assessed, idp] = await Promise.all([
           listTrainingRequestsDetailed(),
           listIncompleteLockedTrainings(),
           listLockingSoonWithoutRoster(),
           computeNeedsAssessment(),
+          listSubmissions(cycleYearFor()),
         ]);
         if (cancelled) return;
+        if (idp.ok) setIdpSubs(idp.data);
         setRequests(data);
         setIncompleteLocked(locked);
         setLockingSoon(soon);
@@ -420,6 +438,58 @@ const LndDashboardContent = () => {
     }).sort((a, b) => b.demand - a.demand);
   }, [needs, departments]);
 
+  // ── IDP side ──
+  const idpOfficeList = useMemo(() => idpOffices(idpSubs), [idpSubs]);
+  const idpTagRows = useMemo(() => tagSelectionsByOffice(idpSubs), [idpSubs]);
+  const idpTopTag = useMemo(
+    () => idpTagRows.reduce((best, cur) => (cur.total > best.total ? cur : best), idpTagRows[0]),
+    [idpTagRows]
+  );
+  const idpChartData = useMemo(
+    () => idpTagRows.map(r => ({ category: r.label, ...r.byOffice })),
+    [idpTagRows]
+  );
+  const idpShares = useMemo(
+    () => (selectedIdpOffice ? officeTagShares(idpSubs, selectedIdpOffice) : []),
+    [idpSubs, selectedIdpOffice]
+  );
+  const idpTableData = useMemo(() => topTagPerOffice(idpSubs), [idpSubs]);
+
+  // An IDP office named like a TNA office shares its color; the rest continue
+  // the palette so they are not mistaken for one.
+  const idpColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    let next = departments.length;
+    for (const office of idpOfficeList) {
+      const tna = matchOffice(office, departments);
+      map.set(office, tna ? deptColorMap.get(tna)! : DEPT_PALETTE[next++ % DEPT_PALETTE.length]);
+    }
+    return map;
+  }, [idpOfficeList, departments, deptColorMap]);
+
+  // The IDP office follows the radar's office when the names match.
+  useEffect(() => {
+    const matched = matchOffice(selectedRadarDept, idpOfficeList);
+    setSelectedIdpOffice(prev => matched ?? (prev || idpOfficeList[0] || ''));
+  }, [selectedRadarDept, idpOfficeList]);
+
+  // Shared by the TNA and IDP stacked bars: one line per office in the hovered bar.
+  const stackTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs min-w-[160px]">
+        <p className="mb-2 font-semibold text-gray-800">{label}</p>
+        {payload.map((entry: any) => (
+          <div key={entry.dataKey} className="flex items-center gap-2 py-0.5">
+            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: entry.fill }} />
+            <span className="flex-1 truncate text-gray-600">{entry.dataKey}</span>
+            <span className="font-semibold text-gray-800">{entry.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   // Full request history for the department drill-down modal, most recent first
   const deptDetailRequests = useMemo(() => {
     if (!viewDeptDetails) return [];
@@ -456,7 +526,7 @@ const LndDashboardContent = () => {
       />
 
       {/* Metric Cards */}
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-3 relative">
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4 relative">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <StatCard
           label="Employees with identified skill gaps"
@@ -494,12 +564,22 @@ const LndDashboardContent = () => {
           </div>
         </article>
         <StatCard label="Offices assessed" value={departments.length.toString()} icon={Building2} color="green" sublabel="With identified competency gaps" />
+        <StatCard
+          label={`IDPs submitted (${idpCycle})`}
+          value={idpSubs.length.toString()}
+          icon={Target}
+          color="purple"
+          sublabel={idpTopTag?.total ? `Most requested: ${idpTopTag.label} (${idpTopTag.total})` : `From ${idpOfficeList.length} offices`}
+        />
       </section>
 
+      {/* Each analytics row: TNA (assessed gaps) left, IDP (employee requests) right */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
       {/* Category chart — stacked bar, 4 categories × departments */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[380px]">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <div className="mb-1">
+          <PanelTag kind="tna" />
           <h2 className="text-sm font-semibold text-gray-700">Assessed competency gaps by category and office</h2>
         </div>
         {departments.length === 0 && !loading ? (
@@ -511,24 +591,7 @@ const LndDashboardContent = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
                 <XAxis dataKey="category" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#374151' }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#6b7280' }} allowDecimals={false} />
-                <Tooltip
-                  cursor={{ fill: 'rgba(0,0,0,0.04)' }}
-                  content={({ active, payload, label }: any) => {
-                    if (!active || !payload?.length) return null;
-                    return (
-                      <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs min-w-[160px]">
-                        <p className="mb-2 font-semibold text-gray-800">{label}</p>
-                        {payload.map((entry: any) => (
-                          <div key={entry.dataKey} className="flex items-center gap-2 py-0.5">
-                            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: entry.fill }} />
-                            <span className="flex-1 truncate text-gray-600">{entry.dataKey}</span>
-                            <span className="font-semibold text-gray-800">{entry.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  }}
-                />
+                <Tooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} content={stackTooltip} />
                 <Legend
                   content={() => (
                     <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 justify-center">
@@ -550,11 +613,53 @@ const LndDashboardContent = () => {
         )}
       </section>
 
+      {/* IDP tag selections — stacked by office, beside the TNA category chart */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[380px]">
+        {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
+        <div className="mb-1">
+          <PanelTag kind="idp" />
+          <h2 className="text-sm font-semibold text-gray-700">IDP development requests by tag and office</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Employees who ticked each tag · {idpCycle} cycle · one person can tick several</p>
+        </div>
+        {idpSubs.length === 0 && !loading ? (
+          <div className="mt-6"><EmptyState title="No IDPs yet" description={`No IDPs have been filed for ${idpCycle} yet.`} /></div>
+        ) : (
+          <div className="h-[310px] w-full mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={idpChartData} margin={{ top: 4, right: 16, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="category" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#374151' }} interval={0} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#6b7280' }} allowDecimals={false} />
+                <Tooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} content={stackTooltip} />
+                <Legend
+                  content={() => (
+                    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 justify-center">
+                      {idpOfficeList.map(office => (
+                        <div key={office} className="flex items-center gap-1.5 text-xs text-gray-600">
+                          <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: idpColorMap.get(office) }} />
+                          {office} ({idpSubs.filter(s => s.office === office).length})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                />
+                {idpOfficeList.map(office => (
+                  <Bar key={office} dataKey={office} stackId="idp" fill={idpColorMap.get(office)} />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </section>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
       {/* Competency radar — one department at a time via dropdown */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[420px]">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
+            <PanelTag kind="tna" />
             <h2 className="text-lg font-semibold text-gray-900">Competency profile by department</h2>
             <p className="text-xs text-gray-400 mt-0.5">Each axis shows the share of that office affected by the competency</p>
           </div>
@@ -605,10 +710,57 @@ const LndDashboardContent = () => {
         )}
       </section>
 
+      {/* IDP profile — share of the office's IDP submitters per tag */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[420px]">
+        {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <PanelTag kind="idp" />
+            <h2 className="text-lg font-semibold text-gray-900">IDP profile by department</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Share of the office&rsquo;s IDP submitters who ticked each tag</p>
+          </div>
+          {idpOfficeList.length > 0 && (
+            <select
+              value={selectedIdpOffice}
+              onChange={e => setSelectedIdpOffice(e.target.value)}
+              className="max-w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+            >
+              {idpOfficeList.map(office => (
+                <option key={office} value={office}>{office}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        {idpSubs.length === 0 && !loading ? (
+          <EmptyState title="No IDPs yet" description={`No IDPs have been filed for ${idpCycle} yet.`} />
+        ) : (
+          <>
+            <div className="space-y-3">
+              {idpShares.map(s => (
+                <div key={s.tag} className="grid grid-cols-[minmax(0,10rem)_1fr_3rem] items-center gap-3">
+                  <span className="truncate text-xs text-gray-700" title={s.tag}>{s.label}</span>
+                  <div className="h-3 overflow-hidden rounded-full bg-gray-100">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${s.share}%`, backgroundColor: IDP_KIND_COLORS[s.kind] }} />
+                  </div>
+                  <span className="text-right text-xs font-semibold text-gray-700" title={`${s.count} employee${s.count === 1 ? '' : 's'}`}>{s.share}%</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-gray-600">
+              <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: IDP_KIND_COLORS.career }} />Career development</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: IDP_KIND_COLORS.personal }} />Personal development</span>
+            </div>
+          </>
+        )}
+      </section>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
       {/* Competency demand table */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 relative">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <div className="mb-4">
+          <PanelTag kind="tna" />
           <h2 className="text-lg font-semibold text-gray-900">Competency demand by department</h2>
           <p className="text-xs text-gray-400 mt-0.5">Top requested competency per department · all requests · sorted by demand</p>
         </div>
@@ -661,6 +813,44 @@ const LndDashboardContent = () => {
           </>
         )}
       </section>
+
+      {/* IDP top request per office, beside the TNA demand table */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative">
+        {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
+        <div className="mb-4">
+          <PanelTag kind="idp" />
+          <h2 className="text-lg font-semibold text-gray-900">IDP requests by department</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Most-ticked IDP tag per department · {idpCycle} cycle · sorted by share</p>
+        </div>
+        {idpTableData.length === 0 && !loading ? (
+          <EmptyState title="No IDPs yet" description={`No IDPs have been filed for ${idpCycle} yet.`} />
+        ) : (
+          <>
+            <div className="hidden grid-cols-12 items-center border-b border-gray-100 px-4 py-2.5 text-xs font-medium text-gray-500 lg:grid">
+              <div className="col-span-5">Department</div>
+              <div className="col-span-3">Top request</div>
+              <div className="col-span-1 text-right">IDPs</div>
+              <div className="col-span-3 pl-3">Share of office</div>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {idpTableData.map(row => (
+                <div key={row.office} className="flex flex-col gap-2 px-4 py-3.5 transition hover:bg-gray-50/50 lg:grid lg:grid-cols-12 lg:items-center lg:gap-0">
+                  <div className="min-w-0 break-words text-sm font-bold text-gray-900 lg:col-span-5 lg:pr-3">{row.office}</div>
+                  <div className="min-w-0 break-words text-xs leading-snug text-gray-600 lg:col-span-3">{row.label}</div>
+                  <div className="text-xs text-gray-600 lg:col-span-1 lg:text-right">{row.submitters}</div>
+                  <div className="flex min-w-0 items-center gap-2 lg:col-span-3 lg:pl-3">
+                    <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100">
+                      <div className="h-full rounded-full bg-purple-600 transition-all" style={{ width: `${row.share}%` }} />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 w-9 shrink-0 text-right">{row.share}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+      </div>
 
       {/* Department request history drill-down */}
       {viewDeptDetails && (
