@@ -525,6 +525,17 @@ const ExamScoresModal = ({ folder, existingScores, onClose, onSave }: ExamScores
 };
 
 // ─── ApplicantScoringModal ─────────────────────────────────────────────────────
+// Styled to the Create New Job Position modal (DESIGN_IDENTITY §9.3, §9.10).
+// It renders inside `.rsp-ds`, so the design tokens resolve here.
+
+const SM_CARD: React.CSSProperties = { background: 'var(--bg-surface)', border: '1px solid var(--neutral-200)', borderRadius: 12, padding: 16 };
+const SM_TINT: React.CSSProperties = { background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-200)', borderRadius: 8, padding: '8px 12px' };
+const SM_TITLE: React.CSSProperties = { margin: '0 0 12px', fontWeight: 700, fontSize: 16, lineHeight: '24px', color: 'var(--color-primary-900)', display: 'flex', alignItems: 'center', gap: 8 };
+const SM_LABEL: React.CSSProperties = { margin: 0, fontWeight: 600, fontSize: 14, color: 'var(--color-primary-900)' };
+const SM_NOTE: React.CSSProperties = { margin: 0, fontSize: 12, lineHeight: '16px', color: 'var(--neutral-600)' };
+const SM_CHIP: React.CSSProperties = { width: 28, height: 28, borderRadius: 'var(--radius-chip)', background: 'var(--color-primary-50)', color: 'var(--color-primary)', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
+const SM_LINK: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-primary)', fontSize: 12, fontWeight: 600, padding: 0 };
+const SM_FIELD = 'mb-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-[#28343D] focus:border-[#363EE8] focus:outline-none focus:ring-[3px] focus:ring-[#363EE8]/15 disabled:bg-slate-100 disabled:text-slate-400 read-only:bg-slate-50';
 
 interface ApplicantScoringModalProps {
   applicant:    ApplicantRecord;
@@ -717,50 +728,60 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
 
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(4,14,107,0.55)', padding: '1rem', fontFamily: "'Poppins', sans-serif" }}>
-        <div style={{ background: '#ffffff', borderRadius: 20, boxShadow: '0 24px 80px rgba(54,62,232,0.22)', width: '100%', maxWidth: 760, maxHeight: '95vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Poppins', sans-serif" }}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--overlay)', fontFamily: 'var(--font-sans)' }}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="scoring-modal-title"
+          className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white"
+          style={{ maxHeight: '88vh', boxShadow: 'var(--shadow-3)', fontFamily: 'var(--font-sans)' }}
+        >
 
-          {/* Branded header */}
-          <div style={{ background: 'linear-gradient(135deg, #5B65F0 0%, #363EE8 100%)', padding: '1.35rem 1.5rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div>
-              <h2 className="scoring-modal-title" style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em', textShadow: '0 1px 4px rgba(4,14,107,0.25)' }}>Applicant Evaluation &amp; Scoring</h2>
-              <p className="scoring-modal-subtitle" style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.9)', marginTop: 3 }}>
+          {/* Header — same treatment as Create New Job Position */}
+          <div className="flex shrink-0 items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-900) 100%)' }}>
+            <div className="min-w-0">
+              <h2 id="scoring-modal-title" className="scoring-modal-title text-xl font-bold text-white" style={{ margin: 0 }}>Applicant Evaluation &amp; Scoring</h2>
+              <p className="scoring-modal-subtitle truncate text-sm" style={{ margin: 0, color: 'var(--color-primary-200)' }}>
                 {applicant.full_name} &mdash; {applicant.position}
               </p>
             </div>
-            <button type="button" onClick={onClose} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, cursor: 'pointer', color: '#ffffff', padding: '0.35rem', display: 'flex', transition: 'background 0.15s' }}>
-              <X size={18} />
+            <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/10">
+              <X size={20} />
             </button>
           </div>
 
           {/* Scrollable body */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: '#F7F8FE' }}>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5" style={{ background: 'var(--bg-surface)' }}>
 
-            {/* Score finalized banner */}
+            {/* Score finalized banner (info alert, §9.9) */}
             {isFinalized && (
-              <div style={{ background: '#EEF0FD', border: '1.5px solid #363EE8', borderRadius: 10, padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <CheckCircle2 size={18} style={{ color: '#363EE8', flexShrink: 0 }} />
+              <div style={{ background: 'var(--info-100)', borderLeft: '4px solid var(--info-500)', borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <CheckCircle2 size={18} style={{ color: 'var(--info-500)', flexShrink: 0 }} />
                 <div>
-                  <p style={{ margin: 0, fontWeight: 700, color: '#040E6B', fontSize: '0.93rem' }}>Score Finalized — View Only Mode</p>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#5B65F0' }}>This applicant's evaluation has been finalized. Fields are read-only.</p>
+                  <p style={SM_LABEL}>Score Finalized — View Only Mode</p>
+                  <p style={{ ...SM_NOTE, color: 'var(--neutral-800)' }}>This applicant's evaluation has been finalized. Fields are read-only.</p>
                 </div>
               </div>
             )}
 
             {/* Appointment Type */}
-            <div style={{ background: '#ffffff', border: '1.5px solid #C8D1FF', borderRadius: 14, padding: '1rem' }}>
-              <p style={{ margin: '0 0 0.75rem', fontWeight: 700, color: '#040E6B', fontSize: '0.93rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <RefreshCw size={15} style={{ color: '#363EE8' }} /> Select Appointment Type
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <section style={SM_CARD}>
+              <h3 style={SM_TITLE}>
+                <RefreshCw size={16} style={{ color: 'var(--color-primary)' }} /> Select Appointment Type
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {(['original', 'promotional'] as AppointmentType[]).map(t => {
                   const isLockedOriginal    = isCurrentEmployee && t === 'original';
                   const isLockedPromotional = !isCurrentEmployee && t === 'promotional';
                   const buttonDisabled = isFinalized || isLockedOriginal || isLockedPromotional;
                   const isActive = apptType === t;
+                  const isLocked = isLockedOriginal || isLockedPromotional;
+                  // Three distinct states: selected (brand outline + tint),
+                  // available (neutral border), locked (gray fill, lock icon).
                   return (
                     <button
                       key={t} type="button" disabled={buttonDisabled}
+                      aria-pressed={isActive}
                       onClick={() => { if (!buttonDisabled) setApptType(t); }}
                       title={
                         isLockedOriginal    ? 'Locked: applicant is a current employee' :
@@ -768,37 +789,37 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                         undefined
                       }
                       style={{
-                        border: `2px solid ${isActive ? '#363EE8' : '#C8D1FF'}`,
-                        borderRadius: 10,
-                        padding: '0.9rem 1rem',
+                        border: isActive ? '1.5px solid var(--color-primary)' : '1px solid var(--neutral-200)',
+                        borderRadius: 12,
+                        padding: '12px 14px',
                         cursor: buttonDisabled ? 'not-allowed' : 'pointer',
-                        background: isActive ? 'linear-gradient(135deg, #EEF0FD 0%, #DDE1FC 100%)' : '#ffffff',
+                        background: isLocked ? 'var(--neutral-100)' : isActive ? 'var(--color-primary-50)' : 'var(--bg-surface)',
                         textAlign: 'left',
-                        opacity: (isLockedOriginal || isLockedPromotional) ? 0.45 : 1,
-                        transition: 'all 0.15s',
+                        transition: 'background 150ms, border-color 150ms',
                       }}
                     >
-                      <p style={{ margin: 0, fontWeight: 700, color: isActive ? '#040E6B' : '#363EE8', fontSize: '0.88rem' }}>
+                      <p style={{ margin: 0, fontWeight: 600, fontSize: 14, lineHeight: '20px', display: 'flex', alignItems: 'center', gap: 6, color: isLocked ? 'var(--neutral-400)' : 'var(--color-primary-900)' }}>
+                        {isLocked ? <Lock size={14} /> : isActive ? <CheckCircle2 size={14} style={{ color: 'var(--color-primary)' }} /> : null}
                         {t === 'original' ? 'Original Appointment' : 'Promotional Appointment'}
                       </p>
-                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.76rem', color: '#5B65F0' }}>
+                      <p style={{ ...SM_NOTE, marginTop: 2, color: isLocked ? 'var(--neutral-400)' : 'var(--neutral-600)' }}>
                         {t === 'original'
                           ? 'Education • Experience • Oral Exam*'
                           : 'Education • Experience • Performance • PCPT* • Potential'}
                       </p>
-                      <p style={{ margin: '0.15rem 0 0', fontSize: '0.71rem', color: '#A5ACEE' }}>*Interviewer-provided</p>
+                      <p style={{ ...SM_NOTE, color: 'var(--neutral-400)' }}>*Interviewer-provided</p>
                       {isLockedOriginal && (
-                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.71rem', color: '#E53E3E', fontWeight: 600 }}>
+                        <p style={{ ...SM_NOTE, marginTop: 6, color: 'var(--error-700)', fontWeight: 600 }}>
                           Locked — applicant is a current employee
                         </p>
                       )}
                       {isLockedPromotional && (
-                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.71rem', color: '#E53E3E', fontWeight: 600 }}>
+                        <p style={{ ...SM_NOTE, marginTop: 6, color: 'var(--error-700)', fontWeight: 600 }}>
                           Locked — applicant is a new/original applicant
                         </p>
                       )}
                       {isCurrentEmployee && t === 'promotional' && (
-                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.71rem', color: '#363EE8', fontWeight: 600 }}>
+                        <p style={{ ...SM_NOTE, marginTop: 6, color: 'var(--color-primary)', fontWeight: 600 }}>
                           Auto-set: applicant is a current employee
                         </p>
                       )}
@@ -807,60 +828,63 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                 })}
               </div>
 
-              {/* Position type toggle (Original only) */}
+              {/* Position type: segmented control (Original only) */}
               {apptType === 'original' && (
-                <div style={{ marginTop: '0.85rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                  <p style={{ margin: '0 0 0.45rem', fontSize: '0.8rem', fontWeight: 600, color: '#040E6B', gridColumn: '1/-1' }}>
-                    Position Type (for Written Exam scoring)
-                  </p>
-                  {(['rank-and-file', 'executive'] as PositionType[]).map(pt => (
-                    <button
-                      key={pt} type="button" disabled={isFinalized}
-                      onClick={() => setPosType(pt)}
-                      style={{
-                        border: `2px solid ${posType === pt ? '#363EE8' : '#C8D1FF'}`,
-                        borderRadius: 8, padding: '0.6rem',
-                        cursor: isFinalized ? 'default' : 'pointer',
-                        background: posType === pt ? '#363EE8' : '#ffffff',
-                        color: posType === pt ? '#ffffff' : '#040E6B',
-                        fontWeight: 700, fontSize: '0.85rem', transition: 'all 0.15s',
-                      }}
-                    >
-                      {pt === 'rank-and-file' ? 'Rank and File' : 'Executive / Managerial'}
-                    </button>
-                  ))}
+                <div style={{ marginTop: 16 }}>
+                  <p style={{ ...SM_LABEL, marginBottom: 6 }}>Position Type (for Written Exam scoring)</p>
+                  <div role="group" aria-label="Position type" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, padding: 4, background: 'var(--neutral-100)', borderRadius: 10 }}>
+                    {(['rank-and-file', 'executive'] as PositionType[]).map(pt => {
+                      const selected = posType === pt;
+                      return (
+                        <button
+                          key={pt} type="button" disabled={isFinalized}
+                          aria-pressed={selected}
+                          onClick={() => setPosType(pt)}
+                          style={{
+                            height: 36, border: 'none', borderRadius: 8,
+                            cursor: isFinalized ? 'default' : 'pointer',
+                            background: selected ? 'var(--color-primary)' : 'transparent',
+                            color: selected ? 'var(--color-white)' : 'var(--neutral-800)',
+                            fontWeight: 600, fontSize: 14, transition: 'background 150ms, color 150ms',
+                          }}
+                        >
+                          {pt === 'rank-and-file' ? 'Rank and File' : 'Executive / Managerial'}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
-            </div>
+            </section>
 
-            {/* Final Numerical Score */}
-            <div style={{ background: 'linear-gradient(135deg, #5B65F0 0%, #363EE8 100%)', borderRadius: 14, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: '0.5rem', display: 'flex' }}>
-                  <Calculator size={22} style={{ color: '#C8D1FF' }} />
+            {/* Final Numerical Score — compact summary */}
+            <div style={{ ...SM_CARD, background: 'var(--color-primary-50)', borderColor: 'var(--color-primary-200)', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ ...SM_CHIP, width: 36, height: 36, background: 'var(--bg-surface)' }}>
+                  <Calculator size={18} />
                 </div>
                 <div>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#C8D1FF', fontWeight: 500 }}>Final Numerical Score</p>
-                  <p style={{ margin: 0, fontSize: '2rem', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>{totalScore.toFixed(2)}</p>
+                  <p style={SM_NOTE}>Final Numerical Score</p>
+                  <p style={{ margin: 0, fontSize: 24, lineHeight: '32px', fontWeight: 700, color: 'var(--color-primary-900)' }}>{totalScore.toFixed(2)}</p>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <p style={{ margin: 0, fontSize: '0.78rem', color: '#C8D1FF' }}>Adjectival Rating</p>
-                <p style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800, color: '#ffffff' }}>{adjRating.label}</p>
+                <p style={SM_NOTE}>Adjectival Rating</p>
+                <p style={{ margin: 0, fontSize: 16, lineHeight: '24px', fontWeight: 700, color: 'var(--color-primary-700)' }}>{adjRating.label}</p>
               </div>
             </div>
 
             {/* Scoring Responsibility */}
-            <div style={{ background: '#EEF0FD', border: '1.5px solid #C8D1FF', borderRadius: 10, padding: '0.85rem 1rem' }}>
-              <p style={{ margin: 0, fontWeight: 700, color: '#040E6B', fontSize: '0.875rem' }}>Scoring Responsibility:</p>
-              <p style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#363EE8' }}>
-                <strong>RSP enters:</strong>{' '}
+            <div style={{ ...SM_TINT, padding: '12px 16px' }}>
+              <p style={SM_LABEL}>Scoring Responsibility</p>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--neutral-800)' }}>
+                <strong style={{ color: 'var(--color-primary-900)' }}>RSP enters:</strong>{' '}
                 {apptType === 'promotional'
                   ? 'Education, Experience, Performance Rating, Potential'
                   : 'Education, Experience'}
               </p>
-              <p style={{ margin: '0.15rem 0 0', fontSize: '0.82rem', color: '#363EE8' }}>
-                <strong>Interviewer provides:</strong>{' '}
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--neutral-800)' }}>
+                <strong style={{ color: 'var(--color-primary-900)' }}>Interviewer provides:</strong>{' '}
                 {apptType === 'promotional'
                   ? 'PCPT (Physical Characteristics & Personality Traits)'
                   : 'Oral Examination'}
@@ -869,29 +893,27 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
 
             {/* Historical oral scores (read-only) for promotional applicants */}
             {apptType === 'promotional' && typeof liveEvaluation?.oralRawScore === 'number' && (
-              <div style={{ background: '#EEF0FD', border: '1.5px solid #C8D1FF', borderRadius: 12, padding: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.6rem' }}>
-                  <Lock size={16} style={{ color: '#363EE8', flexShrink: 0 }} />
-                  <p style={{ margin: 0, fontWeight: 700, color: '#040E6B', fontSize: '0.875rem' }}>
-                    Previous Original Appointment — Oral Examination Score (Read-Only)
-                  </p>
-                </div>
-                <div style={{ background: '#ffffff', border: '1px solid #C8D1FF', borderRadius: 8, padding: '0.65rem 0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.82rem', color: '#5B65F0' }}>Oral Exam Score (from original appointment):</span>
+              <section style={SM_CARD}>
+                <h3 style={SM_TITLE}>
+                  <Lock size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                  Previous Original Appointment — Oral Examination Score (Read-Only)
+                </h3>
+                <div style={{ ...SM_TINT, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, color: 'var(--neutral-800)' }}>Oral Exam Score (from original appointment):</span>
                   {/* Average of the six interview criteria, so round for display
                       rather than showing a raw 4.6667. */}
-                  <span style={{ fontSize: '1rem', fontWeight: 700, color: '#363EE8' }}>
-                    {liveEvaluation.oralRawScore.toFixed(2)} <span style={{ fontWeight: 500, color: '#5B65F0' }}>/ 5</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-primary)' }}>
+                    {liveEvaluation.oralRawScore.toFixed(2)} <span style={{ fontWeight: 500, color: 'var(--neutral-600)' }}>/ 5</span>
                   </span>
                 </div>
-                <p style={{ margin: '0.4rem 0 0', fontSize: '0.73rem', color: '#A5ACEE' }}>
+                <p style={{ ...SM_NOTE, marginTop: 6 }}>
                   This score reflects the original appointment evaluation. It is read-only and cannot be edited.
                 </p>
-              </div>
+              </section>
             )}
 
             {/* RSP-entered categories */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {rspCategories.map((catKey) => {
                 const meta = CAT_META[catKey];
                 const cat  = scores[catKey];
@@ -906,7 +928,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                   inputEl = (
                     <>
                       {autoFilled && (
-                        <div style={{ background: '#EEF0FD', border: '1px solid #C8D1FF', borderRadius: 8, padding: '0.45rem 0.75rem', marginBottom: '0.5rem', fontSize: '0.75rem', color: '#363EE8', fontWeight: 600 }}>
+                        <div style={{ ...SM_TINT, marginBottom: 8, fontSize: 12, color: 'var(--color-primary-700)', fontWeight: 600 }}>
                           Auto-filled from application: {applicant.education_level}
                         </div>
                       )}
@@ -914,7 +936,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                         disabled={isFinalized}
                         value={rawVal}
                         onChange={(e) => !isFinalized && setFinal(catKey, e.target.value)}
-                        style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.9rem', outline: 'none', background: isFinalized ? '#F7F8FE' : '#ffffff', color: '#040E6B', boxSizing: 'border-box', marginBottom: '0.45rem', fontFamily: "'Poppins', sans-serif" }}
+                        className={SM_FIELD}
                       >
                         <option value="">Select Educational Attainment</option>
                         <option value="10">Elementary Level (10 pts)</option>
@@ -941,7 +963,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                   inputEl = (
                     <>
                       {autoFilled && (
-                        <div style={{ background: '#E8EBF9', border: '1px solid #A5ACEE', borderRadius: 8, padding: '0.45rem 0.75rem', marginBottom: '0.5rem', fontSize: '0.75rem', color: '#040E6B', fontWeight: 600 }}>
+                        <div style={{ ...SM_TINT, marginBottom: 8, fontSize: 12, color: 'var(--color-primary-700)', fontWeight: 600 }}>
                           Auto-filled from application: {applicant.years_of_experience} year(s)
                         </div>
                       )}
@@ -957,7 +979,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                           if (isNaN(y)) { setFinal(catKey, ''); return; }
                           setFinal(catKey, String(yearsToPoints(y)));
                         }}
-                        style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.9rem', outline: 'none', background: isFinalized ? '#F7F8FE' : '#ffffff', color: '#040E6B', boxSizing: 'border-box', marginBottom: '0.45rem', fontFamily: "'Poppins', sans-serif" }}
+                        className={SM_FIELD}
                       />
                     </>
                   );
@@ -967,7 +989,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                       disabled={isFinalized}
                       value={rawVal}
                       onChange={(e) => !isFinalized && setFinal(catKey, e.target.value)}
-                      style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.9rem', outline: 'none', background: isFinalized ? '#F7F8FE' : '#ffffff', color: '#040E6B', boxSizing: 'border-box', marginBottom: '0.45rem', fontFamily: "'Poppins', sans-serif" }}
+                      className={SM_FIELD}
                     >
                       <option value="">Select Performance Rating</option>
                       <option value="14">Outstanding — Equiv 70 (14 pts)</option>
@@ -995,40 +1017,40 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                         if (isNaN(r)) { setFinal(catKey, ''); return; }
                         setFinal(catKey, String(rawToPoints(r)));
                       }}
-                      style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.9rem', outline: 'none', background: isFinalized ? '#F7F8FE' : '#ffffff', color: '#040E6B', boxSizing: 'border-box', marginBottom: '0.45rem', fontFamily: "'Poppins', sans-serif" }}
+                      className={SM_FIELD}
                     />
                   );
                 }
 
                 return (
-                  <div key={catKey} style={{ background: '#ffffff', border: `1.5px solid ${meta.border}`, borderRadius: 14, padding: '1rem', boxShadow: `0 2px 8px ${meta.color}18` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
-                      <span style={{ width: 30, height: 30, borderRadius: '50%', background: `linear-gradient(135deg, ${meta.color} 0%, #040E6B 100%)`, color: '#fff', fontWeight: 800, fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <div key={catKey} style={SM_CARD}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <span style={SM_CHIP}>
                         {meta.roman}
                       </span>
-                      <p style={{ margin: 0, fontWeight: 700, color: '#040E6B', fontSize: '0.88rem' }}>
+                      <p style={SM_LABEL}>
                         {meta.label} ({percentLabel})
                       </p>
                     </div>
 
                     {/* Initial score row */}
-                    <div style={{ background: meta.bg, borderRadius: 8, padding: '0.45rem 0.75rem', marginBottom: '0.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.78rem', color: '#5B65F0' }}>Initial {meta.label} Score:</span>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 700, color: meta.color }}>{cat.initialScore}</span>
-                      <span style={{ fontSize: '0.72rem', color: '#A5ACEE', fontStyle: 'italic' }}>previously saved</span>
+                    <div style={{ background: 'var(--neutral-100)', borderRadius: 8, padding: '6px 12px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12, color: 'var(--neutral-600)' }}>Initial {meta.label} Score:</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-primary-900)' }}>{cat.initialScore}</span>
+                      <span style={{ fontSize: 12, color: 'var(--neutral-400)', fontStyle: 'italic' }}>previously saved</span>
                     </div>
 
                     {/* Potential auto-fill banner */}
                     {catKey === 'potential' && cat.initialScore > 0 && !isFinalized && (
-                      <div style={{ background: '#EEF0FD', border: '1px solid #C8D1FF', borderRadius: 8, padding: '0.6rem 0.75rem', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <div style={{ ...SM_TINT, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         <div style={{ minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: '#363EE8' }}>Auto-Fill Available</p>
-                          <p style={{ margin: 0, fontSize: '0.72rem', color: '#5B65F0' }}>Last Original Appointment Score: {cat.initialScore}</p>
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'var(--color-primary)' }}>Auto-Fill Available</p>
+                          <p style={SM_NOTE}>Last Original Appointment Score: {cat.initialScore}</p>
                         </div>
                         <button
                           type="button"
                           onClick={() => setFinal(catKey, String(cat.initialScore))}
-                          style={{ background: 'linear-gradient(135deg, #363EE8, #040E6B)', color: '#fff', border: 'none', borderRadius: 6, padding: '0.35rem 0.65rem', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                          className="btn btn-sm btn-primary" style={{ flexShrink: 0, height: 28, fontSize: 12, padding: '0 12px' }}
                         >
                           Use This Score
                         </button>
@@ -1039,10 +1061,10 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                     {inputEl}
 
                     {/* Guide */}
-                    <p style={{ margin: '0 0 0.5rem', fontSize: '0.71rem', color: '#A5ACEE', lineHeight: 1.5 }}>{meta.guide}</p>
+                    <p style={{ ...SM_NOTE, marginBottom: 6 }}>{meta.guide}</p>
 
                     {/* Score display */}
-                    <p style={{ margin: '0 0 0.5rem', fontSize: '0.8rem', color: meta.color, fontWeight: 700 }}>
+                    <p style={{ margin: '0 0 6px', fontSize: 13, color: 'var(--color-primary-900)', fontWeight: 700 }}>
                       Score: {cat.finalScore ?? 0}
                     </p>
 
@@ -1069,7 +1091,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                           setFilesModal({ catKey, files: catFiles });
                         }
                       }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', color: meta.color, fontSize: '0.78rem', fontWeight: 600, padding: 0 }}
+                      style={SM_LINK}
                     >
                       <FileText size={13} />
                       View {meta.label} Documents ({loadingFiles ? '…' : catFiles.length} files)
@@ -1081,27 +1103,25 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
             </div>
 
             {/* Interviewer-Provided Scores */}
-            <div style={{ background: '#EEF0FD', border: '1.5px solid #C8D1FF', borderRadius: 14, padding: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.85rem' }}>
-                <Users size={18} style={{ color: '#363EE8' }} />
-                <p style={{ margin: 0, fontWeight: 700, color: '#040E6B', fontSize: '0.93rem' }}>
-                  Interviewer-Provided Scores (Auto-Generated by System)
-                </p>
-              </div>
+            <section style={SM_CARD}>
+              <h3 style={SM_TITLE}>
+                <Users size={16} style={{ color: 'var(--color-primary)' }} />
+                Interviewer-Provided Scores (Auto-Generated by System)
+              </h3>
 
               {/* Locked notice */}
-              <div style={{ background: '#ffffff', border: '1px solid #C8D1FF', borderRadius: 10, padding: '0.75rem 0.9rem', marginBottom: '0.85rem', display: 'flex', alignItems: 'flex-start', gap: '0.6rem' }}>
-                <Lock size={16} style={{ color: '#363EE8', flexShrink: 0, marginTop: 2 }} />
+              <div style={{ ...SM_TINT, padding: '12px 16px', marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <Lock size={16} style={{ color: 'var(--color-primary)', flexShrink: 0, marginTop: 2 }} />
                 <div>
-                  <p style={{ margin: 0, fontWeight: 700, color: '#040E6B', fontSize: '0.875rem' }}>RSP Cannot Edit These Scores</p>
-                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: '#5B65F0' }}>
+                  <p style={SM_LABEL}>RSP Cannot Edit These Scores</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--neutral-800)' }}>
                     The following scores are automatically provided by the interview panel and cannot be manually entered by RSP staff.
                   </p>
                 </div>
               </div>
 
               {/* Interviewer categories */}
-              <div style={{ display: 'grid', gridTemplateColumns: interviewerCategories.length > 1 ? '1fr 1fr' : '1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: interviewerCategories.length > 1 ? '1fr 1fr' : '1fr', gap: 12 }}>
                 {interviewerCategories.map((catKey) => {
                   const meta = CAT_META[catKey];
                   const cat  = scores[catKey];
@@ -1120,42 +1140,42 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                                            writtenExamRawToConvertedScore(typeof cat.finalScore === 'number' ? cat.finalScore : 0);
                   const convertedMax = catKey === 'writtenExam' ? 30 : max;
                   return (
-                    <div key={catKey} style={{ background: '#ffffff', border: `1.5px solid ${meta.border}`, borderRadius: 10, padding: '0.85rem', boxShadow: `0 2px 6px ${meta.color}14` }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.65rem' }}>
-                        <span style={{ width: 28, height: 28, borderRadius: '50%', background: `linear-gradient(135deg, ${meta.color} 0%, #040E6B 100%)`, color: '#fff', fontWeight: 800, fontSize: '0.73rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div key={catKey} style={{ ...SM_CARD, padding: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <span style={SM_CHIP}>
                           {meta.roman}
                         </span>
-                        <p style={{ margin: 0, fontWeight: 700, color: '#040E6B', fontSize: '0.85rem' }}>{meta.label} (20%)</p>
+                        <p style={SM_LABEL}>{meta.label} (20%)</p>
                       </div>
 
-                      <div style={{ background: meta.bg, borderRadius: 7, padding: '0.35rem 0.65rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '0.76rem', color: '#5B65F0' }}>Initial {meta.label} Score:</span>
-                        <span style={{ fontWeight: 700, color: meta.color, fontSize: '0.85rem' }}>{cat.initialScore}</span>
-                        <span style={{ fontSize: '0.7rem', color: '#A5ACEE', fontStyle: 'italic' }}>previously saved</span>
+                      <div style={{ background: 'var(--neutral-100)', borderRadius: 8, padding: '6px 12px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: 'var(--neutral-600)' }}>Initial {meta.label} Score:</span>
+                        <span style={{ fontWeight: 700, color: 'var(--color-primary-900)', fontSize: 14 }}>{cat.initialScore}</span>
+                        <span style={{ fontSize: 12, color: 'var(--neutral-400)', fontStyle: 'italic' }}>previously saved</span>
                       </div>
 
-                      <div style={{ background: meta.badgeBg, border: `1px solid ${meta.border}`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.45rem' }}>
+                      <div style={{ ...SM_TINT, marginBottom: 6 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.78rem', color: '#5B65F0' }}>Raw Score:</span>
+                          <span style={{ fontSize: 13, color: 'var(--neutral-800)' }}>Raw Score:</span>
                           <input
                             type="number" min={0} max={100} step={1}
                             value={rawVal}
                             readOnly={true}
                             placeholder="—"
-                            style={{ width: 70, border: 'none', background: 'transparent', textAlign: 'right', fontSize: '1rem', fontWeight: 700, color: meta.color, outline: 'none', fontFamily: "'Poppins', sans-serif" }}
+                            style={{ width: 70, border: 'none', background: 'transparent', textAlign: 'right', fontSize: 14, fontWeight: 700, color: 'var(--color-primary)', outline: 'none', fontFamily: 'var(--font-sans)' }}
                           />
                         </div>
                       </div>
 
-                      <p style={{ margin: '0 0 0.4rem', fontSize: '0.7rem', color: '#A5ACEE', lineHeight: 1.5 }}>{meta.guide}</p>
-                      <p style={{ margin: '0 0 0.4rem', fontSize: '0.8rem', color: '#363EE8', fontWeight: 700 }}>
+                      <p style={{ ...SM_NOTE, marginBottom: 6 }}>{meta.guide}</p>
+                      <p style={{ margin: '0 0 6px', fontSize: 13, color: 'var(--color-primary-900)', fontWeight: 700 }}>
                         Converted Score: {convertedScore}/{convertedMax}
                       </p>
 
                       <button
                         type="button"
                         onClick={() => setFilesModal({ catKey, files: catFiles })}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', color: meta.color, fontSize: '0.76rem', fontWeight: 600, padding: 0 }}
+                        style={SM_LINK}
                       >
                         <FileText size={12} />
                         View {meta.label} Assessment Files ({loadingFiles ? '…' : catFiles.length} files)
@@ -1165,28 +1185,28 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                   );
                 })}
               </div>
-            </div>
+            </section>
 
             {/* Adjectival Rating Reference */}
-            <div style={{ background: '#ffffff', border: '1.5px solid #C8D1FF', borderRadius: 14, padding: '1rem' }}>
-              <p style={{ margin: '0 0 0.75rem', fontWeight: 700, color: '#040E6B', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Info size={14} style={{ color: '#363EE8' }} /> Adjectival Rating Reference
-              </p>
+            <section style={SM_CARD}>
+              <h3 style={SM_TITLE}>
+                <Info size={16} style={{ color: 'var(--color-primary)' }} /> Adjectival Rating Reference
+              </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem' }}>
                 {ADJECTIVAL_RANGES.map(r => (
-                  <div key={r.label} style={{ background: '#EEF0FD', border: '1px solid #C8D1FF', borderRadius: 8, padding: '0.6rem 0.5rem', textAlign: 'center' }}>
-                    <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: '#363EE8' }}>{r.min} - {r.max}</p>
-                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#040E6B', fontWeight: 600 }}>{r.label}</p>
+                  <div key={r.label} style={{ ...SM_TINT, padding: '8px 6px', textAlign: 'center' }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--color-primary)' }}>{r.min} - {r.max}</p>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--color-primary-900)', fontWeight: 600 }}>{r.label}</p>
                   </div>
                 ))}
               </div>
-            </div>
+            </section>
 
           </div>
 
-          {/* Footer */}
-          <div style={{ padding: '0.9rem 1.5rem', borderTop: '1.5px solid #C8D1FF', background: '#F7F8FE', display: 'flex', justifyContent: 'flex-end', gap: '0.65rem', flexShrink: 0 }}>
-            <button type="button" onClick={onClose} style={{ padding: '0.6rem 1.25rem', background: '#ffffff', border: '1.5px solid #C8D1FF', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', color: '#040E6B', cursor: 'pointer', fontFamily: "'Poppins', sans-serif" }}>
+          {/* Footer (§9.10): pinned, Cancel (secondary) left of the primary action */}
+          <div className="flex shrink-0 justify-end gap-3 border-t px-6 py-4" style={{ borderColor: 'var(--color-primary-200)' }}>
+            <button type="button" onClick={onClose} className="btn btn-md btn-secondary">
               Cancel
             </button>
             {!isFinalized && (() => {
@@ -1198,21 +1218,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                 <button
                   type="button" onClick={handleSave} disabled={disabled}
                   title={!allRspCategoriesFilled ? `Fill required fields: ${missing.join(', ')}` : undefined}
-                  style={{
-                    padding: '0.6rem 1.5rem',
-                    background: disabled ? '#C8D1FF' : 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontWeight: 700,
-                    fontSize: '0.875rem',
-                    color: '#ffffff',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    fontFamily: "'Poppins', sans-serif",
-                    boxShadow: disabled ? 'none' : '0 4px 14px rgba(54,62,232,0.35)',
-                  }}
+                  className="btn btn-md btn-primary"
                 >
                   <Save size={15} />
                   {saving ? 'Saving…' : allRspCategoriesFilled ? 'Save Scores' : 'Fill Required Fields'}
