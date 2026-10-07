@@ -61,7 +61,6 @@ export function SupervisorReview({ account, readOnly = false }: { account: DemoA
       <ReviewEditor
         pending={active}
         reviewer={account}
-        onBack={() => setActive(null)}
         onDone={() => {
           setActive(null);
           refresh();
@@ -117,7 +116,7 @@ export function SupervisorReview({ account, readOnly = false }: { account: DemoA
 }
 
 // ── The side-by-side editor ─────────────────────────────────────────────────
-function ReviewEditor({ pending, reviewer, onBack, onDone }: { pending: Pending; reviewer: DemoAccount; onBack: () => void; onDone: () => void }) {
+function ReviewEditor({ pending, reviewer, onDone }: { pending: Pending; reviewer: DemoAccount; onDone: () => void }) {
   const { account, phase } = pending;
   const [targets, setTargets] = useState<TargetRow[]>([]);
   const [accs, setAccs] = useState<AccomplishmentRow[]>([]);
@@ -173,7 +172,6 @@ function ReviewEditor({ pending, reviewer, onBack, onDone }: { pending: Pending;
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="text-sm font-medium text-indigo-600 hover:text-indigo-700">← Back to pending</button>
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Review — {account.full_name}</h1>
         <p className="text-sm text-slate-500">{phase === 1 ? 'Phase 1 · Target Setting' : 'Phase 2 · Accomplishment Rating'} · {account.office}</p>

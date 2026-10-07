@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, Copy, FilePlus2, Heart, Lock, Mail, MapPin, Phone, X } from 'lucide-react';
+import { Copy, FilePlus2, Heart, Lock, Mail, MapPin, Phone, X } from 'lucide-react';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 
 // Bypass auto-generated Supabase types resolving to `never`. Same escape hatch
@@ -46,13 +46,12 @@ const getInitials = (name: string): string => {
 
 interface Props {
   employee: Employee;
-  onBack: () => void;
   onRefresh: () => void;
 }
 
 type TabType = 'personal' | 'documents';
 
-export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Props) {
+export default function EmployeeDetailPage({ employee, onRefresh }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>('personal');
   const [showChangePositionModal, setShowChangePositionModal] = useState(false);
   const [documents, setDocuments] = useState<any[]>([]);
@@ -300,13 +299,6 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
       <div className="max-w-4xl mx-auto">
         {/* Header with Back Button */}
         <div className="mb-6">
-          <button
-            onClick={onBack}
-            className="text-blue-600 hover:text-blue-700 flex items-center gap-2 font-medium mb-6"
-          >
-            <ChevronLeft size={20} />
-            Back to Employees
-          </button>
         </div>
 
         {/* Employee Header Card */}

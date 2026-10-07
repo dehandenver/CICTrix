@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useBackClosesView } from '../hooks/useHistoryBack';
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
 import {
   fetchLatestEvaluationForApplicantOrEmailAnySource,
@@ -1250,7 +1251,6 @@ interface ApplicantsListViewProps {
   savedCatScores:         Record<string, ApplicantCategoryScores>;
   evaluationsByApplicant?: Record<string, EvaluationSnapshot>;
   examScores?:            Record<string, Record<string, string>>;
-  onBack:                 () => void;
   onUpdateScores:         (applicant: ApplicantRecord) => void;
 }
 
@@ -1277,7 +1277,6 @@ const ApplicantsListView = ({
   savedCatScores,
   evaluationsByApplicant,
   examScores,
-  onBack,
   onUpdateScores,
 }: ApplicantsListViewProps) => {
   const [search, setSearch] = useState('');
@@ -1314,19 +1313,7 @@ const ApplicantsListView = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      {/* Breadcrumb */}
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', fontSize: '0.875rem' }}>
-          <button
-            type="button"
-            onClick={onBack}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#2563eb', fontWeight: 600, padding: 0 }}
-          >
-            <ChevronRight size={13} style={{ transform: 'rotate(180deg)' }} /> Applicant Score
-          </button>
-          <ChevronRight size={13} style={{ color: '#94a3b8' }} />
-          <span style={{ fontWeight: 500, color: '#334155' }}>{folder.position}</span>
-        </div>
         <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>{folder.position}</h2>
         <p style={{ margin: '0.15rem 0 0', fontSize: '0.875rem', color: '#64748b' }}>
           {folder.office} &middot; {activeCount} {scoreTab === 'promotional' ? 'Promotional' : 'Original'} qualified applicant{activeCount !== 1 ? 's' : ''}
@@ -1590,6 +1577,11 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
     window.dispatchEvent(new CustomEvent('cictrix:category-scores-updated'));
   }, [catScores]);
 
+  // Browser Back closes one level: an open modal first, then the folder.
+  useBackClosesView(openFolder !== null, () => setOpenFolder(null), 'score-folder');
+  useBackClosesView(scoresCtx !== null, () => setScoresCtx(null), 'score-modal');
+  useBackClosesView(examModal !== null, () => setExamModal(null), 'exam-modal');
+
   // Keep openFolder in sync if folders list changes
   const liveOpenFolder = useMemo(
     () => (openFolder ? folders.find(f => f.position === openFolder.position) ?? null : null),
@@ -1605,7 +1597,6 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
           savedCatScores={catScores}
           evaluationsByApplicant={evaluationsByApplicant}
           examScores={examScores}
-          onBack={() => setOpenFolder(null)}
           onUpdateScores={(a) => setScoresCtx({ applicant: a, folder: liveOpenFolder })}
         />
       ) : (

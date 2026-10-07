@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
+import { useBackClosesView } from '../hooks/useHistoryBack';
 import { hireApplicant } from '../lib/api/employeesApi';
 import {
   ensureRecruitmentSeedData,
@@ -22,7 +23,6 @@ import {
   ArrowLeft,
   Building2,
   CheckCircle,
-  ChevronLeft,
   ChevronRight,
   Printer,
   UserCheck,
@@ -99,6 +99,7 @@ export const ForHiringPage = () => {
   const [selectedDept, setSelectedDept]         = useState<string | null>(null);
   const [selected, setSelected]                 = useState<Set<string>>(new Set());
   const [confirmTarget, setConfirmTarget]       = useState<HiringRow[] | null>(null);
+  useBackClosesView(selectedDept !== null, () => { setSelectedDept(null); setSelected(new Set()); }, 'for-hiring-dept');
   const [hiring, setHiring]                     = useState(false);
   const [credentialsResult, setCredentialsResult] = useState<CredentialResult[]>([]);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -795,20 +796,9 @@ export const ForHiringPage = () => {
   return (
     <Shell>
       <div className="p-6">
-        {/* Breadcrumb / header */}
+        {/* Header */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="mb-1 flex items-center gap-1.5 text-sm">
-              <button
-                type="button"
-                onClick={() => { setSelectedDept(null); setSelected(new Set()); }}
-                className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" /> For Hiring
-              </button>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-              <span className="font-medium text-slate-700">{selectedDept}</span>
-            </div>
             <h1 className="text-xl font-bold text-slate-900">{selectedDept}</h1>
             <p className="text-sm text-slate-500">
               {deptApplicants.length} qualified applicant{deptApplicants.length !== 1 ? 's' : ''} — ranked by interview score

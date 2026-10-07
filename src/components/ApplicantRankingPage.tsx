@@ -1,6 +1,6 @@
 import { useBackClosesView } from '../hooks/useHistoryBack';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Building2, CheckCircle2, ChevronRight, Printer, Trophy, UserCheck, Users } from 'lucide-react';
+import { Building2, CheckCircle2, ChevronRight, Printer, Trophy, UserCheck, Users } from 'lucide-react';
 import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
@@ -362,13 +362,6 @@ export const ApplicantRankingPage = () => {
       <div className="p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => setActiveDepartment(null)}
-              className="mt-1 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" /> Departments
-            </button>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">{activeDepartment}</h1>
               <p className="text-sm text-slate-500">Vacant positions in this department — click a row to view its ranking.</p>
@@ -451,13 +444,6 @@ export const ApplicantRankingPage = () => {
         {/* Toolbar */}
         <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => { setActivePosition(null); setSelected(new Set()); }}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" /> Back
-            </button>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">{activePosition}</h1>
               <p className="text-sm text-slate-500">{activeGroup?.office} · {activeGroup?.members.length} applicant{activeGroup?.members.length !== 1 ? 's' : ''}</p>

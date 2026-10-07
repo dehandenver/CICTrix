@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorBanner } from './ErrorBanner';
+import { useBackClosesView } from '../hooks/useHistoryBack';
 import {
   Building2,
   ChevronLeft,
@@ -32,6 +33,7 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
   const [selectedOfficeRow, setSelectedOfficeRow] = useState<OfficeDirectoryRow | null>(null);
   const [officeEmployees, setOfficeEmployees] = useState<any[]>([]);
   const [officeEmployeesLoading, setOfficeEmployeesLoading] = useState(false);
+  useBackClosesView(selectedOfficeRow !== null, () => setSelectedOfficeRow(null), 'office-directory');
 
   // Declared outside the effect so the error banner's Retry can re-run it.
   const loadDirectory = useCallback(() => {
@@ -171,17 +173,6 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
         /* Office employee list for selected office */
         <>
           <div>
-            <div className="mb-1 flex items-center gap-1.5 text-sm">
-              <button
-                type="button"
-                onClick={() => setSelectedOfficeRow(null)}
-                className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-              >
-                <ChevronLeft size={13} /> Office Directory
-              </button>
-              <ChevronRight size={13} className="text-slate-400" />
-              <span className="font-medium text-slate-700">{selectedOfficeRow.officeName}</span>
-            </div>
             <h2 className="!mb-0.5 text-xl font-bold text-slate-900">{selectedOfficeRow.officeName}</h2>
             <p className="!mb-0 text-sm text-slate-500">{officeEmployees.length} employee{officeEmployees.length === 1 ? '' : 's'}</p>
           </div>

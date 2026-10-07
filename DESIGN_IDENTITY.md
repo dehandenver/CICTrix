@@ -398,7 +398,8 @@ Show the office/department **once**. The content cards overlap the hero by ~48px
 | Situation | Rule |
 |---|---|
 | In-page Back button | Step back in history (`useHistoryBack(fallback)`). Use the portal home as a fallback only when there is no earlier in-app page, e.g. after a direct visit. Label it "Back", not "Back to Dashboard", unless the destination is fixed. |
-| Drill-downs, detail panels, list modals | Browser Back closes **one level** and stays on the page (`useBackClosesView`). Closing the view with its own button must not leave an extra history step. |
+| Drill-downs, detail panels, list modals | Browser Back closes **one level** and stays on the page (`useBackClosesView`), one hook key per nesting level. Closing the view with its own button must not leave an extra history step. |
+| Text back links in drill-downs | Don't add them. In-page drill-downs (folders, offices, archive sub-views, detail panels) show only their title and subtitle, with no "‹ Parent" breadcrumb button or "Back to …" link; browser Back is the way out. Icon-only Back buttons in sub-page heroes and modals stay. |
 | Login / logout | Redirect with `replace`, so Back from a portal home never returns to the login screen, and Back after logout never re-enters the portal. |
 | Explicitly named links ("Back to Home") | Allowed only when they really go to that named place. |
 

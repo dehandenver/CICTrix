@@ -144,7 +144,6 @@ export function PMIncoming({ pmId, tick, onChange }: { pmId: string; tick: numbe
         phase={reviewing.phase}
         pmId={pmId}
         accounts={accounts}
-        onBack={() => setReviewing(null)}
         onDone={() => {
           setReviewing(null);
           refresh();
@@ -284,14 +283,12 @@ function PMReview({
   phase,
   pmId,
   accounts,
-  onBack,
   onDone,
 }: {
   account: DemoAccount;
   phase: 1 | 2;
   pmId: string;
   accounts: DemoAccount[];
-  onBack: () => void;
   onDone: () => void;
 }) {
   const [targets, setTargets] = useState<TargetRow[]>([]);
@@ -315,7 +312,6 @@ function PMReview({
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="text-sm font-medium text-indigo-600 hover:text-indigo-700">← Back to incoming</button>
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Review — {account.full_name}</h1>
         <p className="text-sm text-slate-500">{phase === 1 ? 'Phase 1 · Verified targets' : 'Phase 2 · Verified accomplishments'} · {account.office}</p>

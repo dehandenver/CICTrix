@@ -2,8 +2,6 @@ import {
   Activity as ActivityIcon,
   ArrowLeft,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   CircleX,
   Eye,
   FileText,
@@ -20,7 +18,7 @@ import {
 import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { useHistoryBack } from '../../hooks/useHistoryBack';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -726,7 +724,6 @@ const FILE_NAME_TO_TYPE: Record<string, string> = {
 };
 
 export function ApplicantDetailsPage() {
-  const navigate = useNavigate();
   const goBack = useHistoryBack('/admin/rsp');
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
@@ -1137,11 +1134,6 @@ export function ApplicantDetailsPage() {
     hasInterviewScores(evaluation) || interviewerScoreSnapshot?.pcptAverage || interviewerScoreSnapshot?.oralAverage
   );
   const isRspAdmin = location.pathname.startsWith('/admin/rsp/');
-  const backTo = routeState?.from || (isRspAdmin ? '/admin/rsp/applications' : '/admin/rsp/qualified');
-  const backLabel = backTo.includes('qualified') ? 'Qualified Applicants'
-    : backTo.includes('applicant-score') ? 'Applicant Score'
-      : backTo.includes('for-hiring') ? 'For Hiring'
-        : 'Applications';
   const showViewScoresButton = false;
   const showJobPostActionButtons = true;
   const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
@@ -1807,15 +1799,6 @@ export function ApplicantDetailsPage() {
         {isRspAdmin && <Sidebar activeModule="RSP" userRole="rsp" />}
         <main className={isRspAdmin ? 'admin-content bg-white !p-0' : 'bg-slate-100 !p-0'}>
           <header className="border-b border-slate-200 bg-white px-6 py-4">
-            {/* Breadcrumb */}
-            <div className="mb-3 flex items-center gap-1.5 text-xs">
-              <button type="button" onClick={() => navigate(backTo)} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
-                <ChevronLeft size={12} /> {backLabel}
-              </button>
-              <ChevronRight size={12} className="text-slate-400" />
-              <span className="text-slate-500">{fullName}</span>
-            </div>
-
             <div className="flex items-start justify-between gap-4">
               {/* Profile card inline */}
               <div className="flex items-center gap-4">

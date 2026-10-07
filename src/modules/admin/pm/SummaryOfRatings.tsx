@@ -1,5 +1,5 @@
 import { useBackClosesView } from '../../../hooks/useHistoryBack';
-import { ArrowLeft, ArrowUpDown, Building2, ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import { ArrowUpDown, Building2, ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import { EmptyState } from '../../../components/EmptyState';
@@ -219,32 +219,10 @@ export const SummaryOfRatings = () => {
         <p className="text-sm font-medium text-gray-500">
           <span className="text-blue-600">PM</span>{' '}
           <span className="mx-1 text-gray-400">/</span>{' '}
-          {activeDept === null ? (
-            <span>Summary of Ratings</span>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={backToDepartments}
-                className="text-blue-600 hover:underline"
-              >
-                Summary of Ratings
-              </button>
-              <span className="mx-1 text-gray-400">/</span> {activeDept}
-            </>
-          )}
+          <span>Summary of Ratings</span>
         </p>
         <div className="mt-1 flex flex-wrap items-end justify-between gap-4">
           <div>
-            {activeDept !== null && (
-              <button
-                type="button"
-                onClick={backToDepartments}
-                className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-blue-600 transition"
-              >
-                <ArrowLeft className="h-4 w-4" /> All departments
-              </button>
-            )}
             <h1 className="text-3xl font-bold text-gray-900">
               {activeDept === null ? 'Summary of Ratings' : activeDept}
             </h1>

@@ -1,6 +1,5 @@
 import { useBackClosesView } from '../hooks/useHistoryBack';
 import {
-  ArrowLeft,
   CheckCircle2,
   ChevronRight,
   KeyRound,
@@ -509,9 +508,6 @@ export const NewlyHiredPage = () => {
             <header className="border-b border-slate-200 bg-white px-8 py-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <button type="button" onClick={closeDepartment} className="mb-2 inline-flex items-center gap-2 text-slate-500 hover:text-slate-700">
-                    <ArrowLeft size={20} /> Back
-                  </button>
                   <h1 className="mb-1 text-2xl font-bold text-slate-900">{formatOfficeLabel(selectedDepartment)}</h1>
                   <p className="text-sm text-slate-500">{selectedDepartmentRows.length} newly hired employees</p>
                 </div>

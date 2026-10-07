@@ -1,0 +1,66 @@
+<h2>Picks stay checked when you switch department. How should the selected count show?</h2>
+<p class="subtitle">Scenario: 2 picked in Operations, then switched to Human Resource Management Office and picked 1 more. Save Assignment publishes to all 3.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a-count-line" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;font-size:12px;text-align:left">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <span style="border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px">Human Resource Mgmt Office ▾</span>
+        <span style="border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px">All Positions ▾</span>
+      </div>
+      <div style="border-top:1px solid #e2e8f0;padding-top:5px;display:flex;justify-content:space-between">
+        <span>1 of 10 applicants</span>
+        <span><b style="color:#363EE8">3 selected</b> (2 in other departments) · <u style="color:#363EE8">Clear selection</u></span>
+      </div>
+      <table style="width:100%;margin-top:6px;border-collapse:collapse">
+        <tr style="background:#f1f5f9"><th>☐</th><th style="text-align:left">Applicant</th><th style="text-align:left">Department</th></tr>
+        <tr style="background:#eff6ff"><td>☑</td><td>trisb mae lombi</td><td>HRMO</td></tr>
+      </table>
+      <div style="text-align:right;margin-top:8px"><span style="background:#363EE8;color:#fff;padding:3px 8px;border-radius:5px">Save Assignment (3)</span></div>
+    </div>
+    <div class="card-body"><h3>A. Count in the filter line</h3><p>One line of text with a hidden count and Clear. The smallest change.</p></div>
+  </div>
+
+  <div class="card" data-choice="b-chips" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;font-size:12px;text-align:left">
+      <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:6px 8px;margin-bottom:6px">
+        <b style="color:#363EE8">3 selected</b> &nbsp;
+        <span style="background:#fff;border:1px solid #c7d2fe;border-radius:10px;padding:1px 6px">Operations · 2 ✕</span>
+        <span style="background:#fff;border:1px solid #c7d2fe;border-radius:10px;padding:1px 6px">HRMO · 1 ✕</span>
+        &nbsp;<u style="color:#363EE8">Clear all</u>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <span style="border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px">Human Resource Mgmt Office ▾</span>
+        <span style="border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px">All Positions ▾</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr style="background:#f1f5f9"><th>☐</th><th style="text-align:left">Applicant</th><th style="text-align:left">Department</th></tr>
+        <tr style="background:#eff6ff"><td>☑</td><td>trisb mae lombi</td><td>HRMO</td></tr>
+      </table>
+      <div style="text-align:right;margin-top:8px"><span style="background:#363EE8;color:#fff;padding:3px 8px;border-radius:5px">Save Assignment (3)</span></div>
+    </div>
+    <div class="card-body"><h3>B. Selection bar with department chips</h3><p>Shows where the picks came from. Click a chip to jump to that department, or ✕ to unselect that department's picks.</p></div>
+  </div>
+
+  <div class="card" data-choice="c-show-selected" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:12px;font-size:12px;text-align:left">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <span style="border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px">Human Resource Mgmt Office ▾</span>
+        <span style="border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px">All Positions ▾</span>
+      </div>
+      <div style="border-top:1px solid #e2e8f0;padding-top:5px;display:flex;justify-content:space-between">
+        <span>1 of 10 applicants</span>
+        <span><b style="color:#363EE8">3 selected</b> · <span style="border:1px solid #363EE8;color:#363EE8;border-radius:5px;padding:1px 6px">Show selected only</span> · <u style="color:#363EE8">Clear</u></span>
+      </div>
+      <table style="width:100%;margin-top:6px;border-collapse:collapse">
+        <tr style="background:#f1f5f9"><th>☐</th><th style="text-align:left">Applicant</th><th style="text-align:left">Department</th></tr>
+        <tr style="background:#eff6ff"><td>☑</td><td>trisb mae lombi</td><td>HRMO</td></tr>
+      </table>
+      <div style="color:#64748b;margin-top:4px">"Show selected only" lists all 3 picks across departments for a check before publishing.</div>
+      <div style="text-align:right;margin-top:6px"><span style="background:#363EE8;color:#fff;padding:3px 8px;border-radius:5px">Save Assignment (3)</span></div>
+    </div>
+    <div class="card-body"><h3>C. Count with "Show selected only"</h3><p>Same count as A, plus a toggle to review every pick in one list before saving.</p></div>
+  </div>
+
+</div>

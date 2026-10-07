@@ -213,7 +213,6 @@ export default function EmployeeDirectory() {
       <EmployeeListByPosition
         position={selectedPosition}
         onEmployeeClick={handleEmployeeClick}
-        onBack={handleBackToPositions}
       />
     );
   }
@@ -223,7 +222,6 @@ export default function EmployeeDirectory() {
     return (
       <EmployeeDetailPage
         employee={selectedEmployee}
-        onBack={handleBackToPositionList}
         onRefresh={() => {
           // Refresh employee data if needed
         }}

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorBanner } from '../../../components/ErrorBanner';
 import {
   AlertTriangle,
-  ArrowLeft,
   Check,
   ClipboardList,
   Link2,
@@ -180,12 +179,10 @@ const EligibilityPanel = ({
 
 const ApplicationDetail = ({
   application,
-  onBack,
   onChanged,
   onRunEligibility,
 }: {
   application: ApplicationRow;
-  onBack: () => void;
   onChanged: () => void;
   onRunEligibility: (app: ApplicationRow) => void;
 }) => {
@@ -249,13 +246,6 @@ const ApplicationDetail = ({
 
   return (
     <div className="space-y-4">
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex items-center gap-1 text-sm font-medium text-[#363EE8] hover:underline"
-      >
-        <ArrowLeft size={14} /> Applications
-      </button>
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -604,7 +594,6 @@ export function PMPromotionalApplications() {
         (selectedFresh ? (
           <ApplicationDetail
             application={selectedFresh}
-            onBack={() => setSelected(null)}
             onChanged={() => void load()}
             onRunEligibility={(app) => void handleRunEligibility(app)}
           />

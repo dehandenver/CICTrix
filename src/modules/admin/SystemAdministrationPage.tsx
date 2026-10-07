@@ -1,7 +1,7 @@
 import { useBackClosesView } from '../../hooks/useHistoryBack';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { getAdminEmail } from '../../lib/adminSession';
-import { AlertCircle, Archive, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardList, Copy, History, Lock, Search, ShieldCheck, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { AlertCircle, Archive, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ClipboardList, Copy, History, Lock, Search, ShieldCheck, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { getAllEmployees, type Employee } from '../../lib/api/employees';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
@@ -202,13 +202,6 @@ const OfficeDirectory = () => {
   if (drillOfficeRow !== null) {
     return (
       <div>
-        <button
-          type="button"
-          onClick={() => setDrillOfficeRow(null)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', color: '#363EE8', fontWeight: 600, fontSize: '14px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-        >
-          <ChevronLeft size={16} /> Back to Office Directory
-        </button>
 
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', padding: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 700, fontSize: '20px', color: '#1f2937', marginBottom: '4px' }}>
