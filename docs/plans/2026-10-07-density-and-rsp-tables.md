@@ -1,7 +1,7 @@
 ---
 title: Portal density pass, RSP table fixes, scoring modal restyle, L&D request pagination
 date: 2026-10-07
-status: In Progress
+status: Done
 summary: Paginate L&D training requests, drop the Job Posts Edit button, clarify resubmission timestamps, compact the Scheduled Applicants and Applicant Score tables, restyle the scoring modal to match Create New Job Position, and lower the portal type/size scale through tokens.
 ---
 
