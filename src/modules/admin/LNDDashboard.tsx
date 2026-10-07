@@ -201,6 +201,76 @@ const DEPT_PALETTE = [
   '#db2777', '#0891b2', '#65a30d', '#ea580c', '#6366f1',
 ];
 
+// ── Dismissible warning (DESIGN_IDENTITY.md §9.9, warning) ───────────────────
+
+type WarningItem = { id: string; title: string; category: string | null; startDate: string };
+
+const readDismissed = (storageKey: string): string[] => {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * An admin can dismiss a warning with its X. The dismissal is remembered per
+ * browser for the trainings listed at the time, so the warning returns only
+ * when a training that was not on the list joins it.
+ */
+const DismissibleWarning = ({ storageKey, title, message, items }: {
+  storageKey: string;
+  title: string;
+  message: string;
+  items: WarningItem[];
+}) => {
+  const [dismissed, setDismissed] = useState<string[]>(() => readDismissed(storageKey));
+  if (items.length === 0 || items.every((item) => dismissed.includes(item.id))) return null;
+
+  const dismiss = () => {
+    const ids = items.map((item) => item.id);
+    setDismissed(ids);
+    try { localStorage.setItem(storageKey, JSON.stringify(ids)); } catch { /* storage unavailable */ }
+  };
+
+  return (
+    <section
+      className="abyan-ds relative rounded-xl p-4 pr-12"
+      role="alert"
+      style={{ background: 'var(--warning-100)', borderLeft: '4px solid var(--warning-500)' }}
+    >
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label={`Dismiss: ${title}`}
+        title="Dismiss"
+        className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        style={{ color: 'var(--warning-700)', backgroundColor: 'transparent', outlineColor: 'var(--color-primary)' }}
+      >
+        <X className="h-4 w-4" aria-hidden />
+      </button>
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" style={{ color: 'var(--warning-500)' }} aria-hidden />
+        <div className="min-w-0">
+          <p className="text-headline-m" style={{ color: 'var(--neutral-800)' }}>{title}</p>
+          <p className="text-body-m mt-1" style={{ color: 'var(--neutral-800)' }}>{message}</p>
+          <ul className="mt-2 space-y-1">
+            {items.map((t) => (
+              <li key={t.id} className="text-body-s" style={{ color: 'var(--neutral-800)' }}>
+                <span style={{ fontWeight: 600 }}>{t.title}</span>
+                <span style={{ color: 'var(--warning-700)' }}>
+                  {t.category ? ` · ${t.category}` : ''} · starts {new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+};
+
 // ── Dashboard component ───────────────────────────────────────────────────────
 
 const LndDashboardContent = () => {
@@ -370,56 +440,20 @@ const LndDashboardContent = () => {
       </section>
 
       {/* "Went live incomplete" warning — trainings that locked while still in planning */}
-      {incompleteLocked.length > 0 && (
-        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-amber-800">
-                {incompleteLocked.length} training{incompleteLocked.length === 1 ? '' : 's'} went live incomplete
-              </p>
-              <p className="mt-0.5 text-xs text-amber-700">
-                These locked within 3 days of their start while still in planning — the detail fields were never completed. Complete trainings before the cutoff next time.
-              </p>
-              <ul className="mt-2 space-y-1">
-                {incompleteLocked.map((t) => (
-                  <li key={t.id} className="text-xs text-amber-800">
-                    <span className="font-medium">{t.title}</span>
-                    {t.category ? <span className="text-amber-600"> · {t.category}</span> : null}
-                    <span className="text-amber-600"> · starts {new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
-      )}
+      <DismissibleWarning
+        storageKey="abyan:lnd-dismissed-incomplete"
+        title={`${incompleteLocked.length} training${incompleteLocked.length === 1 ? '' : 's'} went live incomplete`}
+        message="These locked within 3 days of their start while still in planning, so their detail fields were never completed. Complete trainings before the cutoff next time."
+        items={incompleteLocked}
+      />
 
       {/* Safeguard — trainings about to lock (3 days out) with no finalized roster */}
-      {lockingSoon.length > 0 && (
-        <section className="rounded-2xl border border-orange-300 bg-orange-50 p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-orange-800">
-                {lockingSoon.length} training{lockingSoon.length === 1 ? '' : 's'} locking within 3 days — roster not finalized
-              </p>
-              <p className="mt-0.5 text-xs text-orange-700">
-                These will lock (editing closes 3 days before start) while still having no enrolled attendees. Finalize their rosters now, before they go live empty.
-              </p>
-              <ul className="mt-2 space-y-1">
-                {lockingSoon.map((t) => (
-                  <li key={t.id} className="text-xs text-orange-800">
-                    <span className="font-medium">{t.title}</span>
-                    {t.category ? <span className="text-orange-600"> · {t.category}</span> : null}
-                    <span className="text-orange-600"> · starts {new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
-      )}
+      <DismissibleWarning
+        storageKey="abyan:lnd-dismissed-locking-soon"
+        title={`${lockingSoon.length} training${lockingSoon.length === 1 ? '' : 's'} locking within 3 days, roster not finalized`}
+        message="These lock 3 days before they start and still have no enrolled attendees. Finalize their rosters now, before they go live empty."
+        items={lockingSoon}
+      />
 
       {/* Metric Cards */}
       <section className="grid grid-cols-1 gap-6 md:grid-cols-3 relative">
