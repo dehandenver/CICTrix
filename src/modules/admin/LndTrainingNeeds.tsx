@@ -12,7 +12,7 @@
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Search } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import {
   computeNeedsAssessment,
   decideRequest,
@@ -42,6 +42,21 @@ const STATUS_PILL: Record<RequestStatus, string> = {
 };
 
 const TH = 'px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500';
+
+const REQUESTS_PER_PAGE = 10;
+
+/** Page buttons per DESIGN_IDENTITY §9.6: every page up to 7, else first, last and current ±1 with ellipses. */
+const pageItems = (current: number, total: number): (number | '…')[] => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const items: (number | '…')[] = [1];
+  if (current > 3) items.push('…');
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p += 1) items.push(p);
+  if (current < total - 2) items.push('…');
+  items.push(total);
+  return items;
+};
+
+const PAGER_STEP = 'inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-[#C8D1FF] hover:bg-[#EEF0FF] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:hover:border-slate-200';
 
 /**
  * Approve / Dismiss pair. `variant="card"` is the narrow-screen form: full-width
@@ -96,6 +111,7 @@ export const LndTrainingNeeds = () => {
   const [statusFilter, setStatusFilter] = useState<'All' | RequestStatus>('Pending');
   const [openComps, setOpenComps] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -121,6 +137,14 @@ export const LndTrainingNeeds = () => {
         ),
     [requests, statusFilter],
   );
+
+  // Clamped on read, so an Approve/Dismiss that empties the last page lands on
+  // the previous page instead of an empty one.
+  const pageCount = Math.max(1, Math.ceil(filteredRequests.length / REQUESTS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * REQUESTS_PER_PAGE;
+  const pageRequests = filteredRequests.slice(pageStart, pageStart + REQUESTS_PER_PAGE);
+  useEffect(() => { if (page !== currentPage) setPage(currentPage); }, [page, currentPage]);
 
   const toggleComp = (c: string) =>
     setOpenComps((prev) => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; });
@@ -154,7 +178,7 @@ export const LndTrainingNeeds = () => {
             <button
               key={t}
               type="button"
-              onClick={() => setStatusFilter(t)}
+              onClick={() => { setStatusFilter(t); setPage(1); }}
               className={`relative -mb-px min-h-[44px] shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-bold transition-colors sm:px-6 sm:py-4 sm:text-base ${
                 statusFilter === t
                   ? 'border-[#363EE8] text-[#363EE8]'
@@ -199,7 +223,7 @@ export const LndTrainingNeeds = () => {
               {/* Under lg the six columns become one stacked card per request, so
                   nothing needs a sideways scroll to reach Approve / Dismiss. */}
               <ul className="divide-y divide-slate-100 lg:hidden">
-                {filteredRequests.map((r) => (
+                {pageRequests.map((r) => (
                   <li key={r.id} className="space-y-2 px-4 py-4">
                     <div className="flex items-start justify-between gap-2">
                       <p className="min-w-0 break-words text-sm font-semibold text-slate-900">{r.title}</p>
@@ -238,7 +262,7 @@ export const LndTrainingNeeds = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRequests.map((r) => (
+                    {pageRequests.map((r) => (
                       <tr key={r.id} className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50">
                         <td className="px-5 py-4 text-sm font-semibold text-slate-900">{r.office}</td>
                         <td className="px-5 py-4">
@@ -263,6 +287,41 @@ export const LndTrainingNeeds = () => {
                 </table>
               </div>
             </div>
+          )}
+
+          {!loading && pageCount > 1 && (
+            <nav className="flex flex-wrap items-center justify-between gap-3" aria-label="Training request pages">
+              <p className="text-xs text-slate-500">
+                Showing {pageStart + 1}–{pageStart + pageRequests.length} of {filteredRequests.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1} className={PAGER_STEP}>
+                  <ChevronLeft className="h-4 w-4" /> Previous
+                </button>
+                {pageItems(currentPage, pageCount).map((p, i) =>
+                  p === '…' ? (
+                    <span key={`gap-${i}`} className="px-1 text-sm text-slate-400">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      aria-current={p === currentPage ? 'page' : undefined}
+                      className={`h-9 min-w-[36px] rounded-lg px-2 text-sm font-medium transition ${
+                        p === currentPage
+                          ? 'bg-[#363EE8] text-white'
+                          : 'border border-slate-200 bg-white text-slate-700 hover:border-[#C8D1FF] hover:bg-[#EEF0FF]'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
+                <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage === pageCount} className={PAGER_STEP}>
+                  Next <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </nav>
           )}
         </section>
 
