@@ -14,7 +14,7 @@ import {
     Users,
     X
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { COMPETENCIES, EDUCATION_LEVELS, formatOfficeLabel } from '../constants/positions';
 import { useDepartmentNames } from '../hooks/useDepartmentOptions';
@@ -1551,44 +1551,34 @@ export const JobPostingsPage = () => {
                       : STATUS_COLORS.Active
                     : STATUS_COLORS[job.status];
                   return (
-                    <tr key={job.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
+                    <Fragment key={job.id}>
+                    <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
                       <td className="px-5 py-4">
-                        <p className="font-semibold text-slate-900 text-sm">{normalizeRomanNumeralsInText(job.title)}</p>
+                        {isMultiSlot ? (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedSlotJobIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(job.id)) next.delete(job.id); else next.add(job.id);
+                              return next;
+                            })}
+                            className="inline-flex items-center gap-1 text-left text-sm font-semibold text-slate-900 hover:text-blue-700"
+                            aria-expanded={expanded}
+                            aria-label={`${expanded ? 'Collapse' : 'Expand'} plantillas for ${normalizeRomanNumeralsInText(job.title)}`}
+                          >
+                            <ChevronRight className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                            {normalizeRomanNumeralsInText(job.title)}
+                          </button>
+                        ) : (
+                          <p className="font-semibold text-slate-900 text-sm">{normalizeRomanNumeralsInText(job.title)}</p>
+                        )}
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-500">
                         {isMultiSlot ? (
-                          <div>
-                            <button
-                              type="button"
-                              onClick={() => setExpandedSlotJobIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(job.id)) next.delete(job.id); else next.add(job.id);
-                                return next;
-                              })}
-                              className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-blue-700 hover:underline"
-                              aria-expanded={expanded}
-                            >
-                              {slots.length} Plantillas
-                              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-                            </button>
-                            {expanded && (
-                              <ul className="mt-1.5 space-y-1">
-                                {slots.map((slot) => (
-                                  <li key={slot.id} className="flex items-center gap-2 whitespace-nowrap text-xs">
-                                    <span className="font-semibold text-slate-700">{plantillaLabel(slot)}</span>
-                                    <span className="text-slate-500">{slotApplicantCounts.get(slot.id) ?? 0} applicant{(slotApplicantCounts.get(slot.id) ?? 0) === 1 ? "" : "s"}</span>
-                                    {slot.status !== 'open' && (
-                                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                                        slot.status === 'filled' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'
-                                      }`}>
-                                        {slot.status === 'filled' ? 'Filled' : 'Closed'}
-                                      </span>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
+                          <span className="whitespace-nowrap">
+                            <span className="text-slate-700">{slots.length} plantillas</span>
+                            {slotSummary.filled > 0 && <span className="text-xs text-slate-500"> · {slotSummary.filled} filled</span>}
+                          </span>
                         ) : (
                           <span className="whitespace-nowrap">{slots[0] ? applicantsPerPlantillaText(plantillaLabel(slots[0]), slotApplicantCounts.get(slots[0].id) ?? 0) : "Plantilla 1"}</span>
                         )}
@@ -1638,6 +1628,41 @@ export const JobPostingsPage = () => {
                         </div>
                       </td>
                     </tr>
+                    {isMultiSlot && expanded && slots.map((slot) => {
+                      const slotCount = slotApplicantCounts.get(slot.id) ?? 0;
+                      // An open plantilla nobody has applied to yet reads as
+                      // "No applicants" so it stands out from ones in progress.
+                      const slotStatus = slot.status === 'filled'
+                        ? { label: 'Filled', className: STATUS_COLORS.Filled }
+                        : slot.status === 'closed'
+                          ? { label: 'Closed', className: STATUS_COLORS.Closed }
+                          : slotCount === 0
+                            ? { label: 'No applicants', className: 'bg-slate-100 text-slate-500' }
+                            : { label: 'Open', className: STATUS_COLORS.Active };
+                      return (
+                        <tr key={slot.id} className="border-b border-slate-100 bg-slate-50/70 text-sm">
+                          <td className="border-l-[3px] border-l-blue-200 px-5 py-2" />
+                          <td className="px-5 py-2 text-slate-700">{plantillaLabel(slot)}</td>
+                          <td className="px-5 py-2" />
+                          <td className="px-5 py-2" />
+                          <td className="px-5 py-2 text-center text-slate-900">{slotCount}</td>
+                          <td className="px-5 py-2 text-center">
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${slotStatus.className}`}>{slotStatus.label}</span>
+                          </td>
+                          <td className="px-5 py-2 text-center">
+                            <button
+                              type="button"
+                              title={`View applicants for ${plantillaLabel(slot)}`}
+                              className="rounded-lg border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 transition-colors"
+                              onClick={() => { setViewingApplicantsFor(job); setJobApplicantsSearch(''); setJobApplicantsSlotFilter(slot.id); }}
+                            >
+                              Applicants
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    </Fragment>
                   );
                 })}
                 {currentPageJobs.length === 0 && (
