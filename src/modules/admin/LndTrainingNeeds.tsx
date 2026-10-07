@@ -4,11 +4,11 @@
  * Chrome matches RSP › Applicants: a white page header, a sticky sub-tab bar,
  * and bordered tables with uniform slate headers.
  *
- * Section 1: manual training requests submitted by office accounts, grouped by
+ * Section 1: an AI-inferred training-needs assessment ranked by competency, each
+ * row expanding to the offices driving that need (affected / total headcount).
+ * Section 2: manual training requests submitted by office accounts, grouped by
  * office in a collapsible list; expanding an office reveals its request table
  * where the admin approves or dismisses each row.
- * Section 2: an AI-inferred training-needs assessment ranked by competency, each
- * row expanding to the offices driving that need (affected / total headcount).
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
@@ -125,7 +125,7 @@ export const LndTrainingNeeds = () => {
 
   const flash = (m: string) => { setNotice(m); window.setTimeout(() => setNotice((c) => (c === m ? null : c)), 3500); };
 
-  // ── Section 1: a single flat, filterable request table ──────────────────
+  // ── Section 2: a single flat, filterable request table ──────────────────
   const filteredRequests = useMemo(
     () =>
       requests
@@ -192,7 +192,114 @@ export const LndTrainingNeeds = () => {
       </div>
 
       <div className="space-y-8 p-4 sm:p-6">
-        {/* ── Section 1: Training requests, grouped by office ─────────────── */}
+        {/* ── Section 1: Training needs assessment ────────────────────────── */}
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Training needs assessment</h2>
+            <p className="text-sm text-slate-500">
+              Generated from summary of ratings and the competency framework, sorted by demand — click a row for the offices driving it
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[21rem]">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className={TH}>Competency</th>
+                  <th className={TH}>Priority</th>
+                  <th className={TH}>Offices</th>
+                  <th className={TH}>Demand</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-12 text-center text-slate-500">Loading needs assessment…</td>
+                  </tr>
+                )}
+
+                {!loading && needs.map((n) => {
+                  const open = openComps.has(n.competency);
+                  return (
+                    <Fragment key={n.competency}>
+                      <tr
+                        onClick={() => toggleComp(n.competency)}
+                        className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50"
+                      >
+                        <td className="px-5 py-4">
+                          <span className="flex items-center gap-2">
+                            {open
+                              ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                              : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
+                            <span className="text-sm font-semibold text-slate-900">{n.competency}</span>
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${PRIORITY_BADGE[n.priority]}`}>
+                            {PRIORITY_LABEL[n.priority]}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-700">{n.offices.length}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex w-full min-w-[7rem] max-w-[10rem] items-center gap-2">
+                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                              <div className="h-full rounded-full bg-[#363EE8]" style={{ width: `${n.demand}%` }} />
+                            </div>
+                            <span className="w-9 text-right text-sm font-semibold text-slate-700">{n.demand}%</span>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {open && (
+                        <tr className="border-b border-slate-100 last:border-0">
+                          <td colSpan={4} className="bg-slate-50/60 px-5 py-4">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                              Offices driving this need
+                            </p>
+                            <ul className="space-y-2">
+                              {n.offices.map((o) => (
+                                <li key={o.office} className="flex items-center gap-3">
+                                  <span
+                                    className="w-28 shrink-0 truncate text-sm text-slate-700 sm:w-40 lg:w-52"
+                                    title={o.office}
+                                  >
+                                    {o.office}
+                                  </span>
+                                  <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200/70">
+                                    <div className="h-full rounded-full bg-blue-400" style={{ width: `${o.demand}%` }} />
+                                  </div>
+                                  <span className="w-16 shrink-0 text-right text-xs font-semibold text-slate-600">
+                                    {o.affected}/{o.total}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+
+                {!loading && needs.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-12 text-center text-slate-500">
+                      <p className="font-medium">No needs assessment yet.</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Once the AI competency matcher has run against the summary of ratings, the
+                        most-in-demand competencies appear here.
+                      </p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Section 2: Training requests, grouped by office ─────────────── */}
         <section className="space-y-3">
           <div>
             <h2 className="text-lg font-bold text-slate-900">Training requests</h2>
@@ -323,113 +430,6 @@ export const LndTrainingNeeds = () => {
               </div>
             </nav>
           )}
-        </section>
-
-        {/* ── Section 2: Training needs assessment ────────────────────────── */}
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">Training needs assessment</h2>
-            <p className="text-sm text-slate-500">
-              Generated from summary of ratings and the competency framework, sorted by demand — click a row for the offices driving it
-            </p>
-          </div>
-
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-[21rem]">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className={TH}>Competency</th>
-                  <th className={TH}>Priority</th>
-                  <th className={TH}>Offices</th>
-                  <th className={TH}>Demand</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && (
-                  <tr>
-                    <td colSpan={4} className="px-5 py-12 text-center text-slate-500">Loading needs assessment…</td>
-                  </tr>
-                )}
-
-                {!loading && needs.map((n) => {
-                  const open = openComps.has(n.competency);
-                  return (
-                    <Fragment key={n.competency}>
-                      <tr
-                        onClick={() => toggleComp(n.competency)}
-                        className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50"
-                      >
-                        <td className="px-5 py-4">
-                          <span className="flex items-center gap-2">
-                            {open
-                              ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-                              : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
-                            <span className="text-sm font-semibold text-slate-900">{n.competency}</span>
-                          </span>
-                        </td>
-                        <td className="px-5 py-4">
-                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${PRIORITY_BADGE[n.priority]}`}>
-                            {PRIORITY_LABEL[n.priority]}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4 text-sm text-slate-700">{n.offices.length}</td>
-                        <td className="px-5 py-4">
-                          <div className="flex w-full min-w-[7rem] max-w-[10rem] items-center gap-2">
-                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                              <div className="h-full rounded-full bg-[#363EE8]" style={{ width: `${n.demand}%` }} />
-                            </div>
-                            <span className="w-9 text-right text-sm font-semibold text-slate-700">{n.demand}%</span>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {open && (
-                        <tr className="border-b border-slate-100 last:border-0">
-                          <td colSpan={4} className="bg-slate-50/60 px-5 py-4">
-                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                              Offices driving this need
-                            </p>
-                            <ul className="space-y-2">
-                              {n.offices.map((o) => (
-                                <li key={o.office} className="flex items-center gap-3">
-                                  <span
-                                    className="w-28 shrink-0 truncate text-sm text-slate-700 sm:w-40 lg:w-52"
-                                    title={o.office}
-                                  >
-                                    {o.office}
-                                  </span>
-                                  <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200/70">
-                                    <div className="h-full rounded-full bg-blue-400" style={{ width: `${o.demand}%` }} />
-                                  </div>
-                                  <span className="w-16 shrink-0 text-right text-xs font-semibold text-slate-600">
-                                    {o.affected}/{o.total}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-
-                {!loading && needs.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-5 py-12 text-center text-slate-500">
-                      <p className="font-medium">No needs assessment yet.</p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        Once the AI competency matcher has run against the summary of ratings, the
-                        most-in-demand competencies appear here.
-                      </p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
         </section>
       </div>
 
