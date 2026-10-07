@@ -244,21 +244,41 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
   const { sorted: sortedScheduled, sort: scheduledSort, toggle: toggleScheduledSort } =
     useTableSort<ApplicantRecord, ScheduledSortKey>(filteredScheduled, scheduledSortAccessors, DEFAULT_QUALIFIED_SORT, SCHEDULED_DESC_FIRST);
 
-  // Keep the selection to rows that are still pending and still visible, so a
-  // schedule is never published to someone the filters are hiding.
+  // Picks survive filter changes so RSP can gather applicants across
+  // departments; only ids that left the pending list (already assigned) drop.
   useEffect(() => {
     setSelectedIds((prev) => {
-      const visible = new Set(filteredPending.map((a) => a.id));
+      const stillPending = new Set(pendingApplicants.map((a) => a.id));
       const next = new Set<string>();
       prev.forEach((id) => {
-        if (visible.has(id)) next.add(id);
+        if (stillPending.has(id)) next.add(id);
       });
       return next.size === prev.size ? prev : next;
     });
-  }, [filteredPending]);
+  }, [pendingApplicants]);
 
-  const allSelected = filteredPending.length > 0 && filteredPending.every((a) => selectedIds.has(a.id));
-  const someSelected = selectedIds.size > 0 && !allSelected;
+  // The header checkbox reflects and acts on the rows currently shown.
+  const visibleSelectedCount = filteredPending.filter((a) => selectedIds.has(a.id)).length;
+  const allSelected = filteredPending.length > 0 && visibleSelectedCount === filteredPending.length;
+  const someSelected = visibleSelectedCount > 0 && !allSelected;
+
+  // Selected applicants per department, for the selection bar chips.
+  const selectedByDepartment = useMemo(() => {
+    const counts = new Map<string, string[]>();
+    pendingApplicants.forEach((a) => {
+      if (!selectedIds.has(a.id)) return;
+      const dept = a.office || 'Unassigned';
+      counts.set(dept, [...(counts.get(dept) ?? []), a.id]);
+    });
+    return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [pendingApplicants, selectedIds]);
+
+  const unselectIds = (ids: string[]) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
 
   const toggleOne = (id: string) => {
     setSelectedIds((prev) => {
@@ -270,7 +290,11 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
   };
 
   const toggleSelectAll = () => {
-    setSelectedIds(allSelected ? new Set<string>() : new Set(filteredPending.map((a) => a.id)));
+    if (allSelected) {
+      unselectIds(filteredPending.map((a) => a.id));
+      return;
+    }
+    setSelectedIds((prev) => new Set([...prev, ...filteredPending.map((a) => a.id)]));
   };
 
   const allFieldsFilled =
@@ -683,6 +707,41 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
             </div>
           ) : (
             <>
+            {selectedIds.size > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm">
+                <span className="font-semibold" style={{ color: '#363EE8' }}>{selectedIds.size} selected</span>
+                {selectedByDepartment.map(([dept, ids]) => (
+                  <span
+                    key={dept}
+                    className="inline-flex items-center overflow-hidden rounded-full border border-indigo-200 bg-white text-xs font-medium text-slate-700"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => { setDepartmentFilter(dept === 'Unassigned' ? 'all' : dept); setPositionFilter('all'); }}
+                      className="px-2.5 py-1 hover:bg-indigo-50"
+                      title={`Show ${dept}`}
+                    >
+                      {dept} · {ids.length}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => unselectIds(ids)}
+                      className="border-l border-indigo-100 px-1.5 py-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      aria-label={`Unselect ${dept}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="ml-auto text-xs font-medium text-[#363EE8] hover:underline"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
             {renderFilterBar(filteredPending.length, pendingApplicants.length, pendingSort.key === 'qualified')}
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
               <table className="w-full min-w-full">
