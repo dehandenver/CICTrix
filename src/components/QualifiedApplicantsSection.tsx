@@ -306,6 +306,15 @@ const fmtDate = (iso: string) => {
   catch { return iso; }
 };
 
+/** "Oct 5, 2026 · 5:07 PM" from a date plus an optional "HH:mm[:ss]" time. */
+const fmtSchedule = (iso: string, time?: string | null) => {
+  const date = fmtDate(iso);
+  const [h, m] = (time ?? '').split(':');
+  const hour = Number.parseInt(h, 10);
+  if (!m || Number.isNaN(hour)) return date;
+  return `${date} · ${hour % 12 === 0 ? 12 : hour % 12}:${m.slice(0, 2)} ${hour >= 12 ? 'PM' : 'AM'}`;
+};
+
 // True when a schedule date is still upcoming (strictly after today), so the
 // Applicant Score table can show "scheduled but not yet happened" in a muted
 // secondary colour vs an already-completed (past/today) date in solid navy.
@@ -1368,7 +1377,6 @@ const ApplicantsListView = ({
                 <th key={c.key} style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>{c.label}</th>
               ))}
               <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Status</th>
-              <th style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1380,7 +1388,19 @@ const ApplicantsListView = ({
                 return v > 0 ? String(v) : '—';
               };
               return (
-                <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <tr
+                  key={a.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open scores for ${a.full_name}`}
+                  onClick={() => onUpdateScores(a)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onUpdateScores(a); }
+                  }}
+                  className="cursor-pointer transition-colors hover:bg-[#F8FAFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#363EE8]"
+                  style={{ borderBottom: '1px solid #f1f5f9' }}
+                >
                   <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                     {i < 3 ? (
                       <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: i === 0 ? '#fbbf24' : i === 1 ? '#c0c0c0' : '#cd7f32' }}>
@@ -1396,20 +1416,24 @@ const ApplicantsListView = ({
                   </td>
                   <td style={{ padding: '0.75rem 0.75rem' }}>
                     {a.exam_date ? (
-                      <div title={isUpcoming(a.exam_date) ? 'Scheduled — not yet held' : 'Completed / past date'}>
-                        <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: isUpcoming(a.exam_date) ? '#64748b' : '#040E6B', fontStyle: isUpcoming(a.exam_date) ? 'italic' : 'normal' }}>{fmtDate(a.exam_date)}</p>
-                        {a.exam_time && <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8' }}>{a.exam_time}</p>}
-                      </div>
+                      <p
+                        title={isUpcoming(a.exam_date) ? 'Scheduled — not yet held' : 'Completed / past date'}
+                        style={{ margin: 0, whiteSpace: 'nowrap', fontSize: '0.8rem', fontWeight: 600, color: isUpcoming(a.exam_date) ? '#64748b' : '#040E6B', fontStyle: isUpcoming(a.exam_date) ? 'italic' : 'normal' }}
+                      >
+                        {fmtSchedule(a.exam_date, a.exam_time)}
+                      </p>
                     ) : (
                       <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>—</span>
                     )}
                   </td>
                   <td style={{ padding: '0.75rem 0.75rem' }}>
                     {a.interview_date ? (
-                      <div title={isUpcoming(a.interview_date) ? 'Scheduled — not yet held' : 'Completed / past date'}>
-                        <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: isUpcoming(a.interview_date) ? '#64748b' : '#040E6B', fontStyle: isUpcoming(a.interview_date) ? 'italic' : 'normal' }}>{fmtDate(a.interview_date)}</p>
-                        {a.interview_time && <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8' }}>{a.interview_time}</p>}
-                      </div>
+                      <p
+                        title={isUpcoming(a.interview_date) ? 'Scheduled — not yet held' : 'Completed / past date'}
+                        style={{ margin: 0, whiteSpace: 'nowrap', fontSize: '0.8rem', fontWeight: 600, color: isUpcoming(a.interview_date) ? '#64748b' : '#040E6B', fontStyle: isUpcoming(a.interview_date) ? 'italic' : 'normal' }}
+                      >
+                        {fmtSchedule(a.interview_date, a.interview_time)}
+                      </p>
                     ) : (
                       <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>—</span>
                     )}
@@ -1423,20 +1447,12 @@ const ApplicantsListView = ({
                       {isFinalized ? 'Finalized' : 'Pending'}
                     </span>
                   </td>
-                  <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                    <button
-                      type="button" onClick={() => onUpdateScores(a)}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.85rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                    >
-                      <Pencil size={12} /> Edit Scores
-                    </button>
-                  </td>
                 </tr>
               );
             })}
             {ranked.length === 0 && (
               <tr>
-                <td colSpan={scoreCols.length + 6} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                <td colSpan={scoreCols.length + 5} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
                   <FolderOpen size={40} style={{ display: 'block', margin: '0 auto 0.75rem', opacity: 0.3 }} />
                   <p style={{ fontWeight: 600, margin: 0 }}>No {scoreTab === 'promotional' ? 'promotional' : 'original'} applicants found</p>
                 </td>
