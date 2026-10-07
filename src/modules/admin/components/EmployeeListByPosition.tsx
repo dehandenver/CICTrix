@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
 interface Position {
   id: string;
@@ -33,10 +33,9 @@ const getInitials = (name: string): string => {
 interface Props {
   position: Position;
   onEmployeeClick: (employee: Employee) => void;
-  onBack: () => void;
 }
 
-export default function EmployeeListByPosition({ position, onEmployeeClick, onBack }: Props) {
+export default function EmployeeListByPosition({ position, onEmployeeClick }: Props) {
   const [sortBy, setSortBy] = useState<'name' | 'number' | 'status'>('name');
 
   const sortedEmployees = [...(position.employees || [])].sort((a, b) => {
@@ -80,13 +79,6 @@ export default function EmployeeListByPosition({ position, onEmployeeClick, onBa
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-4">
-            <button
-              onClick={onBack}
-              className="text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium"
-            >
-              <ChevronLeft size={20} />
-              Employees
-            </button>
             <span className="text-gray-400">/</span>
             <span className="text-gray-700">{position.name}</span>
           </div>

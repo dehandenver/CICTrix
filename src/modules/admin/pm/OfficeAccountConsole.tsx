@@ -26,7 +26,6 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
-  ArrowLeft,
   Search,
   Check,
   Target,
@@ -1137,14 +1136,6 @@ export const OfficeAccountConsole: React.FC = () => {
 
                           return (
                             <div className="space-y-4">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedTargetId(null)}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-sm transition"
-                              >
-                                <ArrowLeft className="h-4 w-4 text-slate-500" />
-                                Back to Position List
-                              </button>
 
                               <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4 bg-slate-50/50">

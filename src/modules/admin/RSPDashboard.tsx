@@ -41,6 +41,7 @@ import { AdminHeader } from '../../components/AdminHeader';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
 import { useDepartmentNames } from '../../hooks/useDepartmentOptions';
+import { useBackClosesView } from '../../hooks/useHistoryBack';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import {
   createPassword,
@@ -885,6 +886,13 @@ export const RSPDashboard = () => {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [employeeDetailsTab, setEmployeeDetailsTab] = useState<'personal' | 'documents'>('personal');
   const [showPositionChangeModal, setShowPositionChangeModal] = useState(false);
+
+  // Browser Back steps out of one drill-down level at a time.
+  useBackClosesView(accountsView !== 'directory', () => setAccountsView('directory'), 'acct-office');
+  useBackClosesView(accountsView === 'details', () => setAccountsView('office'), 'acct-details');
+  useBackClosesView(reportsView !== 'overview', () => { setReportsView('overview'); setActiveDocumentTemplateId(null); }, 'archives-view');
+  useBackClosesView(rankingNavDept !== null, () => { setRankingNavDept(null); setRankingNavPos(null); }, 'ranking-dept');
+  useBackClosesView(rankingNavPos !== null, () => setRankingNavPos(null), 'ranking-pos');
 
   // Reset password flow for the Employee Accounts detail panel
   const [resetPwState, setResetPwState] = useState<'idle' | 'confirm' | 'working' | 'done' | 'error'>('idle');
@@ -4163,17 +4171,6 @@ export const RSPDashboard = () => {
                 ) : accountsView === 'office' ? (
                   <>
                     <div>
-                      <div className="mb-1 flex items-center gap-1.5 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => setAccountsView('directory')}
-                          className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-                        >
-                          <ChevronLeft size={13} /> Office Directory
-                        </button>
-                        <ChevronRight size={13} className="text-slate-400" />
-                        <span className="font-medium text-slate-700">{selectedDirectoryCard?.office ?? 'Office'}</span>
-                      </div>
                       <h2 className="!mb-0.5 text-xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.office ?? 'Office'}</h2>
                       <p className="!mb-0 text-sm text-[var(--text-secondary)]">{selectedOfficeEmployees.length} employee{selectedOfficeEmployees.length === 1 ? '' : 's'}</p>
                     </div>
@@ -4222,19 +4219,6 @@ export const RSPDashboard = () => {
                   </>
                 ) : (
                   <>
-                    {/* Breadcrumb */}
-                    <div className="flex items-center gap-1.5 text-sm">
-                      <button
-                        type="button"
-                        onClick={() => setAccountsView('office')}
-                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-                      >
-                        <ChevronLeft size={13} /> {selectedDirectoryCard?.office ?? 'Office'}
-                      </button>
-                      <ChevronRight size={13} className="text-slate-400" />
-                      <span className="font-medium text-slate-700">{selectedEmployeeDbName ?? selectedEmployeeDetails?.full_name ?? 'Employee'}</span>
-                    </div>
-
                     {/* Header — matches Applicant detail style */}
                     <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-5">
                       <div className="flex items-start gap-4">
@@ -4637,13 +4621,6 @@ export const RSPDashboard = () => {
                 ) : reportsView === 'closed' ? (
                   <section className="space-y-4">
                     <div>
-                      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
-                        <button type="button" onClick={() => setReportsView('overview')} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
-                          <ChevronLeft size={13} /> Archives
-                        </button>
-                        <ChevronRight size={13} className="text-slate-400" />
-                        <span className="font-medium text-slate-700">Closed Jobs</span>
-                      </div>
                       <h2 className="text-xl font-bold text-[var(--text-primary)]">Closed Jobs</h2>
                       <p className="text-sm text-[var(--text-secondary)]">Job postings that are no longer accepting applications.</p>
                     </div>
@@ -4717,13 +4694,6 @@ export const RSPDashboard = () => {
                 ) : reportsView === 'temp' ? (
                   <section className="space-y-4">
                     <div>
-                      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
-                        <button type="button" onClick={() => setReportsView('overview')} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
-                          <ChevronLeft size={13} /> Archives
-                        </button>
-                        <ChevronRight size={13} className="text-slate-400" />
-                        <span className="font-medium text-slate-700">Temporary Employee Account Generation</span>
-                      </div>
                       <h2 className="text-xl font-bold text-[var(--text-primary)]">Temporary Employee Account Generation</h2>
                       <p className="text-sm text-[var(--text-secondary)]">Hired applicants and their generated temporary accounts.</p>
                     </div>
@@ -4802,41 +4772,6 @@ export const RSPDashboard = () => {
                   <section className="space-y-4">
                     {/* ── Header bar ─────────────────────────────────────────── */}
                     <div>
-                      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => setReportsView('overview')}
-                          className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-                        >
-                          <ChevronLeft size={13} /> Archives
-                        </button>
-                        <ChevronRight size={13} className="text-slate-400" />
-                        <button
-                          type="button"
-                          onClick={() => { setRankingNavDept(null); setRankingNavPos(null); }}
-                          className={`font-medium ${rankingNavDept ? 'text-blue-600 hover:underline' : 'text-slate-700'}`}
-                        >
-                          Application Ranking
-                        </button>
-                        {rankingNavDept && (
-                          <>
-                            <ChevronRight size={13} className="text-slate-400" />
-                            <button
-                              type="button"
-                              onClick={() => setRankingNavPos(null)}
-                              className={`font-medium ${rankingNavPos ? 'text-blue-600 hover:underline' : 'text-slate-700'}`}
-                            >
-                              {rankingNavDept}
-                            </button>
-                          </>
-                        )}
-                        {rankingNavPos && (
-                          <>
-                            <ChevronRight size={13} className="text-slate-400" />
-                            <span className="font-medium text-slate-700">{rankingNavPos}</span>
-                          </>
-                        )}
-                      </div>
                       <h2 className="text-xl font-bold text-[var(--text-primary)]">
                         {rankingNavPos ? rankingNavPos : rankingNavDept ? rankingNavDept : 'Application Ranking Reports'}
                       </h2>
@@ -5007,17 +4942,6 @@ export const RSPDashboard = () => {
                 ) : (
                   <section className="space-y-4">
                     <div>
-                      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => setReportsView('overview')}
-                          className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-                        >
-                          <ChevronLeft size={13} /> Archives
-                        </button>
-                        <ChevronRight size={13} className="text-slate-400" />
-                        <span className="font-medium text-slate-700">Assessment Forms</span>
-                      </div>
                       <h2 className="text-xl font-bold text-[var(--text-primary)]">Assessment Forms</h2>
                       <p className="text-sm text-[var(--text-secondary)]">Select a job position to view and print assessment forms.</p>
                     </div>
@@ -5097,17 +5021,6 @@ export const RSPDashboard = () => {
                   <section className="space-y-4">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
-                        <p className="!mb-1 text-sm text-blue-600">
-                          <button
-                            type="button"
-                            onClick={() => { setReportsView('overview'); setActiveDocumentTemplateId(null); }}
-                            className="cursor-pointer underline-offset-2 hover:underline"
-                          >
-                            RSP / Reports
-                          </button>
-                          {' / '}
-                          {activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}
-                        </p>
                         <h2 className="!mb-1 !text-2xl font-bold text-[var(--text-primary)]">{activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</h2>
                         <p className="!mb-0 !text-sm text-[var(--text-secondary)]">
                           {documentsLoading ? 'Loading submissions…' : `${activeDocumentSubmissions.length} total submissions across all departments`}

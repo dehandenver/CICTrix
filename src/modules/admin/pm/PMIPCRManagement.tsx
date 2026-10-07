@@ -8,7 +8,6 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   ListChecks,
@@ -268,11 +267,9 @@ const StatCard = ({
 
 const IPCRDetailPage = ({
   employee,
-  onClose,
   onStageUpdate,
 }: {
   employee: EnrichedEmployee;
-  onClose: () => void;
   onStageUpdate: (id: string, stage: IpcrStage) => void;
 }) => {
 
@@ -476,15 +473,6 @@ const IPCRDetailPage = ({
 
   return (
     <div className="space-y-6">
-      {/* Back button */}
-      <button
-        type="button"
-        onClick={onClose}
-        className="flex items-center gap-1.5 text-sm font-semibold text-[#363EE8] hover:underline"
-      >
-        <ChevronLeft size={16} /> Back to IPCR Management
-      </button>
-
       {showInfoModal && (
         <Dialog open onClose={() => setShowInfoModal(false)} title="Employee Information">
           <div className="space-y-4 text-sm w-80 max-w-full">
@@ -1643,13 +1631,18 @@ const RegularPanel = ({
   loading,
   onRefresh,
   onSelectEmployee,
+  drillOffice,
+  setDrillOffice,
 }: {
   employees: EnrichedEmployee[];
   loading: boolean;
   onRefresh: () => void;
   onSelectEmployee: (emp: EnrichedEmployee) => void;
+  // Owned by the parent so the drilled office survives opening an employee,
+  // and browser Back from the employee returns to that office.
+  drillOffice: string | null;
+  setDrillOffice: (office: string | null) => void;
 }) => {
-  const [drillOffice, setDrillOffice] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
   // The evaluation period this screen is acting on. It used to be set only by
   // the Schedule dialog, so the panel read "No active period" on every load
@@ -1733,15 +1726,6 @@ const RegularPanel = ({
           Employees with 6+ months of service — 6-month IPCR cycle, organized by office.
         </p>
         <div className="flex items-center gap-2">
-          {activeDrill && (
-            <button
-              type="button"
-              onClick={() => setDrillOffice(null)}
-              className="flex items-center gap-1.5 text-sm text-[#363EE8] font-medium hover:underline"
-            >
-              <ChevronLeft size={14} /> All Offices
-            </button>
-          )}
           <button
             type="button"
             onClick={handleRefresh}
@@ -2156,6 +2140,8 @@ export const PMIPCRManagement = () => {
   const [loadError, setLoadError] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState<EnrichedEmployee | null>(null);
   useBackClosesView(selectedEmployee !== null, () => setSelectedEmployee(null), 'pm-ipcr-employee');
+  const [drillOffice, setDrillOffice] = useState<string | null>(null);
+  useBackClosesView(active === 'regular' && drillOffice !== null, () => setDrillOffice(null), 'pm-ipcr-office');
   // IPCR Weighting used to be its own sidebar page; it now opens from here as a
   // popup so the per-office Core/Strategic/Support split lives beside the IPCR
   // records it governs.
@@ -2296,7 +2282,6 @@ export const PMIPCRManagement = () => {
     return (
       <IPCRDetailPage
         employee={selectedEmployee}
-        onClose={() => setSelectedEmployee(null)}
         onStageUpdate={handleStageUpdate}
       />
     );
@@ -2372,6 +2357,8 @@ export const PMIPCRManagement = () => {
           loading={loading}
           onRefresh={load}
           onSelectEmployee={setSelectedEmployee}
+          drillOffice={drillOffice}
+          setDrillOffice={setDrillOffice}
         />
       )}
 

@@ -11,7 +11,7 @@ import { useBackClosesView } from '../../hooks/useHistoryBack';
  * Planning) via the initialOffice / focusEmployeeId props.
  */
 
-import { Archive, ArrowLeft, Building2, CalendarClock, ChevronRight, ExternalLink, FileText, Search } from 'lucide-react';
+import { Archive, Building2, CalendarClock, ChevronRight, ExternalLink, FileText, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '../../components/EmptyState';
@@ -240,13 +240,6 @@ export const LndArchive = ({
         /* ── Level 2: employees within the selected office ─────────────────── */
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setSelectedOffice(null)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" /> Back to Offices
-            </button>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
               <div className="relative max-w-sm flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />

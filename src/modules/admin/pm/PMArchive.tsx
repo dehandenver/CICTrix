@@ -8,7 +8,7 @@ import { useBackClosesView } from '../../../hooks/useHistoryBack';
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, ArrowLeft, Building2, Search } from 'lucide-react';
+import { Archive, Building2, Search } from 'lucide-react';
 import { EmptyState } from '../../../components/EmptyState';
 import {
   getEmployeeArchive,
@@ -67,13 +67,6 @@ export const PMArchive = () => {
     return (
       <div className="space-y-5">
         <div>
-          <button
-            type="button"
-            onClick={() => setSelected(null)}
-            className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 transition hover:text-blue-600"
-          >
-            <ArrowLeft className="h-4 w-4" /> All employees
-          </button>
           <h2 className="text-2xl font-bold text-slate-900">{selected.name}</h2>
           <p className="mt-0.5 text-sm text-slate-500">
             {selected.employeeNum}
