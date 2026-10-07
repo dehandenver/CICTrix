@@ -872,78 +872,6 @@ export const JobPostingsPage = () => {
     });
   };
 
-  const openEditModal = (job: JobPosting) => {
-    setEditingId(job.id);
-    setSlotError('');
-    setForm({
-      title: job.title,
-      // `legacy:` ids are the synthetic single slot recruitmentData invents for
-      // a posting with no rows yet — send it back without an id so the save
-      // creates a real row instead of upserting a non-existent one.
-      slots: (job.plantillaSlots ?? []).length > 0
-        ? (job.plantillaSlots ?? []).map((slot) => buildSlotRow({
-            id: slot.id.startsWith('legacy:') ? undefined : slot.id,
-            label: plantillaLabel(slot),
-            itemNumber: slot.itemNumber,
-            // The shared Salary Grade / Monthly Salary fields are gone; a row
-            // that relied on them inherits the posting's value here.
-            salaryGrade: String(slot.salaryGrade ?? job.salaryGrade ?? ''),
-            monthlySalary: String(slot.monthlySalary ?? job.monthlySalary ?? ''),
-            status: slot.status,
-            filledByApplicantId: slot.filledByApplicantId,
-          }))
-        : [buildSlotRow({
-            label: 'Plantilla 1',
-            itemNumber: job.jobCode,
-            salaryGrade: String(job.salaryGrade ?? ''),
-            monthlySalary: String(job.monthlySalary ?? ''),
-          })],
-      department: job.department,
-      division: job.division ?? '',
-      positionLevel: '',
-      positionType: job.positionType,
-      numberOfPositions: job.numberOfPositions,
-      employmentType: job.employmentStatus === 'Contractual' ? 'Contractual' : job.employmentStatus === 'Permanent' ? 'Full-time' : 'Part-time',
-      employmentStatus: job.employmentStatus,
-      statusLabel: job.status === 'Active' ? 'Open' : job.status === 'Draft' ? 'Reviewing' : 'Closed',
-      summary: job.summary,
-      qualifications: job.qualifications.preferred ?? '',
-      responsibilities: job.responsibilities.length ? job.responsibilities : [''],
-      education: job.qualifications.education,
-      yearsOfExperience: job.qualifications.experience.years,
-      experienceField: job.qualifications.experience.field,
-      skills: job.qualifications.skills.join(', '),
-      certifications: job.qualifications.certifications.join(', '),
-      preferred: job.qualifications.preferred ?? '',
-      requiredDocuments: job.requiredDocuments.filter((item) => item !== 'Other' && !isCurriculumVitae(item)),
-      otherDocument: job.requiredDocuments.find((item) => item !== 'Resume/CV' && item !== 'Application Letter' && item !== 'Transcript of Records' && item !== 'NBI Clearance' && item !== 'Birth Certificate' && item !== 'SALN') ?? '',
-      applicationDeadline: job.applicationDeadline.slice(0, 10),
-      interviewStart: job.interviewPeriod?.start.slice(0, 10) ?? '',
-      interviewEnd: job.interviewPeriod?.end.slice(0, 10) ?? '',
-      expectedStartDate: job.expectedStartDate?.slice(0, 10) ?? '',
-      salaryGrade: job.salaryGrade != null ? String(job.salaryGrade) : '',
-      monthlySalary: job.monthlySalary != null ? String(job.monthlySalary) : '',
-      qualEligibility: job.eligibility ?? job.qualifications.certifications[0] ?? '',
-      qualEducation: job.qualifications.education ?? '',
-      qualDegreeCourse: job.qualifications.experience.field ?? '',
-      qualTraining: job.training ?? job.qualifications.preferred ?? '',
-      qualExperienceYears: (() => {
-        const totalYears = job.qualifications.experience.years || 0;
-        return totalYears > 0 ? String(Math.floor(totalYears)) : '';
-      })(),
-      qualExperienceMonths: (() => {
-        const totalYears = job.qualifications.experience.years || 0;
-        const months = Math.round((totalYears - Math.floor(totalYears)) * 12);
-        return months > 0 ? String(months) : '';
-      })(),
-      qualCompetency: job.competency ?? job.qualifications.skills[0] ?? '',
-    });
-    setShowModal(true);
-    requestAnimationFrame(() => {
-      modalBodyRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-    });
-  };
-
   // ─── Plantilla slot rows ──────────────────────────────────────────────────
 
   const updateSlot = (key: string, patch: Partial<PlantillaSlotFormRow>) => {
@@ -1683,14 +1611,6 @@ export const JobPostingsPage = () => {
                             onClick={() => { setViewingApplicantsFor(job); setJobApplicantsSearch(''); setJobApplicantsSlotFilter('all'); }}
                           >
                             Applicants
-                          </button>
-                          <button
-                            type="button"
-                            title="Edit Position"
-                            className="rounded-lg border border-blue-600 bg-white px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 transition-colors"
-                            onClick={() => openEditModal(job)}
-                          >
-                            Edit
                           </button>
                           {job.status === 'Active' && (
                             <button type="button" title="Close / Lock Application" onClick={() => closeApplication(job)}
