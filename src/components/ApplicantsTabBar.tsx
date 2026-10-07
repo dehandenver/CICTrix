@@ -16,7 +16,7 @@ export const ApplicantsTabBar = () => {
 
   return (
     <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
-      <nav className="flex px-6 overflow-x-auto" aria-label="Applicants tabs">
+      <nav className="scrollbar-hidden flex px-6 overflow-x-auto" aria-label="Applicants tabs">
         {TABS.map((tab) => (
           <Link
             key={tab.path}

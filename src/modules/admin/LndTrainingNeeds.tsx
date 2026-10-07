@@ -173,7 +173,7 @@ export const LndTrainingNeeds = () => {
 
       {/* Status sub-tabs */}
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm">
-        <nav className="flex overflow-x-auto px-2 sm:px-6" aria-label="Request status tabs">
+        <nav className="scrollbar-hidden flex overflow-x-auto px-2 sm:px-6" aria-label="Request status tabs">
           {STATUS_TABS.map((t) => (
             <button
               key={t}

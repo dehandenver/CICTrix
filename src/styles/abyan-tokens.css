@@ -192,3 +192,10 @@ html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='
 @supports not selector(::-webkit-scrollbar) {
   html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true']), html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true']) * { scrollbar-color: #363EE8 #F1F5F9; }
 }
+
+/* Subtab strips: still swipe/scroll sideways on narrow screens, but never show
+   a scrollbar. overflow-x:auto also makes the strip scroll vertically, and the
+   active tab's -1px underline overflowed it, which drew a vertical scrollbar
+   beside the tabs; overflow-y:hidden removes that. */
+.scrollbar-hidden { overflow-y: hidden; scrollbar-width: none; }
+.scrollbar-hidden::-webkit-scrollbar { display: none; }
