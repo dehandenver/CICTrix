@@ -168,13 +168,20 @@
   }
 }
 
-/* Scrollbars: brand blue thumb on the page-background track, app-wide in the
-   light theme. Global on purpose (not scoped to .abyan-ds) so every portal and
-   modal matches; the dark theme keeps its own rules in globals.css. Values are
-   --color-primary, --color-primary-700 and --bg-page, written out because the
-   tokens above only exist inside .abyan-ds / .rsp-ds. */
-html:not([data-theme='dark']) * { scrollbar-color: #363EE8 #F1F5F9; }
-html:not([data-theme='dark']) ::-webkit-scrollbar { width: 10px; height: 10px; }
-html:not([data-theme='dark']) ::-webkit-scrollbar-track { background: #F1F5F9; }
-html:not([data-theme='dark']) ::-webkit-scrollbar-thumb { background: #363EE8; border-radius: 999px; border: 2px solid #F1F5F9; }
-html:not([data-theme='dark']) ::-webkit-scrollbar-thumb:hover { background: #191FA8; }
+/* Scrollbars: brand blue thumb on the page-background track, inside scrollable
+   modals only (light theme). Pages, subtabs and tab strips keep the browser's
+   own scrollbar. A modal is any fixed full-screen overlay (`fixed inset-0`,
+   the pattern most dialogs here use) or an element marked role="dialog" /
+   aria-modal. Values are --color-primary, --color-primary-700 and --bg-page,
+   written out because those tokens only exist inside .abyan-ds / .rsp-ds.
+
+   Chromium/Safari get the ::-webkit-scrollbar styling, which has no arrow
+   buttons. `scrollbar-color` is only given to browsers without it (Firefox):
+   in Chromium it would override the styling below and bring the arrows back. */
+html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true'])::-webkit-scrollbar, html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true']) ::-webkit-scrollbar { width: 10px; height: 10px; }
+html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true'])::-webkit-scrollbar-track, html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true']) ::-webkit-scrollbar-track { background: #F1F5F9; }
+html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true'])::-webkit-scrollbar-thumb, html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true']) ::-webkit-scrollbar-thumb { background: #363EE8; border-radius: 999px; border: 2px solid #F1F5F9; }
+html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true'])::-webkit-scrollbar-thumb:hover, html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true']) ::-webkit-scrollbar-thumb:hover { background: #191FA8; }
+@supports not selector(::-webkit-scrollbar) {
+  html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true']), html:not([data-theme='dark']) :is(.fixed.inset-0, [role='dialog'], [aria-modal='true']) * { scrollbar-color: #363EE8 #F1F5F9; }
+}
