@@ -62,6 +62,12 @@ const fmtTime = (t: string) => {
   }
 };
 
+/** One-line schedule, e.g. "Sep 25, 2026 · 3:28 PM"; the time is dropped when absent. */
+const fmtSchedule = (date: string, time: string) => {
+  const d = fmtDate(date);
+  return time ? `${d} · ${fmtTime(time)}` : d;
+};
+
 const normalizeType = (t: string | null | undefined) =>
   (t ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original';
 
@@ -605,76 +611,79 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <table className="w-full min-w-full">
+              {/* Fixed layout with set widths so dates never wrap and the table
+                  fits at 1366px without a sideways scroll. */}
+              <table className="w-full table-fixed">
+                <colgroup>
+                  <col className="w-[21%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[13%]" />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position / Office</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Schedule</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Interview Schedule</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Assigned Interviewer</th>
-                    <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position / Office</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Schedule</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Interview Schedule</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Interviewer</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {scheduledApplicants.map((a) => {
                     const merged = mergeAssignment(a);
                     const interviewer = getInterviewerName(merged.assigned_interviewer_email);
+                    const examAt = fmtSchedule(merged.exam_date ?? '', merged.exam_time ?? '');
+                    const interviewAt = fmtSchedule(merged.interview_date ?? '', merged.interview_time ?? '');
+                    const type = normalizeType(a.application_type);
                     return (
                       <tr key={a.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
-                        <td className="px-5 py-4">
-                          <p className="text-sm font-semibold" style={{ color: '#040E6B' }}>{a.full_name || '—'}</p>
-                          <p className="mt-0.5 text-xs text-slate-400">{a.email}</p>
-                          <span
-                            className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                              normalizeType(a.application_type) === 'Promotional'
-                                ? 'bg-purple-100 text-purple-700'
-                                : 'bg-sky-100 text-sky-700'
-                            }`}
+                        <td className="px-4 py-2.5">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <p className="truncate text-sm font-semibold" style={{ color: '#040E6B' }} title={a.full_name || undefined}>{a.full_name || '—'}</p>
+                            <span
+                              className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                type === 'Promotional' ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'
+                              }`}
+                            >
+                              {type}
+                            </span>
+                          </div>
+                          <p className="truncate text-xs text-slate-400" title={a.email || undefined}>{a.email}</p>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="truncate text-sm font-medium text-slate-800" title={a.position || undefined}>{a.position || '—'}</p>
+                          <p className="truncate text-xs text-slate-400" title={a.office || undefined}>{a.office || '—'}</p>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="flex items-center gap-1.5 whitespace-nowrap text-[13px] text-slate-800">
+                            <Calendar size={13} className="shrink-0 text-slate-400" /> {examAt}
+                          </p>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="flex items-center gap-1.5 whitespace-nowrap text-[13px] text-slate-800">
+                            <Calendar size={13} className="shrink-0 text-slate-400" /> {interviewAt}
+                          </p>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p
+                            className="flex min-w-0 items-center gap-1.5 text-sm text-slate-800"
+                            title={merged.assigned_interviewer_email || undefined}
                           >
-                            {normalizeType(a.application_type)}
-                          </span>
+                            <UserCheck size={13} className="shrink-0 text-slate-400" />
+                            <span className="truncate">{interviewer}</span>
+                          </p>
                         </td>
-                        <td className="px-5 py-4">
-                          <p className="text-sm font-medium text-slate-800">{a.position || '—'}</p>
-                          <p className="mt-0.5 text-xs text-slate-400">{a.office || '—'}</p>
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-start gap-1.5">
-                            <Calendar size={13} className="mt-0.5 shrink-0 text-slate-400" />
-                            <div>
-                              <p className="text-sm font-medium text-slate-800">{fmtDate(merged.exam_date ?? '')}</p>
-                              <p className="text-xs text-slate-500">{fmtTime(merged.exam_time ?? '')}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-start gap-1.5">
-                            <Calendar size={13} className="mt-0.5 shrink-0 text-slate-400" />
-                            <div>
-                              <p className="text-sm font-medium text-slate-800">{fmtDate(merged.interview_date ?? '')}</p>
-                              <p className="text-xs text-slate-500">{fmtTime(merged.interview_time ?? '')}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-start gap-1.5">
-                            <UserCheck size={13} className="mt-0.5 shrink-0 text-slate-400" />
-                            <div>
-                              <p className="text-sm font-medium text-slate-800">{interviewer}</p>
-                              {merged.assigned_interviewer_email && interviewer !== merged.assigned_interviewer_email && (
-                                <p className="text-xs text-slate-400">{merged.assigned_interviewer_email}</p>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-2.5 text-right">
                           <button
                             type="button"
                             onClick={() => openEditModal(a)}
-                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                           >
-                            <Pencil size={11} /> Edit Schedule
+                            <Pencil size={12} className="shrink-0" /> Edit Schedule
                           </button>
                         </td>
                       </tr>
