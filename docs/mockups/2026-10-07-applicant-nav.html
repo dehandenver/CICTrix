@@ -1,0 +1,51 @@
+<style>
+.ap{font:14px system-ui;background:#fff;color:#1e1b4b;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;width:100%}
+.bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.back{color:#4338ca;font-weight:600;font-size:13px}
+.sp{flex:1}
+.nav{display:flex;align-items:center;gap:6px}
+.arw{width:30px;height:30px;border:1px solid #c7d2fe;border-radius:8px;display:grid;place-items:center;color:#3730a3;background:#fff;font-weight:700}
+.arw.dis{color:#cbd5e1;border-color:#e2e8f0}
+.cnt{font-size:13px;font-weight:600;color:#334155;min-width:42px;text-align:center}
+.bd{padding:14px}
+.nm{font-size:18px;font-weight:700;color:#1e1b8a}
+.muted{color:#64748b;font-size:12px}
+.rows{margin-top:10px;display:grid;grid-template-columns:140px 1fr;gap:6px 12px;font-size:13px}
+.rows span:nth-child(odd){color:#64748b}
+.act{display:flex;gap:8px;padding:12px 14px;border-top:1px solid #e2e8f0;align-items:center}
+.b{font-size:13px;font-weight:600;border-radius:8px;padding:8px 14px;border:1px solid}
+.q{background:#4f46e5;color:#fff;border-color:#4f46e5}
+.dq{background:#fff;color:#b91c1c;border-color:#fecaca}
+.gh{background:#fff;color:#3730a3;border-color:#c7d2fe}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px}
+.pq{background:#dcfce7;color:#166534}.pp{background:#fef9c3;color:#854d0e}.pd{background:#fee2e2;color:#991b1b}
+.toast{margin:0 14px 12px;padding:8px 12px;border-radius:8px;background:#1e1b4b;color:#fff;font-size:12px;display:flex;gap:10px}
+.toast u{color:#a5b4fc;font-weight:600;text-decoration:none}
+.dots{display:flex;gap:3px}.dots i{width:8px;height:8px;border-radius:50%;background:#e2e8f0}
+.dots i.q{background:#22c55e}.dots i.d{background:#ef4444}.dots i.c{outline:2px solid #4f46e5;outline-offset:1px;background:#fff}
+.done{padding:18px 14px;text-align:center}
+</style>
+
+<h2>Applicant review navigation (chosen: C)</h2>
+<p class="subtitle">Decided 2026-10-07. Header arrows + counter, progress dots, auto-advance to next pending after Qualify/Disqualify, Undo toast, "All reviewed" end state.</p>
+
+<div class="options">
+
+<div class="option" data-choice="c" onclick="toggleSelect(this)">
+<div class="letter">C</div>
+<div class="content" style="width:100%">
+<h3>A + progress dots and "skip to next pending"</h3>
+<p>Same auto-advance as A, but the counter adds a dot strip showing who is already decided, and advance skips over applicants that already have a decision. Ends on a "All 9 reviewed" state instead of a dead arrow.</p>
+<div class="ap">
+<div class="bar"><span class="back">← Applicants</span><span class="sp"></span>
+<div class="dots"><i class="q"></i><i class="q"></i><i class="c"></i><i class="d"></i><i></i><i></i><i class="q"></i><i></i><i></i></div>
+<div class="nav"><span class="arw">‹</span><span class="cnt">3 / 9</span><span class="arw">›</span></div></div>
+<div class="toast">✓ Maria Santos marked Qualified · 5 pending left <span class="sp"></span><u>Undo</u></div>
+<div class="bd"><div class="nm">Juan Dela Cruz</div><div class="muted">Plantilla 3 · Applied Sep 12, 2026 · <span class="pill pp">Pending</span></div></div>
+<div class="act"><button class="b dq">Disqualify</button><span class="sp"></span><button class="b q">Qualify</button></div>
+</div>
+<div class="ap" style="margin-top:8px"><div class="done"><b>All 9 reviewed</b><div class="muted">6 qualified · 3 disqualified</div><div style="margin-top:8px"><button class="b gh">Back to applicants</button></div></div></div>
+</div></div>
+
+</div>
+

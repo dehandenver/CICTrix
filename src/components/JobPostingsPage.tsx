@@ -1267,12 +1267,19 @@ export const JobPostingsPage = () => {
             return 'bg-blue-100 text-blue-700';   // Submitted / Received
           };
 
+          // The cards shown, in shown order, so the details page can step through them.
+          const visibleRows = showAllApplicants ? [...matchedRows, ...otherRows] : matchedRows;
+
           const renderCard = (a: typeof jobApplicantsRows[number], i: number) => (
             <article
               key={a.id}
               className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
               onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, {
-                state: { from: '/admin/rsp/jobs', job: { id: job.id, title: job.title, jobCode: job.jobCode } },
+                state: {
+                  from: '/admin/rsp/jobs',
+                  job: { id: job.id, title: job.title, jobCode: job.jobCode },
+                  navQueue: visibleRows.map((row) => ({ id: row.id, name: row.full_name, status: row.status })),
+                },
               })}
             >
               <div className="flex items-start justify-between gap-4">

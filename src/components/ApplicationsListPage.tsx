@@ -277,6 +277,14 @@ export const ApplicationsListPage = () => {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const safePage   = Math.min(page, totalPages);
+  // Passes the table's rows, in shown order, so the details page can step through them.
+  const openApplicant = (id: string, rows: Applicant[]) =>
+    navigate(`/admin/rsp/applicant/${id}`, {
+      state: {
+        from: '/admin/rsp/applications',
+        navQueue: rows.map((row) => ({ id: row.id, name: row.full_name, status: row.status })),
+      },
+    });
   const paged      = sortedApplicants.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   // ── Loading ────────────────────────────────────────────────────────────────
@@ -363,12 +371,12 @@ export const ApplicationsListPage = () => {
                 </thead>
                 <tbody>
                   {paged.map(a => (
-                    <tr key={a.id} onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, { state: { from: '/admin/rsp/applications' } })} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
+                    <tr key={a.id} onClick={() => openApplicant(a.id, sortedApplicants)} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
 
                       {/* Name — clickable */}
                       <td className="px-5 py-4">
                         <button type="button" className="group text-left"
-                          onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, { state: { from: '/admin/rsp/applications' } })}>
+                          onClick={() => openApplicant(a.id, sortedApplicants)}>
                           <p className="font-semibold text-sm text-[#363EE8] group-hover:underline underline-offset-2">{a.full_name}</p>
                           <p className="mt-0.5 text-xs text-slate-400">{a.email || '—'}</p>
                         </button>
@@ -489,7 +497,7 @@ export const ApplicationsListPage = () => {
                         </td>
                         <td className="px-5 py-4">
                           <button type="button" className="group text-left"
-                            onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, { state: { from: '/admin/rsp/applications' } })}>
+                            onClick={() => openApplicant(a.id, sortedShortlisted)}>
                             <p className="font-semibold text-sm text-[#363EE8] group-hover:underline underline-offset-2">{a.full_name}</p>
                             <p className="mt-0.5 text-xs text-slate-400">{a.email || '—'}</p>
                           </button>

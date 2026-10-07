@@ -2,6 +2,8 @@ import {
   Activity as ActivityIcon,
   ArrowLeft,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleX,
   Eye,
   FileText,
@@ -18,7 +20,7 @@ import {
 import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useHistoryBack } from '../../hooks/useHistoryBack';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -34,6 +36,18 @@ import {
   type MissedActivity,
   type MissedActivityType,
 } from '../../lib/applicationActivity';
+import {
+  MAX_PROGRESS_DOTS,
+  nextUndecidedIndex,
+  reviewOutcome,
+  type ReviewQueueEntry,
+} from '../../lib/applicantReviewQueue';
+import {
+  cancelPendingDecision,
+  flushPendingDecision,
+  schedulePendingDecision,
+  usePendingDecision,
+} from '../../lib/pendingStatusDecision';
 import type { Applicant, JobPosting } from '../../types/recruitment.types';
 
 type ApplicantRecord = {
@@ -98,6 +112,8 @@ type CachedPreviewFile = {
 type ApplicantRouteState = {
   from?: string;
   applicant?: Applicant;
+  /** The list the reviewer came from, in its shown order; enables next/previous. */
+  navQueue?: ReviewQueueEntry[];
 };
 
 type AppointmentType = 'original' | 'promotional';
@@ -724,6 +740,15 @@ const FILE_NAME_TO_TYPE: Record<string, string> = {
 };
 
 export function ApplicantDetailsPage() {
+  const { id } = useParams<{ id: string }>();
+  // Leaving the details page writes any decision still inside its Undo window.
+  useEffect(() => flushPendingDecision, []);
+  // Keyed so stepping to the next applicant starts from fresh state.
+  return <ApplicantDetailsPageView key={id} />;
+}
+
+function ApplicantDetailsPageView() {
+  const navigate = useNavigate();
   const goBack = useHistoryBack('/admin/rsp');
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
@@ -767,6 +792,9 @@ export function ApplicantDetailsPage() {
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
   const [, setToast] = useState<string | null>(null);
+  const [navQueue, setNavQueue] = useState<ReviewQueueEntry[] | null>(routeState?.navQueue ?? null);
+  const [reviewComplete, setReviewComplete] = useState(false);
+  const pendingDecision = usePendingDecision();
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
   const [openedDocFilePaths, setOpenedDocFilePaths] = useState<Set<string>>(new Set());
   const [docsValidated, setDocsValidated] = useState(false);
@@ -1534,12 +1562,59 @@ export function ApplicantDetailsPage() {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
     }
-    // If qualified, navigate away (remove from current list)
-    if (action === 'qualified') {
+    // If qualified, navigate away (remove from current list). In a review queue
+    // the page has already moved on to the next applicant.
+    if (action === 'qualified' && !routeState?.navQueue) {
       setTimeout(() => {
         goBack(); // previous page/list, or the RSP home on a direct visit
       }, 500);
     }
+  };
+
+  const navIndex = navQueue && applicant ? navQueue.findIndex((entry) => entry.id === applicant.id) : -1;
+  const inReviewQueue = navQueue !== null && navIndex >= 0;
+  const undecidedLeft = navQueue ? navQueue.filter((entry) => reviewOutcome(entry.status) === 'undecided').length : 0;
+
+  const openQueueEntry = (entryId: string, queue: ReviewQueueEntry[]) => {
+    navigate(`/admin/rsp/applicant/${entryId}`, { replace: true, state: { from: routeState?.from, navQueue: queue } });
+  };
+
+  // Holds the decision for the Undo window and moves on to the next undecided applicant.
+  const decideAndAdvance = (
+    action: 'qualified' | 'disqualify',
+    disqualifyDetails?: Parameters<typeof persistStatus>[1],
+  ) => {
+    if (!navQueue || !applicant || navIndex < 0) return;
+    const decidedStatus = action === 'disqualify' ? 'Not Qualified' : 'Shortlisted';
+    const nextQueue = navQueue.map((entry, index) => (index === navIndex ? { ...entry, status: decidedStatus } : entry));
+    schedulePendingDecision({
+      applicantId: applicant.id,
+      applicantName: fullName,
+      label: action === 'disqualify' ? 'Disqualified' : 'Shortlisted',
+      previousStatus: navQueue[navIndex].status,
+      commit: () => persistStatus(action, disqualifyDetails),
+    });
+    const nextIndex = nextUndecidedIndex(nextQueue, navIndex);
+    if (nextIndex < 0) {
+      setNavQueue(nextQueue);
+      setReviewComplete(true);
+      return;
+    }
+    openQueueEntry(nextQueue[nextIndex].id, nextQueue);
+  };
+
+  const handleUndoDecision = () => {
+    const undone = cancelPendingDecision();
+    if (!undone || !navQueue) return;
+    const restoredQueue = navQueue.map((entry) =>
+      entry.id === undone.applicantId ? { ...entry, status: undone.previousStatus } : entry,
+    );
+    setReviewComplete(false);
+    if (undone.applicantId === applicant?.id) {
+      setNavQueue(restoredQueue);
+      return;
+    }
+    openQueueEntry(undone.applicantId, restoredQueue);
   };
 
   const handleSubmitStatusEvaluation = async () => {
@@ -1799,6 +1874,55 @@ export function ApplicantDetailsPage() {
         {isRspAdmin && <Sidebar activeModule="RSP" userRole="rsp" />}
         <main className={isRspAdmin ? 'admin-content bg-white !p-0' : 'bg-slate-100 !p-0'}>
           <header className="border-b border-slate-200 bg-white px-6 py-4">
+            {navQueue && inReviewQueue && (
+              <div className="mb-3 flex items-center justify-end gap-3">
+                {navQueue.length <= MAX_PROGRESS_DOTS && (
+                  <div className="flex items-center gap-1" aria-hidden="true">
+                    {navQueue.map((entry, index) => {
+                      const outcome = reviewOutcome(entry.status);
+                      return (
+                        <span
+                          key={entry.id}
+                          title={entry.name}
+                          className={`h-2 w-2 rounded-full ${index === navIndex
+                              ? 'bg-white ring-2 ring-blue-600 ring-offset-1'
+                              : outcome === 'shortlisted'
+                                ? 'bg-emerald-500'
+                                : outcome === 'disqualified'
+                                  ? 'bg-rose-500'
+                                  : 'bg-slate-200'
+                            }`}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label="Previous applicant"
+                    disabled={navIndex === 0}
+                    onClick={() => openQueueEntry(navQueue[navIndex - 1].id, navQueue)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className="min-w-[3.5rem] text-center text-xs font-semibold tabular-nums text-slate-700">
+                    {navIndex + 1} / {navQueue.length}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Next applicant"
+                    disabled={navIndex === navQueue.length - 1}
+                    onClick={() => openQueueEntry(navQueue[navIndex + 1].id, navQueue)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-start justify-between gap-4">
               {/* Profile card inline */}
               <div className="flex items-center gap-4">
@@ -3030,17 +3154,19 @@ export function ApplicantDetailsPage() {
                       if (!canConfirm) return;
                       setConfirmSubmitting(true);
                       try {
-                        await persistStatus(
-                          confirmAction,
-                          isDisqualify
-                            ? {
-                                reasonCategory: confirmReasonCategory,
-                                message: confirmReason,
-                                messageVisible: confirmMessageVisible,
-                                missedActivity,
-                              }
-                            : undefined,
-                        );
+                        const disqualifyDetails = isDisqualify
+                          ? {
+                              reasonCategory: confirmReasonCategory,
+                              message: confirmReason,
+                              messageVisible: confirmMessageVisible,
+                              missedActivity,
+                            }
+                          : undefined;
+                        if (inReviewQueue) {
+                          decideAndAdvance(confirmAction, disqualifyDetails);
+                        } else {
+                          await persistStatus(confirmAction, disqualifyDetails);
+                        }
                         setConfirmAction(null);
                         setConfirmReason('');
                         setConfirmReasonCategory('');
@@ -3061,6 +3187,49 @@ export function ApplicantDetailsPage() {
             </div>
           );
         })()}
+
+      {reviewComplete && navQueue && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl">
+            <CheckCircle2 size={28} className="mx-auto text-emerald-600" />
+            <h3 className="!mb-1 mt-2 text-lg font-bold text-slate-900">All {navQueue.length} reviewed</h3>
+            <p className="!mb-0 text-sm text-slate-600">
+              {navQueue.filter((entry) => reviewOutcome(entry.status) === 'shortlisted').length} shortlisted
+              {' · '}
+              {navQueue.filter((entry) => reviewOutcome(entry.status) === 'disqualified').length} disqualified
+            </p>
+            <div className="mt-5 flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setReviewComplete(false)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Stay here
+              </button>
+              <button
+                type="button"
+                onClick={goBack}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                Back to applicants
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDecision && (
+        <div role="status" className="fixed bottom-6 right-6 z-[260] flex items-center gap-4 rounded-xl bg-slate-900 px-4 py-3 text-sm text-white shadow-lg">
+          <span className="inline-flex items-center gap-2 text-white">
+            <CheckCircle2 size={16} className="text-emerald-400" />
+            {pendingDecision.applicantName} marked {pendingDecision.label}
+            {navQueue && ` · ${undecidedLeft} pending left`}
+          </span>
+          <button type="button" onClick={handleUndoDecision} className="font-semibold text-blue-300 hover:text-blue-200">
+            Undo
+          </button>
+        </div>
+      )}
       </div>{/* /admin-layout wrapper */}
     </div>
   );
