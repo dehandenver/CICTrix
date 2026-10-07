@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ABYAN · Succession table</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --p:#363EE8; --p7:#191FA8; --p9:#040E6B; --p2:#C8D1FF; --p0:#EEF0FF; --page:#F1F5F9; --n8:#28343D; --n6:#515F69; --n4:#94A3B8; --n2:#E2E8F0;
+          --ok:#16A85A; --ok1:#DCFCE7; --ok7:#0F7A40; --w:#E8821A; --w1:#FCE8C8; --w7:#A8590A; --e7:#B42323; --e1:#FDE2E2; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Poppins', system-ui, sans-serif; background: var(--page); color: var(--n8); padding: 28px; }
+  /* Blue scrollbar (applies app-wide) */
+  * { scrollbar-color: var(--p) var(--page); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--page); }
+  ::-webkit-scrollbar-thumb { background: var(--p); border-radius: 999px; border: 2px solid var(--page); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--p7); }
+  h2.q { font: 600 22px/30px 'Poppins'; color: var(--p9); margin: 0 0 4px; }
+  .sub { font: 400 14px/20px 'Poppins'; color: var(--n6); margin-bottom: 16px; max-width: 900px; }
+  .block { margin-bottom: 36px; }
+  .frame { background: #fff; border: 1px solid var(--n2); border-radius: 16px; padding: 24px; }
+  .tabs { display: inline-flex; gap: 8px; margin: 14px 0 18px; }
+  .tab { height: 36px; padding: 0 16px; border-radius: 999px; font: 600 13px 'Poppins'; border: 1.5px solid var(--p); background: #fff; color: var(--p); }
+  .tab.on { background: linear-gradient(180deg,#363EE8,#191FA8); color: #fff; }
+  .page-title { font: 700 36px/40px 'Poppins'; color: var(--p9); }
+  .page-sub { font: 400 16px/24px 'Poppins'; color: var(--n6); margin-top: 4px; }
+  .strike { text-decoration: line-through; color: var(--n4); font-size: 13px; }
+
+  /* TNA-style table (§9.5) */
+  .t { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--n2); border-radius: 12px; overflow: hidden; background: #fff; }
+  .t th { background: #fff; text-align: left; font: 600 12px/16px 'Poppins'; letter-spacing: .4px; text-transform: uppercase; color: var(--n6); padding: 16px 20px; border-bottom: 1px solid var(--n2); }
+  .t td { padding: 18px 20px; border-bottom: 1px solid var(--n2); font: 500 14px/18px 'Poppins'; vertical-align: middle; }
+  .t tr.row:hover td { background: #F8FAFF; cursor: pointer; }
+  .t tr:last-child td { border-bottom: 0; }
+  .name { display: flex; align-items: center; gap: 12px; font: 600 16px/20px 'Poppins'; color: var(--p9); }
+  .chev { color: var(--n4); width: 16px; display: inline-block; transition: transform .15s; }
+  .open .chev { transform: rotate(90deg); color: var(--p); }
+  .badge { display: inline-flex; align-items: center; height: 26px; padding: 0 12px; border-radius: 999px; font: 500 12px 'Poppins'; }
+  .num { font: 500 15px 'Poppins'; color: var(--n8); }
+  .bar { display: flex; align-items: center; gap: 12px; }
+  .bar i { display: block; width: 150px; height: 8px; border-radius: 999px; background: var(--page); position: relative; }
+  .bar i b { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--p); }
+  .bar span { font: 700 15px 'Poppins'; color: var(--p9); }
+  .expand td { background: #FAFBFF; padding: 0 20px 20px 52px; }
+  .sub-t { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+  .sub-t th { text-align: left; font: 600 11px 'Poppins'; letter-spacing: .4px; text-transform: uppercase; color: var(--n6); padding: 10px 12px; background: var(--page); }
+  .sub-t td { padding: 12px; border-top: 1px solid var(--n2); font: 500 13px 'Poppins'; }
+  .sub-t td.r, .sub-t th.r { text-align: right; }
+  .pos { font: 600 14px 'Poppins'; color: var(--p9); }
+  .meta { font: 400 12px 'Poppins'; color: var(--n6); }
+  .rank { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--p0); color: var(--p7); font: 700 11px 'Poppins'; }
+
+  .opts { display: grid; grid-template-columns: 1fr; gap: 24px; }
+  .opt { border: 2px solid var(--n2); border-radius: 16px; padding: 20px; background: #fff; cursor: pointer; }
+  .opt.selected { border-color: var(--p); box-shadow: 0 0 0 3px var(--p2); }
+  .opt h3 { font: 600 18px/24px 'Poppins'; color: var(--p9); margin-bottom: 4px; }
+  .opt p.d { font: 400 13px/18px 'Poppins'; color: var(--n6); margin-bottom: 14px; }
+  .letter { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--p); color: #fff; font: 700 13px 'Poppins'; margin-right: 8px; }
+
+  .warn { display: flex; gap: 14px; background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 16px; padding: 18px 20px; position: relative; max-width: 900px; }
+  .warn h4 { font: 600 16px/22px 'Poppins'; color: #92400E; }
+  .warn p { font: 400 13px/18px 'Poppins'; color: #B45309; margin-top: 6px; }
+  .x { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; color: #92400E; cursor: pointer; display: grid; place-items: center; font-size: 18px; }
+  .x:hover { background: rgba(146,64,14,.08); }
+  .x:focus-visible { outline: 2px solid var(--p); outline-offset: 2px; }
+  .scrollbox { height: 110px; overflow: auto; border: 1px solid var(--n2); border-radius: 12px; background: #fff; padding: 12px 16px; font: 400 13px/22px 'Poppins'; color: var(--n6); max-width: 420px; }
+</style>
+</head>
+<body>
+
+<div class="block">
+  <h2 class="q">1 · Header, once</h2>
+  <p class="sub">The second "Succession Planning" heading and its paragraph go; the page title stays at the top. The Ranked cards tab is removed, so the view switch inside the page disappears too.</p>
+  <div class="frame">
+    <div class="page-title">Succession Planning</div>
+    <div class="page-sub">Build and manage the pipeline for critical roles and leadership continuity.</div>
+    <div class="tabs"><button class="tab on">Succession Plan</button><button class="tab">Eligibility Points</button></div>
+    <div class="strike">Succession Planning (second heading) · Succession Plan | Ranked cards</div>
+  </div>
+</div>
+
+<div class="block">
+  <h2 class="q">2 · The table, in the Training Needs Assessment style. Pick one.</h2>
+  <p class="sub">Both use the same table frame, uppercase column headers and chevron rows as the L&amp;D TNA table. They differ in what opens when you click a department.</p>
+
+  <div class="opts">
+    <div class="opt" data-choice="succession-a-nested-rows" onclick="pick(this)">
+      <h3><span class="letter">A</span>Departments open into position rows; a position opens into its ranked candidates</h3>
+      <p class="d">Three levels inside one table. Scans fastest when an office has several critical positions.</p>
+      <table class="t">
+        <tr><th style="width:45%">Department</th><th>Critical positions</th><th>Vacant</th><th>Status</th></tr>
+        <tr class="row open"><td><div class="name"><span class="chev">›</span>Information Technology</div></td><td class="num">2</td><td class="num">1</td><td><span class="badge" style="background:var(--w1);color:var(--w7)">1 vacant</span></td></tr>
+        <tr class="expand"><td colspan="4">
+          <table class="sub-t">
+            <tr><th>Critical position</th><th>Held by</th><th class="r">Qualified</th><th>Top candidate</th></tr>
+            <tr class="open"><td><span class="chev">›</span> <span class="pos">Information Technology Officer II</span></td><td>Vacant</td><td class="r">3</td><td>Juan Dela Cruz · 82.4</td></tr>
+            <tr><td colspan="4" style="padding:0 0 0 28px;border:0">
+              <table class="sub-t" style="margin-top:6px">
+                <tr><th>Rank</th><th>Candidate / present position</th><th class="r">Performance (40%)</th><th class="r">Experience (20%)</th><th class="r">Total</th><th>Readiness</th></tr>
+                <tr><td><span class="rank">1</span></td><td><b style="color:var(--p9)">Juan Dela Cruz</b><div class="meta">Computer Programmer III</div></td><td class="r">36.0</td><td class="r">16.5</td><td class="r"><b>82.4</b></td><td><span class="badge" style="background:var(--ok1);color:var(--ok7)">Ready Now</span></td></tr>
+                <tr><td><span class="rank">2</span></td><td><b style="color:var(--p9)">Ana Reyes</b><div class="meta">Computer Programmer II</div></td><td class="r">32.4</td><td class="r">12.0</td><td class="r"><b>71.0</b></td><td><span class="badge" style="background:var(--p0);color:var(--p7)">Ready in 1–2 Years</span></td></tr>
+              </table>
+            </td></tr>
+            <tr><td><span class="chev">›</span> <span class="pos">Computer Maintenance Technologist III</span></td><td>R. Santos · leaving Dec 2026</td><td class="r">2</td><td>Mark Lim · 77.9</td></tr>
+          </table>
+        </td></tr>
+        <tr class="row"><td><div class="name"><span class="chev">›</span>Office of The City Engineer</div></td><td class="num">1</td><td class="num">0</td><td><span class="badge" style="background:var(--ok1);color:var(--ok7)">All filled</span></td></tr>
+        <tr class="row"><td><div class="name"><span class="chev">›</span>Legal</div></td><td class="num">0</td><td class="num">0</td><td><span class="badge" style="background:var(--page);color:var(--n8)">No critical positions</span></td></tr>
+      </table>
+    </div>
+
+    <div class="opt" data-choice="succession-b-department-panel" onclick="pick(this)">
+      <h3><span class="letter">B</span>Departments open into a panel listing every position with its candidate table</h3>
+      <p class="d">Two levels. Everything for one office shows at once, like today, only restyled. Longer to scroll for big offices.</p>
+      <table class="t">
+        <tr><th style="width:45%">Department</th><th>Critical positions</th><th>Vacant</th><th>Status</th></tr>
+        <tr class="row open"><td><div class="name"><span class="chev">›</span>Information Technology</div></td><td class="num">2</td><td class="num">1</td><td><span class="badge" style="background:var(--w1);color:var(--w7)">1 vacant</span></td></tr>
+        <tr class="expand"><td colspan="4">
+          <div style="margin-top:14px"><span class="pos">Information Technology Officer II</span> <span class="meta">· Held by: Vacant · 3 qualified</span></div>
+          <table class="sub-t" style="margin-top:6px">
+            <tr><th>Rank</th><th>Candidate / present position</th><th class="r">Performance (40%)</th><th class="r">Experience (20%)</th><th class="r">Total</th><th>Readiness</th></tr>
+            <tr><td><span class="rank">1</span></td><td><b style="color:var(--p9)">Juan Dela Cruz</b><div class="meta">Computer Programmer III</div></td><td class="r">36.0</td><td class="r">16.5</td><td class="r"><b>82.4</b></td><td><span class="badge" style="background:var(--ok1);color:var(--ok7)">Ready Now</span></td></tr>
+          </table>
+          <div style="margin-top:18px"><span class="pos">Computer Maintenance Technologist III</span> <span class="meta">· Held by: R. Santos · leaving Dec 2026 · 2 qualified</span></div>
+          <table class="sub-t" style="margin-top:6px">
+            <tr><th>Rank</th><th>Candidate / present position</th><th class="r">Performance (40%)</th><th class="r">Experience (20%)</th><th class="r">Total</th><th>Readiness</th></tr>
+            <tr><td><span class="rank">1</span></td><td><b style="color:var(--p9)">Mark Lim</b><div class="meta">Computer Maintenance Technologist II</div></td><td class="r">34.0</td><td class="r">14.0</td><td class="r"><b>77.9</b></td><td><span class="badge" style="background:var(--p0);color:var(--p7)">Ready in 1–2 Years</span></td></tr>
+          </table>
+        </td></tr>
+        <tr class="row"><td><div class="name"><span class="chev">›</span>Office of The City Engineer</div></td><td class="num">1</td><td class="num">0</td><td><span class="badge" style="background:var(--ok1);color:var(--ok7)">All filled</span></td></tr>
+      </table>
+    </div>
+  </div>
+  <p class="sub" style="margin-top:12px">Candidate tables keep all five criteria columns, sorting, and the click-a-name breakdown; the mock shows two columns to stay readable. Names and scores here are samples.</p>
+</div>
+
+<div class="block">
+  <h2 class="q">3 · Dismissible warnings and the blue scrollbar (no choice needed)</h2>
+  <div class="warn">
+    <span style="font-size:20px;color:#D97706">⚠</span>
+    <div><h4>4 trainings went live incomplete</h4><p>These locked within 3 days of their start while still in planning. Complete trainings before the cutoff next time.</p></div>
+    <button class="x" aria-label="Dismiss this warning" title="Dismiss">✕</button>
+  </div>
+  <p class="sub" style="margin-top:10px">Dismissing hides it for that admin's browser. It comes back only if a new training joins the list.</p>
+  <div class="scrollbox">Scroll me: the scrollbar is the brand blue on a light track, everywhere in the app. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</div>
+</div>
+
+<script>
+  function pick(el) { document.querySelectorAll('.opt').forEach(o => o.classList.remove('selected')); el.classList.add('selected'); }
+  document.querySelectorAll('.x').forEach(x => x.addEventListener('click', e => { e.stopPropagation(); x.closest('.warn').style.display = 'none'; }));
+</script>
+</body>
+</html>

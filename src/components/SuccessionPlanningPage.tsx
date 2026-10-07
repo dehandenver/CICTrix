@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAdminEmail } from '../lib/adminSession';
-import { Building2, ChevronRight, ChevronDown } from 'lucide-react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import {
   listDepartmentSummaries,
   listCriticalPositions,
@@ -143,6 +143,18 @@ const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
   }));
 };
 
+/** Column header, same as the L&D Training needs assessment table. */
+const TH = 'px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500';
+
+/** Department row status: a vacancy needs attention; otherwise filled or nothing flagged. */
+const departmentStatus = (dept: DepartmentSummary): { label: string; tone: string } => {
+  if (dept.vacantCriticalCount > 0) {
+    return { label: `${dept.vacantCriticalCount} vacant`, tone: 'bg-amber-100 text-amber-700' };
+  }
+  if (dept.criticalPositionCount > 0) return { label: 'All filled', tone: 'bg-green-100 text-green-700' };
+  return { label: 'No critical positions', tone: 'bg-slate-100 text-slate-700' };
+};
+
 const OcboTableView = ({ admin }: { admin: string }) => {
   const [departments, setDepartments] = useState<DepartmentSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -237,23 +249,66 @@ const OcboTableView = ({ admin }: { admin: string }) => {
         position, not progress toward a target. Column headers re-sort for analysis without changing anyone&rsquo;s
         rank. Click a name for the full breakdown, gap analysis and required actions — several can be open at once.
       </p>
+      {/* Same table pattern as L&D > Training needs assessment: one row per
+          department, a chevron, and the row opens a panel with every critical
+          position and its ranked candidates (mockup option B,
+          docs/mockups/2026-10-07-succession-table.html). */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[21rem]">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50">
+              <th className={TH}>Department</th>
+              <th className={TH}>Critical positions</th>
+              <th className={TH}>Vacant</th>
+              <th className={TH}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+      {departments.length === 0 && (
+        <tr>
+          <td colSpan={4} className="px-5 py-12 text-center text-sm text-slate-500">No departments to show yet.</td>
+        </tr>
+      )}
       {departments.map((dept) => {
         const open = expanded.has(dept.departmentId);
         const positions = posByDept[dept.departmentId] ?? [];
+        const status = departmentStatus(dept);
         return (
-          <div key={dept.departmentId} className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-white">
-            <button
+          <Fragment key={dept.departmentId}>
+            <tr
               onClick={() => toggle(dept.departmentId)}
-              className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/60 ${open ? 'bg-slate-50/60' : ''}`}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  toggle(dept.departmentId);
+                }
+              }}
+              tabIndex={0}
+              aria-expanded={open}
+              className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#363EE8]"
             >
-              {open ? <ChevronDown size={18} className="text-blue-600" /> : <ChevronRight size={18} className="text-[var(--text-muted)]" />}
-              <span className="rounded-xl bg-blue-100 p-2 text-blue-600"><Building2 size={16} /></span>
-              <span className="font-semibold text-[var(--text-primary)]">{dept.departmentName}</span>
-              <span className="text-xs text-[var(--text-secondary)]">{dept.criticalPositionCount} critical position{dept.criticalPositionCount === 1 ? '' : 's'}</span>
-            </button>
+              <td className="px-5 py-4">
+                <span className="flex items-center gap-2">
+                  {open
+                    ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
+                  <span className="text-sm font-semibold text-slate-900">{dept.departmentName}</span>
+                  {!dept.isActive && (
+                    <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">Inactive</span>
+                  )}
+                </span>
+              </td>
+              <td className="px-5 py-4 text-sm text-slate-700">{dept.criticalPositionCount}</td>
+              <td className="px-5 py-4 text-sm text-slate-700">{dept.vacantCriticalCount}</td>
+              <td className="px-5 py-4">
+                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${status.tone}`}>{status.label}</span>
+              </td>
+            </tr>
 
             {open && (
-              <div className="border-t border-[var(--border-color)] p-4">
+              <tr className="border-b border-slate-100 last:border-0">
+              <td colSpan={4} className="bg-slate-50/60 px-5 py-4">
                 {loadingDept[dept.departmentId] && <p className="text-sm text-[var(--text-secondary)]">Loading positions…</p>}
                 {!loadingDept[dept.departmentId] && positions.length === 0 && (
                   <p className="text-sm text-[var(--text-secondary)]">No critical positions flagged for this office.</p>
@@ -271,9 +326,9 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                   const filtered = candByPos[pos.id]?.notQualified.length ?? 0;
                   return (
                     <div key={pos.id} className="mb-5 last:mb-0">
-                      <div className="mb-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                        <span className="font-semibold text-[var(--text-primary)]">{pos.title}</span>
-                        <span className="text-xs text-[var(--text-secondary)]">
+                      <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                        <span className="text-sm font-semibold text-slate-900">{pos.title}</span>
+                        <span className="text-xs text-slate-500">
                           Held by: {pos.incumbentName ?? <em className="text-slate-400">Vacant</em>}
                           {leaving ? ` · leaving ${leaving}` : ''}
                           {filtered > 0
@@ -284,12 +339,12 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                             : ''}
                         </span>
                       </div>
-                      <div className="overflow-x-auto rounded-lg border border-[var(--border-color)]">
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                         <table className="w-full min-w-[900px] border-collapse text-xs">
                           <thead>
-                            <tr className="border-b border-[var(--border-color)] bg-slate-50 text-left text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
-                              <th className="px-3 py-2 text-center">Rank</th>
-                              <th className="px-3 py-2">Candidate / Present Position</th>
+                            <tr className="border-b border-slate-200 bg-white text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                              <th className="px-3 py-2.5 text-center">Rank</th>
+                              <th className="px-3 py-2.5">Candidate / Present Position</th>
                               {CRITERIA_COLUMNS.map((c) => (
                                 <th key={c.key} className="px-3 py-2 text-right">
                                   <button
@@ -492,11 +547,16 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                     </div>
                   );
                 })}
-              </div>
+              </td>
+              </tr>
             )}
-          </div>
+          </Fragment>
         );
       })}
+          </tbody>
+        </table>
+        </div>
+      </div>
     </div>
   );
 };
