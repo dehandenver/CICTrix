@@ -35,6 +35,8 @@ export interface ApplicantRecord {
   office: string;
   status: string;
   created_at: string;
+  /** Last change to the row; the closest available stand-in for when the applicant qualified. */
+  updated_at?: string | null;
   total_score: number | null;
   /** 'promotion' = applicant is a current employee (verified via wizard auth);
       'job' / null = new applicant. Drives appointment-type lock in scoring modal. */

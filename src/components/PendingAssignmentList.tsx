@@ -11,10 +11,12 @@ import {
   Clock,
   Pencil,
   Save,
+  Search,
   UserCheck,
   Users,
   X,
 } from 'lucide-react';
+import { SortButton, SortHeader, toTime, useTableSort } from './tableSort';
 import {
   fetchActiveInterviewers,
   isApplicantFullyAssigned,
@@ -70,6 +72,39 @@ const fmtSchedule = (date: string, time: string) => {
 
 const normalizeType = (t: string | null | undefined) =>
   (t ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original';
+
+/**
+ * When the applicant qualified. There is no qualified_at column, so the row's
+ * last update stands in for it, falling back to the application date.
+ */
+const qualifiedTime = (a: ApplicantRecord) => {
+  const updated = toTime(a.updated_at);
+  return Number.isNaN(updated) ? toTime(a.created_at) : updated;
+};
+
+type PendingSortKey = 'qualified' | 'name' | 'position' | 'department' | 'type' | 'applied';
+
+const PENDING_SORT_ACCESSORS: Record<PendingSortKey, (a: ApplicantRecord) => string | number> = {
+  qualified:  qualifiedTime,
+  name:       (a) => a.full_name,
+  position:   (a) => a.position,
+  department: (a) => a.office,
+  type:       (a) => normalizeType(a.application_type),
+  applied:    (a) => toTime(a.created_at),
+};
+
+type ScheduledSortKey = 'qualified' | 'name' | 'position' | 'department' | 'exam' | 'interview' | 'interviewer';
+
+/** No sort chosen yet → most recently qualified applicant first. */
+const DEFAULT_QUALIFIED_SORT = { key: 'qualified', dir: 'desc' } as const;
+const PENDING_DESC_FIRST: readonly PendingSortKey[] = ['qualified', 'applied'];
+const SCHEDULED_DESC_FIRST: readonly ScheduledSortKey[] = ['qualified'];
+
+const SCHEDULED_TH = 'px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500';
+
+/** "2026-10-07 09:30" sorts chronologically as text; blank when there is no date. */
+const scheduleKey = (date: string | null | undefined, time: string | null | undefined) =>
+  date ? `${date} ${time ?? ''}` : '';
 
 export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: PendingAssignmentListProps) => {
 
@@ -137,19 +172,92 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
       .filter((a) => isApplicantFullyAssigned(mergeAssignment(a)));
   }, [applicants, completedEvaluationIds, mergeAssignment]);
 
-  // Drop ids that disappeared from the pending list (already assigned).
+  // Filters shared by the Pending and Scheduled tables.
+  const [search, setSearch] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [positionFilter, setPositionFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+
+  const qualifiedApplicants = useMemo(
+    () => applicants.filter((a) => isQualified(a, completedEvaluationIds)),
+    [applicants, completedEvaluationIds],
+  );
+  const departments = useMemo(
+    () => [...new Set(qualifiedApplicants.map((a) => a.office).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [qualifiedApplicants],
+  );
+  // Positions narrow to the chosen department so the two dropdowns never contradict.
+  const positions = useMemo(
+    () => [...new Set(
+      qualifiedApplicants
+        .filter((a) => departmentFilter === 'all' || a.office === departmentFilter)
+        .map((a) => a.position)
+        .filter(Boolean),
+    )].sort((a, b) => a.localeCompare(b)),
+    [qualifiedApplicants, departmentFilter],
+  );
+
+  const matchesFilters = useCallback((a: ApplicantRecord) => {
+    if (departmentFilter !== 'all' && a.office !== departmentFilter) return false;
+    if (positionFilter !== 'all' && a.position !== positionFilter) return false;
+    if (typeFilter !== 'all' && normalizeType(a.application_type) !== typeFilter) return false;
+    const term = search.trim().toLowerCase();
+    if (term) {
+      return (
+        a.full_name.toLowerCase().includes(term) ||
+        a.email.toLowerCase().includes(term) ||
+        a.position.toLowerCase().includes(term) ||
+        a.office.toLowerCase().includes(term)
+      );
+    }
+    return true;
+  }, [search, departmentFilter, positionFilter, typeFilter]);
+
+  const filtersActive = search.trim() !== '' || departmentFilter !== 'all' || positionFilter !== 'all' || typeFilter !== 'all';
+  const clearFilters = () => {
+    setSearch('');
+    setDepartmentFilter('all');
+    setPositionFilter('all');
+    setTypeFilter('all');
+  };
+
+  const filteredPending = useMemo(() => pendingApplicants.filter(matchesFilters), [pendingApplicants, matchesFilters]);
+  const filteredScheduled = useMemo(() => scheduledApplicants.filter(matchesFilters), [scheduledApplicants, matchesFilters]);
+
+  const { sorted: sortedPending, sort: pendingSort, toggle: togglePendingSort } =
+    useTableSort<ApplicantRecord, PendingSortKey>(filteredPending, PENDING_SORT_ACCESSORS, DEFAULT_QUALIFIED_SORT, PENDING_DESC_FIRST);
+
+  // Schedule values come from the merged record so a just-published schedule sorts correctly.
+  const scheduledSortAccessors = useMemo<Record<ScheduledSortKey, (a: ApplicantRecord) => string | number>>(() => ({
+    qualified:   qualifiedTime,
+    name:        (a) => a.full_name,
+    position:    (a) => a.position,
+    department:  (a) => a.office,
+    exam:        (a) => { const m = mergeAssignment(a); return scheduleKey(m.exam_date, m.exam_time); },
+    interview:   (a) => { const m = mergeAssignment(a); return scheduleKey(m.interview_date, m.interview_time); },
+    interviewer: (a) => {
+      const email = mergeAssignment(a).assigned_interviewer_email ?? '';
+      return interviewers.find((i) => i.email === email)?.name ?? email;
+    },
+  }), [mergeAssignment, interviewers]);
+
+  const { sorted: sortedScheduled, sort: scheduledSort, toggle: toggleScheduledSort } =
+    useTableSort<ApplicantRecord, ScheduledSortKey>(filteredScheduled, scheduledSortAccessors, DEFAULT_QUALIFIED_SORT, SCHEDULED_DESC_FIRST);
+
+  // Keep the selection to rows that are still pending and still visible, so a
+  // schedule is never published to someone the filters are hiding.
   useEffect(() => {
     setSelectedIds((prev) => {
-      const stillPending = new Set(pendingApplicants.map((a) => a.id));
+      const visible = new Set(filteredPending.map((a) => a.id));
       const next = new Set<string>();
       prev.forEach((id) => {
-        if (stillPending.has(id)) next.add(id);
+        if (visible.has(id)) next.add(id);
       });
       return next.size === prev.size ? prev : next;
     });
-  }, [pendingApplicants]);
+  }, [filteredPending]);
 
-  const allSelected = pendingApplicants.length > 0 && selectedIds.size === pendingApplicants.length;
+  const allSelected = filteredPending.length > 0 && filteredPending.every((a) => selectedIds.has(a.id));
   const someSelected = selectedIds.size > 0 && !allSelected;
 
   const toggleOne = (id: string) => {
@@ -162,9 +270,7 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
   };
 
   const toggleSelectAll = () => {
-    setSelectedIds((prev) =>
-      prev.size === pendingApplicants.length ? new Set<string>() : new Set(pendingApplicants.map((a) => a.id)),
-    );
+    setSelectedIds(allSelected ? new Set<string>() : new Set(filteredPending.map((a) => a.id)));
   };
 
   const allFieldsFilled =
@@ -270,6 +376,69 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
     if (!email) return '—';
     return interviewers.find((i) => i.email === email)?.name ?? email;
   };
+
+  // Same filter card as Applications, shared by the Pending and Scheduled tables.
+  const renderFilterBar = (shown: number, total: number, defaultOrder: boolean) => (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search name, email, position, or department…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 py-2.5 pl-9 pr-3 text-sm focus:border-[#363EE8] focus:outline-none"
+          />
+        </div>
+        <select
+          value={departmentFilter}
+          onChange={(e) => { setDepartmentFilter(e.target.value); setPositionFilter('all'); }}
+          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-[#363EE8] focus:outline-none"
+        >
+          <option value="all">All Departments</option>
+          {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select
+          value={positionFilter}
+          onChange={(e) => setPositionFilter(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-[#363EE8] focus:outline-none"
+        >
+          <option value="all">All Positions</option>
+          {positions.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-[#363EE8] focus:outline-none"
+        >
+          <option value="all">All Types</option>
+          <option value="Original">Original</option>
+          <option value="Promotional">Promotional</option>
+        </select>
+      </div>
+      <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs text-slate-500">
+        <span>
+          {filtersActive ? `${shown} of ${total}` : total} applicant{(filtersActive ? shown : total) === 1 ? '' : 's'}
+          {defaultOrder && ' · most recently qualified first'}
+        </span>
+        {filtersActive && (
+          <button type="button" className="text-[#363EE8] hover:underline" onClick={clearFilters}>
+            Clear filters
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const noMatchRow = (colSpan: number) => (
+    <tr>
+      <td colSpan={colSpan} className="px-5 py-12 text-center text-slate-500">
+        <Search className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+        <p className="font-medium">No applicants match the selected filters.</p>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="space-y-4">
@@ -513,6 +682,8 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
               </button>
             </div>
           ) : (
+            <>
+            {renderFilterBar(filteredPending.length, pendingApplicants.length, pendingSort.key === 'qualified')}
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
               <table className="w-full min-w-full">
                 <thead>
@@ -520,22 +691,24 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
                     <th className="w-10 px-5 py-3 text-left">
                       <input
                         type="checkbox"
-                        aria-label="Select all pending applicants"
+                        aria-label="Select all pending applicants shown"
                         checked={allSelected}
                         ref={(el) => { if (el) el.indeterminate = someSelected; }}
                         onChange={toggleSelectAll}
+                        disabled={filteredPending.length === 0}
                         className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                     </th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applied</th>
+                    <SortHeader label="Applicant Name" sortKey="name" sort={pendingSort} onSort={togglePendingSort} />
+                    <SortHeader label="Position" sortKey="position" sort={pendingSort} onSort={togglePendingSort} />
+                    <SortHeader label="Department" sortKey="department" sort={pendingSort} onSort={togglePendingSort} />
+                    <SortHeader label="Type" sortKey="type" sort={pendingSort} onSort={togglePendingSort} />
+                    <SortHeader label="Applied" sortKey="applied" sort={pendingSort} onSort={togglePendingSort} />
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingApplicants.map((a) => {
+                  {sortedPending.length === 0 && noMatchRow(6)}
+                  {sortedPending.map((a) => {
                     const checked = selectedIds.has(a.id);
                     return (
                       <tr
@@ -576,6 +749,7 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </>
       )}
@@ -610,6 +784,8 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
               </button>
             </div>
           ) : (
+            <>
+            {renderFilterBar(filteredScheduled.length, scheduledApplicants.length, scheduledSort.key === 'qualified')}
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
               {/* Fixed layout with set widths so dates never wrap and the table
                   fits at 1366px without a sideways scroll. */}
@@ -624,16 +800,27 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
                 </colgroup>
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position / Office</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Schedule</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Interview Schedule</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Interviewer</th>
+                    <SortHeader label="Applicant" sortKey="name" sort={scheduledSort} onSort={toggleScheduledSort} className={SCHEDULED_TH} />
+                    <th
+                      aria-sort={scheduledSort.key === 'position' || scheduledSort.key === 'department'
+                        ? (scheduledSort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      className={SCHEDULED_TH}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <SortButton label="Position" sortKey="position" sort={scheduledSort} onSort={toggleScheduledSort} />
+                        <span>/</span>
+                        <SortButton label="Office" sortKey="department" sort={scheduledSort} onSort={toggleScheduledSort} />
+                      </span>
+                    </th>
+                    <SortHeader label="Exam Schedule" sortKey="exam" sort={scheduledSort} onSort={toggleScheduledSort} className={SCHEDULED_TH} />
+                    <SortHeader label="Interview Schedule" sortKey="interview" sort={scheduledSort} onSort={toggleScheduledSort} className={SCHEDULED_TH} />
+                    <SortHeader label="Interviewer" sortKey="interviewer" sort={scheduledSort} onSort={toggleScheduledSort} className={SCHEDULED_TH} />
                     <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {scheduledApplicants.map((a) => {
+                  {sortedScheduled.length === 0 && noMatchRow(6)}
+                  {sortedScheduled.map((a) => {
                     const merged = mergeAssignment(a);
                     const interviewer = getInterviewerName(merged.assigned_interviewer_email);
                     const examAt = fmtSchedule(merged.exam_date ?? '', merged.exam_time ?? '');
@@ -692,6 +879,7 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </>
       )}

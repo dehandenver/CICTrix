@@ -20,6 +20,7 @@ export interface ApplicantRecord {
   office: string;
   status: string;
   created_at: string;
+  updated_at?: string | null;
   total_score: number | null;
   application_type?: string | null;
   // Schedule + interviewer assignment (migration 007). Drives
@@ -126,6 +127,7 @@ export const QualifiedApplicantsRSPPage = ({ mode = 'score' }: QualifiedApplican
             office: String(row?.office || ''),
             status: String(row?.status || ''),
             created_at: String(row?.created_at || ''),
+            updated_at: row?.updated_at ? String(row.updated_at) : null,
             total_score: row?.total_score ? Number(row.total_score) : null,
             application_type: row?.application_type ?? null,
             exam_date: row?.exam_date ?? null,

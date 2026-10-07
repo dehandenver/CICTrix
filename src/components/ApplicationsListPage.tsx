@@ -10,6 +10,7 @@ import { ChevronLeft, ChevronRight, Search, Undo2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApplicantSlotLinks, fetchSlotsByJobPosting } from '../lib/plantillaSlots';
 import { plantillaLabel } from '../lib/plantillaRules';
+import { SortHeader, toTime, useTableSort } from './tableSort';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,24 @@ const isDisqualifiedStatus = (status: string) => {
 };
 
 const ITEMS_PER_PAGE = 10;
+
+const applicationType = (a: Applicant) =>
+  (a.application_type ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original';
+
+type ApplicantSortKey = 'name' | 'reference' | 'position' | 'department' | 'type' | 'applied';
+
+const APPLICANT_SORT_ACCESSORS: Record<ApplicantSortKey, (a: Applicant) => string | number> = {
+  name:       a => a.full_name,
+  reference:  a => a.reference_no,
+  position:   a => a.position,
+  department: a => a.office,
+  type:       applicationType,
+  applied:    a => toTime(a.created_at),
+};
+
+/** No sort chosen yet → most recent applicant first. */
+const DEFAULT_APPLICANT_SORT = { key: 'applied', dir: 'desc' } as const;
+const DESC_FIRST_KEYS: readonly ApplicantSortKey[] = ['applied'];
 
 /** Reference numbers get quoted back with arbitrary case and punctuation. */
 const normalizeReference = (value: string) =>
@@ -193,6 +212,14 @@ export const ApplicationsListPage = () => {
     [applicants],
   );
 
+  const { sorted: sortedApplicants, sort: applicantSort, toggle: toggleApplicantSort } =
+    useTableSort<Applicant, ApplicantSortKey>(filtered, APPLICANT_SORT_ACCESSORS, DEFAULT_APPLICANT_SORT, DESC_FIRST_KEYS);
+  const { sorted: sortedShortlisted, sort: shortlistSort, toggle: toggleShortlistSort } =
+    useTableSort<Applicant, ApplicantSortKey>(shortlisted, APPLICANT_SORT_ACCESSORS, DEFAULT_APPLICANT_SORT, DESC_FIRST_KEYS);
+
+  // A new order starts from the first page, like a new filter does.
+  const sortApplicants = (key: ApplicantSortKey) => { toggleApplicantSort(key); setPage(1); };
+
   // Drop stale ids when the underlying list changes (e.g. after a remove).
   useEffect(() => {
     setSelectedShortlistIds(prev => {
@@ -250,7 +277,7 @@ export const ApplicationsListPage = () => {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const safePage   = Math.min(page, totalPages);
-  const paged      = filtered.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  const paged      = sortedApplicants.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
@@ -326,12 +353,12 @@ export const ApplicationsListPage = () => {
               <table className="w-full min-w-full">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
-                    <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Reference No.</th>
-                    <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
-                    <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
-                    <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
-                    <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applied</th>
+                    <SortHeader label="Applicant Name" sortKey="name" sort={applicantSort} onSort={sortApplicants} />
+                    <SortHeader label="Reference No." sortKey="reference" sort={applicantSort} onSort={sortApplicants} />
+                    <SortHeader label="Position" sortKey="position" sort={applicantSort} onSort={sortApplicants} />
+                    <SortHeader label="Department" sortKey="department" sort={applicantSort} onSort={sortApplicants} />
+                    <SortHeader label="Type" sortKey="type" sort={applicantSort} onSort={sortApplicants} />
+                    <SortHeader label="Applied" sortKey="applied" sort={applicantSort} onSort={sortApplicants} />
                   </tr>
                 </thead>
                 <tbody>
@@ -385,6 +412,24 @@ export const ApplicationsListPage = () => {
               </table>
             </div>
 
+            {/* Pagination */}
+            <div className="mt-3 flex items-center justify-between px-1 text-sm text-slate-600">
+              <p>
+                {filtered.length === 0 ? 'No results'
+                  : `Showing ${(safePage - 1) * ITEMS_PER_PAGE + 1}–${Math.min(safePage * ITEMS_PER_PAGE, filtered.length)} of ${filtered.length}`}
+              </p>
+              <div className="flex items-center gap-2">
+                <button aria-label="Previous page" className="rsp-pager flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50"
+                  onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-xs font-medium">Page {safePage} of {totalPages}</span>
+                <button aria-label="Next page" className="rsp-pager flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
             {/* Shortlisted Applicants section */}
             <div className="mt-8">
               <div className="mb-3 flex items-end justify-between gap-3">
@@ -422,16 +467,16 @@ export const ApplicationsListPage = () => {
                           className="h-4 w-4 rounded border-slate-300 text-[#363EE8] focus:ring-[#363EE8]"
                         />
                       </th>
-                      <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
-                      <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Reference No.</th>
-                      <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
-                      <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
-                      <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
-                      <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applied</th>
+                      <SortHeader label="Applicant Name" sortKey="name" sort={shortlistSort} onSort={toggleShortlistSort} />
+                      <SortHeader label="Reference No." sortKey="reference" sort={shortlistSort} onSort={toggleShortlistSort} />
+                      <SortHeader label="Position" sortKey="position" sort={shortlistSort} onSort={toggleShortlistSort} />
+                      <SortHeader label="Department" sortKey="department" sort={shortlistSort} onSort={toggleShortlistSort} />
+                      <SortHeader label="Type" sortKey="type" sort={shortlistSort} onSort={toggleShortlistSort} />
+                      <SortHeader label="Applied" sortKey="applied" sort={shortlistSort} onSort={toggleShortlistSort} />
                     </tr>
                   </thead>
                   <tbody>
-                    {shortlisted.map(a => (
+                    {sortedShortlisted.map(a => (
                       <tr key={a.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
                         <td className="px-5 py-4">
                           <input
@@ -480,24 +525,6 @@ export const ApplicationsListPage = () => {
               </div>
             </div>
 
-            {/* Pagination */}
-            <div className="mt-3 flex items-center justify-between px-1 text-sm text-slate-600">
-              <p>
-                {filtered.length === 0 ? 'No results'
-                  : `Showing ${(safePage - 1) * ITEMS_PER_PAGE + 1}–${Math.min(safePage * ITEMS_PER_PAGE, filtered.length)} of ${filtered.length}`}
-              </p>
-              <div className="flex items-center gap-2">
-                <button aria-label="Previous page" className="rsp-pager flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50"
-                  onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-xs font-medium">Page {safePage} of {totalPages}</span>
-                <button aria-label="Next page" className="rsp-pager flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
           </div>
         </main>
       </div>
