@@ -30,3 +30,16 @@ All four steps shipped as planned, on `main` at the user's request.
 ## Known limits
 
 - "Most recently qualified" uses `updated_at`, which also moves on unrelated edits. A `qualified_at` column would make it exact.
+
+## Follow-up: selection across filters
+
+Shipped option B from `docs/mockups/2026-10-07-qualified-selection-bar.html`
+in `src/components/PendingAssignmentList.tsx`. Picks now persist across filter
+changes and drop only once an applicant is assigned. The header checkbox adds
+or removes just the visible rows. The selection bar lists the total and
+per-department chips with jump and ✕, plus Clear all.
+
+Checks: `npx tsc --noEmit` clean; `npx vitest run` 230 passed. On the local dev
+server, picking 2 in Operations and 1 in HRMO showed "3 selected" with both
+chips and Save Assignment (3); the Operations chip switched the filter and
+showed both picks still checked; ✕ dropped to 1; Clear all hid the bar.

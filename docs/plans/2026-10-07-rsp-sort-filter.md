@@ -40,3 +40,12 @@ to deploy to HR Demo and production.
 
 - `npx tsc --noEmit`, `npx vitest run`, `npm run build`
 - Vercel deployments for `abyan-hris-iloilo` and `cictrix-hr-demo` reach Ready.
+
+## Follow-up: selection across filters
+
+Mockup: `docs/mockups/2026-10-07-qualified-selection-bar.html`, option B.
+Pending Assignment keeps checked applicants when the department or position
+filter changes, so RSP can pick across departments before one Save
+Assignment. A selection bar above the filters shows the total and a chip per
+department (click to show that department, ✕ to unselect it) plus Clear all.
+This replaces the first pass's rule that dropped picks hidden by a filter.
