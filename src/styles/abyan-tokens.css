@@ -85,6 +85,13 @@
   /* Type (§4) */
   --font-sans: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
+  /* Density (§5.4): matches the public Currently Vacant Jobs table */
+  --control-h: 40px;                /* inputs, selects (§9.3) */
+  --control-h-compact: 36px;        /* toolbar controls, pagination (§9.4, §9.6) */
+  --table-head-pad-y: 10px;         /* header row ≈ 40–44px (§9.5) */
+  --table-cell-pad-y: 12px;         /* body row ≈ 48–56px (§9.5) */
+  --table-cell-pad-x: 16px;
+
   font-family: var(--font-sans);
   color: var(--neutral-800);
 }
@@ -98,13 +105,13 @@
   color: inherit;
 }
 
-/* Type scale (§4.3) */
-.abyan-ds .text-title-l    { font: 700 36px/40px var(--font-sans); }
-.abyan-ds .text-title-m    { font: 600 24px/32px var(--font-sans); }
-.abyan-ds .text-title-s    { font: 600 18px/24px var(--font-sans); }
-.abyan-ds .text-headline-m { font: 600 16px/20px var(--font-sans); }
-.abyan-ds .text-caption    { font: 500 14px/16px var(--font-sans); }
-.abyan-ds .text-body-l     { font: 400 16px/24px var(--font-sans); }
+/* Type scale (§4.3). Compact portal scale since 2026-10-07; base body is 14px. */
+.abyan-ds .text-title-l    { font: 700 24px/32px var(--font-sans); }
+.abyan-ds .text-title-m    { font: 600 20px/28px var(--font-sans); }
+.abyan-ds .text-title-s    { font: 600 16px/24px var(--font-sans); }
+.abyan-ds .text-headline-m { font: 600 14px/20px var(--font-sans); }
+.abyan-ds .text-caption    { font: 500 13px/16px var(--font-sans); }
+.abyan-ds .text-body-l     { font: 400 14px/22px var(--font-sans); }
 .abyan-ds .text-body-m     { font: 500 14px/18px var(--font-sans); }
 .abyan-ds .text-body-s     { font: 500 12px/16px var(--font-sans); letter-spacing: .1px; }
 .abyan-ds .text-caps       { font: 600 12px/16px var(--font-sans); letter-spacing: .4px; text-transform: uppercase; }
@@ -120,8 +127,8 @@
 }
 :is(.abyan-ds, .rsp-ds) .btn:focus-visible { outline: none; }
 :is(.abyan-ds, .rsp-ds) .btn-lg { height: 50px; padding: 0 28px; font-size: 16px; }
-:is(.abyan-ds, .rsp-ds) .btn-md { height: 45px; padding: 0 24px; font-size: 15px; }
-:is(.abyan-ds, .rsp-ds) .btn-sm { height: 36px; padding: 0 16px; font-size: 13px; }
+:is(.abyan-ds, .rsp-ds) .btn-md { height: 36px; padding: 0 20px; font-size: 14px; }
+:is(.abyan-ds, .rsp-ds) .btn-sm { height: 32px; padding: 0 14px; font-size: 13px; }
 
 :is(.abyan-ds, .rsp-ds) .btn-primary { background: var(--gradient-button); color: var(--color-white); }
 :is(.abyan-ds, .rsp-ds) .btn-primary:hover { background: var(--color-primary-700); }
@@ -143,7 +150,7 @@
 /* Status badges, soft style (§9.8) */
 :is(.abyan-ds, .rsp-ds) .badge {
   display: inline-flex; align-items: center; gap: 6px;
-  height: 24px; padding: 0 12px; border-radius: var(--radius-pill);
+  height: 22px; padding: 0 10px; border-radius: var(--radius-pill);
   font: 500 12px/16px var(--font-sans); letter-spacing: .1px; white-space: nowrap;
 }
 :is(.abyan-ds, .rsp-ds) .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

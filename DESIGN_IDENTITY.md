@@ -159,14 +159,14 @@ Each status color has three steps. **100** = soft background, **300** = borders/
 
 | Style | Weight | Size | Line height | Letter spacing | Typical use |
 |---|---|---|---|---|---|
-| **Title L** | Bold (700) | 36px | 40px | 0% | Page titles, dashboard greeting |
-| **Title M** | SemiBold (600) | 24px | 32px | 0% | Section titles ("Currently Vacant Jobs"), modal titles |
-| **Title S** | SemiBold (600) | 18px | 24px | 0% | Card titles, panel headings |
-| **Headline L** | Bold (700) | 16px | 20px | 0% | Emphasized labels, table header text |
-| **Headline M** | SemiBold (600) | 16px | 20px | 0% | Form section labels, list item titles |
-| **Headline S** | Medium (500) | 16px | 20px | 0% | Nav items, subtle headings |
-| **Caption** | Medium (500) | 14px | 16px | 0% | Field captions, KPI titles, meta info |
-| **Body L** | Regular (400) | 16px | 24px | 0% | Paragraphs, descriptions |
+| **Title L** | Bold (700) | 24px | 32px | 0% | Page titles, dashboard greeting |
+| **Title M** | SemiBold (600) | 20px | 28px | 0% | Section titles ("Currently Vacant Jobs"), modal titles |
+| **Title S** | SemiBold (600) | 16px | 24px | 0% | Card titles, panel headings |
+| **Headline L** | Bold (700) | 14px | 20px | 0% | Emphasized labels |
+| **Headline M** | SemiBold (600) | 14px | 20px | 0% | Form section labels, list item titles |
+| **Headline S** | Medium (500) | 14px | 20px | 0% | Nav items, subtle headings |
+| **Caption** | Medium (500) | 13px | 16px | 0% | Field captions, KPI titles, meta info |
+| **Body L** | Regular (400) | 14px | 22px | 0% | Paragraphs, descriptions |
 | **Body M** | Medium (500) | 14px | 18px | 0% | Table cell text, inputs, secondary paragraphs |
 | **Body S** | Medium (500) | 12px | 16px | 0.1px | Helper text, footnotes, badge text |
 | **HEADLINE CAPS** | SemiBold (600) | 12px | 16px | 0.4px | Overlines, table group labels (UPPERCASE) |
@@ -183,18 +183,20 @@ Each status color has three steps. **100** = soft background, **300** = borders/
 ### 4.3 CSS classes to use
 
 ```css
-.text-title-l   { font: 700 36px/40px 'Poppins', sans-serif; }
-.text-title-m   { font: 600 24px/32px 'Poppins', sans-serif; }
-.text-title-s   { font: 600 18px/24px 'Poppins', sans-serif; }
-.text-headline-l{ font: 700 16px/20px 'Poppins', sans-serif; }
-.text-headline-m{ font: 600 16px/20px 'Poppins', sans-serif; }
-.text-headline-s{ font: 500 16px/20px 'Poppins', sans-serif; }
-.text-caption   { font: 500 14px/16px 'Poppins', sans-serif; }
-.text-body-l    { font: 400 16px/24px 'Poppins', sans-serif; }
+.text-title-l   { font: 700 24px/32px 'Poppins', sans-serif; }
+.text-title-m   { font: 600 20px/28px 'Poppins', sans-serif; }
+.text-title-s   { font: 600 16px/24px 'Poppins', sans-serif; }
+.text-headline-l{ font: 700 14px/20px 'Poppins', sans-serif; }
+.text-headline-m{ font: 600 14px/20px 'Poppins', sans-serif; }
+.text-headline-s{ font: 500 14px/20px 'Poppins', sans-serif; }
+.text-caption   { font: 500 13px/16px 'Poppins', sans-serif; }
+.text-body-l    { font: 400 14px/22px 'Poppins', sans-serif; }
 .text-body-m    { font: 500 14px/18px 'Poppins', sans-serif; }
 .text-body-s    { font: 500 12px/16px 'Poppins', sans-serif; letter-spacing: .1px; }
 .text-caps      { font: 600 12px/16px 'Poppins', sans-serif; letter-spacing: .4px; text-transform: uppercase; }
 ```
+
+> **Compact scale (2026-10-07).** The portal scale was lowered so a full table and its controls fit at 1366×768 without zooming, matching the public *Currently Vacant Jobs* table. Base body text is 14px. The marketing hero (§4.2), the top navigation bar (§8.2) and the side navigation (§9.12) keep their own sizes.
 
 **Rules:** Never mix in a second typeface. Never go below 12px. Headings use `#040E6B`; body uses `#28343D`. Max line length for paragraphs: ~70 characters.
 
@@ -233,6 +235,17 @@ Each status color has three steps. **100** = soft background, **300** = borders/
 | 2 | `0 4px 12px rgba(16,30,41,.10)` | Dropdowns, popovers |
 | 3 | `0 12px 32px rgba(16,30,41,.16)` | Modals |
 | Focus glow | `0 4px 14px rgba(54,62,232,.40)` | Focused primary button |
+
+### 5.4 Density
+
+| Token | Value | Use |
+|---|---|---|
+| `--control-h` | 40px | Inputs and selects |
+| `--control-h-compact` | 36px | Toolbar controls, pagination buttons |
+| `--table-head-pad-y` | 10px | Table header cells, 16px sides (row ≈ 40–44px) |
+| `--table-cell-pad-y` / `-x` | 12px / 16px | Table body cells (row ≈ 48–56px) |
+
+Interactive targets stay at least 28px tall (§13). Cards use 16–20px padding; modals 20–24px.
 
 ---
 
@@ -413,8 +426,8 @@ Tables scroll horizontally inside their container on small screens. Toolbars wra
 | Size | Height | Font size | Horizontal padding | Use |
 |---|---|---|---|---|
 | **Large** | 50px | 16px | 28px | Hero CTAs, login/submit on auth pages |
-| **Medium** | 45px | 15px | 24px | Default for forms, dialogs, page actions |
-| **Small** | 36px | 13px | 16px | Table rows, cards, inline actions |
+| **Medium** | 36px | 14px | 20px | Default for forms, dialogs, page actions |
+| **Small** | 32px | 13px | 14px | Table rows, cards, inline actions |
 
 **Primary (filled)**
 
@@ -465,7 +478,7 @@ Tables scroll horizontally inside their container on small screens. Toolbars wra
 
 | Property | Spec |
 |---|---|
-| Height | 44px (default), 36px (compact/toolbars) |
+| Height | 40px (default), 36px (compact/toolbars) |
 | Background | `#FFFFFF` |
 | Border | 1px `#E2E8F0` |
 | Radius | 8px (`--radius-md`) |
@@ -493,7 +506,7 @@ Section Title (Title M, #040E6B)                [🔍 Search title, dept, type�
 Subtitle (Body L, #515F69)
 ```
 
-- Search input: 44px height, radius 8px, leading search icon, width ~260px.
+- Search input: 36px height, radius 8px, leading search icon, width ~260px.
 - Sort select: same height, text `#040E6B` Medium.
 - "Show [n] entries": label in Body M `#040E6B`; the **entries select uses the focus/active style** (`#363EE8` 1.5px border) when open/selected.
 - Toolbar is right-aligned on desktop, stacks under the title on mobile, with 12–16px gaps.
@@ -504,8 +517,8 @@ Subtitle (Body L, #515F69)
 | Part | Spec |
 |---|---|
 | Container | White, 1px `#E2E8F0` border, radius 12px, `overflow: hidden` |
-| Header row | Background `#F1F5F9`, text **Headline M/L** (Poppins SemiBold/Bold 14–16px) `#040E6B`, height ~52px, padding `0 20px` |
-| Body row | Height ~64px, Body M `#28343D`, bottom border 1px `#E2E8F0` |
+| Header row | Background `#F1F5F9`, text Poppins SemiBold 13px `#040E6B`, height ~40–44px, padding `10px 16px` |
+| Body row | Height ~48–56px (padding `12px 16px`), Body M 14px `#28343D`, bottom border 1px `#E2E8F0` |
 | Primary column | Position/Name in **Headline S/M** `#040E6B`, secondary info under it in Body S `#515F69` |
 | Row hover | `#F8FAFF` (very light tint) |
 | Row selected | `#EEF0FF` |
@@ -521,7 +534,7 @@ Reference: `‹ Previous | 1 2 3 4 5 6 | Next ›`
 
 | Element | Spec |
 |---|---|
-| Page button | 40×40px, radius 8px, 1px border `#C8D1FF`/`#E2E8F0`, text `#28343D` Medium 14px |
+| Page button | 36×36px, radius 8px, 1px border `#C8D1FF`/`#E2E8F0`, text `#28343D` Medium 14px |
 | **Active page** | Filled `#363EE8`, text `#FFFFFF`, no border |
 | Hover | Bg `#EEF0FF`, border `#C8D1FF` |
 | Previous / Next | Auto width (padding `0 16px`), chevron icon + label; **disabled** state: text `#94A3B8`, bg `#F8FAFC`, border `#E2E8F0` |
@@ -548,7 +561,7 @@ Each KPI card = **small icon + KPI title + value (+ optional trend)**.
 | Card | White, 1px `#E2E8F0`, radius 12px, padding 20px, min-width 220px |
 | Icon chip | 36–40px square, radius 10px, background `#EEF0FF` (or the 100 shade of its status), icon `#363EE8` (or the 500 shade of its status) |
 | Title | Caption (14px Medium), `#515F69`; **sentence case**; max 2 lines |
-| Value | Title L (36/40 Bold) `#040E6B`; use compact numbers (1.2K) only when > 9,999 |
+| Value | Title L (24/32 Bold) `#040E6B`; use compact numbers (1.2K) only when > 9,999 |
 | Trend (optional) | Body S; up = `#0F7A40` with ▲, down = `#B42323` with ▼, neutral = `#515F69`. Label the comparison period. |
 | Hover (if clickable) | Elevation 1 and border `#C8D1FF`; whole card is the link |
 | Layout | CSS grid, `repeat(auto-fit, minmax(220px, 1fr))`, 16–24px gap; 4 cards per row on desktop |
@@ -585,7 +598,7 @@ Used where a KPI should also preview **who** it counts (e.g. Interviewer Dashboa
 
 ### 9.8 Status & Category Badges
 
-- **Shape:** pill, height 24–28px, padding `0 12px`, Body S (12px Medium), optional 6px dot or 14px icon at left.
+- **Shape:** pill, height 22–24px, padding `0 10px`, Body S (12px Medium), optional 6px dot or 14px icon at left.
 - **Style (default, "soft"):** Background = **100** shade, text = **700** shade, optional dot = **500** shade.
 - **Style ("solid", for high emphasis only):** Background = **500** shade, text `#FFFFFF`.
 - Always show a text label; never a colored dot alone.
@@ -951,6 +964,10 @@ Categories such as **Department**, **Employment type** (Permanent, Casual, Contr
   /* Side navigation (§9.12) */
   --rail-collapsed: 72px; --rail-open: 256px;
 
+  /* Density (§5.4) */
+  --control-h: 40px; --control-h-compact: 36px;
+  --table-head-pad-y: 10px; --table-cell-pad-y: 12px; --table-cell-pad-x: 16px;
+
   /* Motion */
   --ease-standard: cubic-bezier(.2,.8,.2,1); --dur-base: 200ms;
 
@@ -976,8 +993,8 @@ h1, h2, h3, h4 { color: var(--color-primary-900); }
   cursor: pointer; transition: background .15s, box-shadow .15s, color .15s;
 }
 .btn-lg { height: 50px; padding: 0 28px; font-size: 16px; }
-.btn-md { height: 45px; padding: 0 24px; font-size: 15px; }
-.btn-sm { height: 36px; padding: 0 16px; font-size: 13px; }
+.btn-md { height: 36px; padding: 0 20px; font-size: 14px; }
+.btn-sm { height: 32px; padding: 0 14px; font-size: 13px; }
 
 .btn-primary { background: var(--gradient-button); color: #fff; }
 .btn-primary:hover { background: var(--color-primary-700); }

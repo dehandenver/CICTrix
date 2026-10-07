@@ -45,18 +45,18 @@
 
 /* Page title band: Title L + Body L subtitle (§4.1) */
 .rsp-ds .admin-content h1 {
-  font-size: 36px !important;
-  line-height: 40px !important;
+  font-size: 24px !important;
+  line-height: 32px !important;
   font-weight: 700;
   letter-spacing: 0;
 }
 .rsp-ds .admin-content h1 + p {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 14px;
+  line-height: 22px;
   font-weight: 400;
 }
 @media (max-width: 639px) {
-  .rsp-ds .admin-content h1 { font-size: 28px !important; line-height: 34px !important; }
+  .rsp-ds .admin-content h1 { font-size: 22px !important; line-height: 28px !important; }
 }
 
 /* Headings are deep navy, not brand blue (§3.4). admin.css forces #363EE8 with
@@ -144,7 +144,7 @@
 .rsp-ds a:is(.rounded-lg, .rounded-xl):is(.bg-blue-600, .bg-\[\#363EE8\]) {
   border-radius: 999px;
   font-weight: 600;
-  min-height: 36px;                     /* Small size floor (§9.1) */
+  min-height: 32px;                     /* Small size floor (§9.1) */
   transition: background-color 150ms, box-shadow 150ms, color 150ms, border-color 150ms;
 }
 
@@ -194,8 +194,8 @@
 
 /* Pagination (§9.6): 8px radius, active page filled */
 .rsp-ds .rsp-pager {
-  min-height: 40px;
-  min-width: 40px;
+  min-height: var(--control-h-compact);
+  min-width: var(--control-h-compact);
   border-radius: 8px;
   font-weight: 500;
 }
@@ -237,10 +237,15 @@
   font-weight: 600;
 }
 .rsp-ds table thead th {
-  font-size: 14px;
+  font-size: 13px;
   letter-spacing: 0;
   text-transform: none;
 }
+/* Density (§5.4, §9.5): roomy legacy cell padding (py-4+/px-5+) drops to the
+   token values; cells that already use tighter padding keep it. */
+.rsp-ds table thead th:is(.py-3, .py-3\.5, .py-4, .py-5) { padding-top: var(--table-head-pad-y); padding-bottom: var(--table-head-pad-y); }
+.rsp-ds table tbody td:is(.py-3\.5, .py-4, .py-5, .py-6) { padding-top: var(--table-cell-pad-y); padding-bottom: var(--table-cell-pad-y); }
+.rsp-ds table :is(th, td):is(.px-5, .px-6) { padding-left: var(--table-cell-pad-x); padding-right: var(--table-cell-pad-x); }
 :root:not([data-theme='dark']) .rsp-ds table tbody tr { border-color: #E2E8F0; }
 :root:not([data-theme='dark']) .rsp-ds table tbody tr:hover { background-color: #F8FAFF; }
 
