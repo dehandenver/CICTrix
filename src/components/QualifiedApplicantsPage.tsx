@@ -134,6 +134,18 @@ const DOC_REVIEW_KEY = 'cictrix_doc_reviews';
 const loadDocReviews = (): Record<string, DocReview> => {
   try { return JSON.parse(localStorage.getItem(DOC_REVIEW_KEY) ?? '{}'); } catch { return {}; }
 };
+/** Document and activity timestamps, in the viewer's local time: "Oct 5, 2026 · 5:07 PM". */
+const formatStamp = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${date} · ${time}`;
+};
+
+/** 0 is the first upload; every later upload of the same document is a resubmission. */
+const submissionLabel = (index: number) => (index === 0 ? 'Original submission' : `Resubmission #${index}`);
+
 const RESUBMISSION_REASONS = [
   'Blurred image',
   'Missing page',
@@ -1822,10 +1834,20 @@ export const QualifiedApplicantsPage = () => {
   const META_DOC_TYPES = new Set(['resubmission_request', 'resubmission_resolved', 'doc_validated']);
 
   const getModalDocuments = () => {
-    if (!activeApplicant) return [] as Array<{ type: string; rawType: string; url: string; verified: boolean; uploadedAt?: string }>;
+    if (!activeApplicant) return [] as Array<{ type: string; rawType: string; url: string; verified: boolean; uploadedAt?: string; submissions: string[] }>;
 
     const liveRows = attachmentsByApplicant[activeApplicant.id] || [];
     if (liveRows.length > 0) {
+      // Every upload of a document type is its own row, so its upload times,
+      // oldest first, are the original submission followed by each resubmission.
+      const submissionsByKey = new Map<string, string[]>();
+      for (const row of liveRows) {
+        if (META_DOC_TYPES.has(row.document_type ?? '') || !row.created_at) continue;
+        const key = row.document_type || row.file_name || '';
+        submissionsByKey.set(key, [...(submissionsByKey.get(key) ?? []), row.created_at]);
+      }
+      submissionsByKey.forEach((times) => times.sort((x, y) => new Date(x).getTime() - new Date(y).getTime()));
+
       // Rows are already sorted created_at DESC; keep only real docs, deduplicate to most-recent per type.
       const seen = new Set<string>();
       return liveRows
@@ -1842,6 +1864,7 @@ export const QualifiedApplicantsPage = () => {
           url: row.file_path || '#',
           verified: false,
           uploadedAt: row.created_at,
+          submissions: submissionsByKey.get(row.document_type || row.file_name || '') ?? [],
         }));
     }
 
@@ -2281,10 +2304,23 @@ export const QualifiedApplicantsPage = () => {
                         return (
                           <article key={`${doc.type}-${doc.url}`} className={`rounded-xl border ${status === 'approved' ? 'border-emerald-300 bg-emerald-50' : status === 'resubmission_requested' ? 'border-amber-200 bg-amber-50/40' : 'border-blue-200 bg-blue-50/30'}`}>
                             <div className="flex items-center justify-between px-4 py-3">
-                              <div className="flex flex-col gap-1">
-                                <p className="text-base font-semibold" style={{ color: '#040E6B' }}>{doc.type}</p>
-                                <p className="text-xs text-slate-500">Uploaded {formatPHDate((doc as any).uploadedAt || activeApplicant.applicationDate)}</p>
-                                <div className="mt-1">{statusBadge}</div>
+                              <div className="flex min-w-0 flex-col gap-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-semibold" style={{ color: '#040E6B' }}>{doc.type}</p>
+                                  {statusBadge}
+                                </div>
+                                {/* Oldest first; the latest upload is the one under review. */}
+                                <ol className="space-y-0.5">
+                                  {(doc.submissions.length > 0 ? doc.submissions : [doc.uploadedAt || activeApplicant.applicationDate]).map((at, i, all) => {
+                                    const latest = i === all.length - 1;
+                                    return (
+                                      <li key={`${at}-${i}`} className={`text-xs ${latest ? 'font-semibold text-slate-700' : 'text-slate-500'}`}>
+                                        {submissionLabel(i)} · <span className="whitespace-nowrap">{formatStamp(at)}</span>
+                                        {latest && all.length > 1 && <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-700">Latest</span>}
+                                      </li>
+                                    );
+                                  })}
+                                </ol>
                                 {status === 'resubmission_requested' && review?.remarks && (
                                   <p className="mt-1 text-xs text-amber-700">Reason: {review.remarks}</p>
                                 )}
@@ -2367,7 +2403,11 @@ export const QualifiedApplicantsPage = () => {
                   const metaRows = (attachmentsByApplicant[activeApplicant.id] ?? []).filter(
                     (row) => row.document_type === 'doc_validated' || row.document_type === 'resubmission_request' || row.document_type === 'resubmission_resolved',
                   );
-                  const derivedEntries = metaRows.map((row) => {
+                  // Number each document's received resubmissions in upload order.
+                  const resolvedCount = new Map<string, number>();
+                  const derivedEntries = [...metaRows]
+                    .sort((x, y) => new Date(x.created_at || 0).getTime() - new Date(y.created_at || 0).getTime())
+                    .map((row) => {
                     if (row.document_type === 'doc_validated') {
                       return { event: `Document Validated: ${toDocumentLabel(row.file_name || 'document')}`, date: row.created_at || new Date().toISOString(), actor: 'RSP Admin' };
                     }
@@ -2377,7 +2417,10 @@ export const QualifiedApplicantsPage = () => {
                       const reason = parts[2] || '';
                       return { event: `Resubmission Requested: ${docLabel}${reason ? ` — "${reason}"` : ''}`, date: row.created_at || new Date().toISOString(), actor: 'RSP Admin' };
                     }
-                    return { event: `Resubmission Resolved: ${toDocumentLabel(row.file_name || 'document')}`, date: row.created_at || new Date().toISOString(), actor: 'Applicant' };
+                    const docLabel = toDocumentLabel(row.file_name || 'document');
+                    const n = (resolvedCount.get(docLabel) ?? 0) + 1;
+                    resolvedCount.set(docLabel, n);
+                    return { event: `Resubmission #${n} received: ${docLabel}`, date: row.created_at || new Date().toISOString(), actor: 'Applicant' };
                   });
 
                   const allEntries = [
@@ -2413,7 +2456,7 @@ export const QualifiedApplicantsPage = () => {
                               {iconFor(entry.event)}
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-slate-900">{entry.event}</p>
-                                <p className="text-xs text-slate-500">{formatPHDateTime(entry.date)} · {entry.actor}</p>
+                                <p className="text-xs text-slate-500"><span className="whitespace-nowrap">{formatStamp(entry.date)}</span> · {entry.actor}</p>
                               </div>
                             </li>
                           ))}
