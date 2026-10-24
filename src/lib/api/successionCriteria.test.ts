@@ -12,6 +12,7 @@ import {
   evaluateQualifications,
   experienceScore,
   normalizeWeights,
+  poolExclusionReason,
   rankingScore,
   trainingBeyondMinimumRatio,
   type QualificationInput,
@@ -577,5 +578,86 @@ describe('Weights after the eligibility split', () => {
     expect(w.eligibility).toBeGreaterThan(0);
     const total = w.ipcr + w.experience + w.training + w.education + w.eligibility;
     expect(total).toBeCloseTo(100, 1);
+  });
+});
+
+describe('Succession pool scope', () => {
+  const target = {
+    positionTitle: 'Assistant City Accountant',
+    positionDepartment: 'Office of The City Accountant',
+    incumbentEmployeeId: 'emp-incumbent',
+  };
+  const candidate = {
+    employeeId: 'emp-1',
+    employeeDepartment: 'Office of The City Accountant',
+    employeePosition: 'Accountant II (General Fund Accountant)',
+  };
+
+  it('keeps a same-department employee in a different role', () => {
+    expect(poolExclusionReason({ ...target, ...candidate })).toBeNull();
+  });
+
+  it('excludes the incumbent from their own succession pool', () => {
+    expect(
+      poolExclusionReason({ ...target, ...candidate, employeeId: 'emp-incumbent' }),
+    ).toBe('incumbent');
+  });
+
+  it('excludes a peer holding the same title as a lateral move', () => {
+    expect(
+      poolExclusionReason({
+        ...target,
+        ...candidate,
+        employeePosition: '  assistant city accountant ',
+      }),
+    ).toBe('same-title');
+  });
+
+  it('excludes an employee from another department', () => {
+    expect(
+      poolExclusionReason({
+        ...target,
+        ...candidate,
+        employeeDepartment: 'Office of The City Engineer',
+      }),
+    ).toBe('other-department');
+  });
+
+  it('matches the department regardless of case and spacing', () => {
+    expect(
+      poolExclusionReason({
+        ...target,
+        ...candidate,
+        employeeDepartment: ' OFFICE OF THE CITY ACCOUNTANT ',
+      }),
+    ).toBeNull();
+  });
+
+  it('does not filter by department when the position has none recorded', () => {
+    expect(
+      poolExclusionReason({
+        ...target,
+        ...candidate,
+        positionDepartment: null,
+        employeeDepartment: 'Office of The City Engineer',
+      }),
+    ).toBeNull();
+  });
+
+  it('reports the incumbent before the same-title peer rule', () => {
+    expect(
+      poolExclusionReason({
+        ...target,
+        ...candidate,
+        employeeId: 'emp-incumbent',
+        employeePosition: 'Assistant City Accountant',
+      }),
+    ).toBe('incumbent');
+  });
+
+  it('does not treat a missing position title as a same-title peer', () => {
+    expect(
+      poolExclusionReason({ ...target, ...candidate, employeePosition: null }),
+    ).toBeNull();
   });
 });

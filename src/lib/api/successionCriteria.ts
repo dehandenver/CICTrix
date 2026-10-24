@@ -701,3 +701,46 @@ export function positionLevelRatio(candidate: PositionRank, target: PositionRank
     usable(a) && usable(b) && b > 0 ? Math.min(a / b, 1) : null;
   return pair(candidate.salaryGrade, target.salaryGrade) ?? pair(candidate.levelOrder, target.levelOrder);
 }
+
+export type PoolExclusionReason = 'incumbent' | 'same-title' | 'other-department';
+
+const normalizeLabel = (value: string | null | undefined): string =>
+  String(value ?? '').trim().toLowerCase();
+
+/**
+ * Why an employee must not be auto-listed as a successor to a critical
+ * position, or null when they may be.
+ *
+ * Three things are not succession. The incumbent holds the post already. A
+ * peer with the same title would be a lateral move, and an office with several
+ * Division Chiefs would otherwise rank them as each other's successors. And a
+ * candidate from another office is outside the department whose bench is being
+ * built. Applied to auto-discovered candidates only: a manual nomination is
+ * HR's deliberate choice, so none of these rules overrides it.
+ *
+ * Checked in that order, so the incumbent is reported as the incumbent rather
+ * than as a same-title peer of themselves. A position with no recorded
+ * department is not filtered by department: an unknown office must not empty
+ * the whole pool.
+ */
+export function poolExclusionReason(input: {
+  employeeId: string;
+  employeeDepartment: string | null;
+  employeePosition: string | null;
+  positionTitle: string;
+  positionDepartment: string | null;
+  incumbentEmployeeId: string | null;
+}): PoolExclusionReason | null {
+  if (input.incumbentEmployeeId && input.employeeId === input.incumbentEmployeeId) {
+    return 'incumbent';
+  }
+  const heldTitle = normalizeLabel(input.employeePosition);
+  if (heldTitle && heldTitle === normalizeLabel(input.positionTitle)) {
+    return 'same-title';
+  }
+  const positionDepartment = normalizeLabel(input.positionDepartment);
+  if (positionDepartment && normalizeLabel(input.employeeDepartment) !== positionDepartment) {
+    return 'other-department';
+  }
+  return null;
+}

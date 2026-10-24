@@ -35,6 +35,7 @@ import {
   evaluateQualifications,
   experienceScore,
   normalizeWeights,
+  poolExclusionReason,
   trainingBeyondMinimumRatio,
   type ExperiencePart,
   type RankingWeights,
@@ -1848,13 +1849,27 @@ export async function listAutoSuccessors(
     // ── Fetch the critical position + all gate/scoring configuration ───────────
     const { data: posRow, error: posErr } = await supabase
       .from('critical_positions')
-      .select('id, title, required_education, required_eligibility, min_ipcr_rating, min_years_experience, required_training_hours, required_training_categories, succession_weights')
+      .select('id, title, department_id, incumbent_employee_id, required_education, required_eligibility, min_ipcr_rating, min_years_experience, required_training_hours, required_training_categories, succession_weights')
       .eq('id', criticalPositionId)
       .maybeSingle();
     if (posErr) return { ok: false, error: posErr.message };
     if (!posRow) return { ok: false, error: 'Critical position not found.' };
 
     const positionTitle = String(posRow.title ?? '');
+    const incumbentEmployeeId: string | null = posRow.incumbent_employee_id
+      ? String(posRow.incumbent_employee_id)
+      : null;
+    // employees.department is the office name as free text, so the position's
+    // office is resolved to its name for the pool filter below.
+    let positionDepartment: string | null = null;
+    if (posRow.department_id) {
+      const { data: deptRow } = await supabase
+        .from('departments')
+        .select('name')
+        .eq('id', posRow.department_id)
+        .maybeSingle();
+      positionDepartment = deptRow?.name ?? null;
+    }
     const requiredEducation: string | null = posRow.required_education ?? null;
     const requiredEligibility: string | null = posRow.required_eligibility ?? null;
     const minIpcrRating: string | null = posRow.min_ipcr_rating ?? null;
@@ -1925,6 +1940,18 @@ export async function listAutoSuccessors(
     // Gate 1+2: Status + position-field keyword match (pre-filter)
     const positioned = ((empRows ?? []) as any[])
       .filter((e) => String(e.employment_status ?? '').toLowerCase() !== 'probationary')
+      // Not succession: the incumbent, a same-title peer, or another office.
+      .filter(
+        (e) =>
+          poolExclusionReason({
+            employeeId: String(e.id),
+            employeeDepartment: e.department ?? null,
+            employeePosition: e.position ?? null,
+            positionTitle,
+            positionDepartment,
+            incumbentEmployeeId,
+          }) === null,
+      )
       .map((e) => ({ e, keyword: sharedFieldKeyword(String(e.position ?? ''), positionTitle) }))
       .filter(({ keyword }) => !!keyword);
 
