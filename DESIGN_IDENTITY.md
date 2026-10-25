@@ -138,7 +138,7 @@ Each status color has three steps. **100** = soft background, **300** = borders/
 | | 100 | 300 | 500 | 700 *(text on 100)* |
 |---|---|---|---|---|
 | **Success / Green** | `#DCFCE7` | `#7ECBA1` | `#16A85A` | `#0F7A40` |
-| **Warning / Orange** | `#FCE8C8` | `#F0B478` | `#E8821A` | `#A8590A` |
+| **Warning / Orange** | `#FCE8C8` | `#F0B478` | `#E8821A` | `#975008` |
 | **Error / Red** | `#FDE2E2` | `#EF9A9A` | `#E05252` | `#B42323` |
 | **Info / Blue** | `#E0E5FF` | `#C8D1FF` | `#363EE8` | `#191FA8` |
 | **Neutral / Gray** | `#F1F5F9` | `#CBD5E1` | `#64748B` | `#28343D` |
@@ -615,7 +615,7 @@ Used where a KPI should also preview **who** it counts (e.g. Interviewer Dashboa
 | Variant | Bg | Text | Dot |
 |---|---|---|---|
 | Success | `#DCFCE7` | `#0F7A40` | `#16A85A` |
-| Warning | `#FCE8C8` | `#A8590A` | `#E8821A` |
+| Warning | `#FCE8C8` | `#975008` | `#E8821A` |
 | Error | `#FDE2E2` | `#B42323` | `#E05252` |
 | Info | `#E0E5FF` | `#191FA8` | `#363EE8` |
 | Neutral | `#F1F5F9` | `#28343D` | `#64748B` |
@@ -975,7 +975,7 @@ Categories such as **Department**, **Employment type** (Permanent, Casual, Contr
 
   /* Status */
   --success-100: #DCFCE7; --success-300: #7ECBA1; --success-500: #16A85A; --success-700: #0F7A40;
-  --warning-100: #FCE8C8; --warning-300: #F0B478; --warning-500: #E8821A; --warning-700: #A8590A;
+  --warning-100: #FCE8C8; --warning-300: #F0B478; --warning-500: #E8821A; --warning-700: #975008;
   --error-100:   #FDE2E2; --error-300:   #EF9A9A; --error-500:   #E05252; --error-700:   #B42323;
 
   /* Gradients */
@@ -1058,7 +1058,7 @@ module.exports = {
         neutral: { 900: '#101E29', 800: '#28343D', 600: '#515F69', 400: '#94A3B8', 200: '#E2E8F0' },
         page: '#F1F5F9',
         success: { 100: '#DCFCE7', 300: '#7ECBA1', 500: '#16A85A', 700: '#0F7A40' },
-        warning: { 100: '#FCE8C8', 300: '#F0B478', 500: '#E8821A', 700: '#A8590A' },
+        warning: { 100: '#FCE8C8', 300: '#F0B478', 500: '#E8821A', 700: '#975008' },
         error:   { 100: '#FDE2E2', 300: '#EF9A9A', 500: '#E05252', 700: '#B42323' },
       },
       borderRadius: { sm: '6px', md: '8px', lg: '12px', xl: '16px' },

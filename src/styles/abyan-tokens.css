@@ -42,7 +42,7 @@
 
   /* Status (§3.6) */
   --success-100: #DCFCE7; --success-300: #7ECBA1; --success-500: #16A85A; --success-700: #0F7A40;
-  --warning-100: #FCE8C8; --warning-300: #F0B478; --warning-500: #E8821A; --warning-700: #A8590A;
+  --warning-100: #FCE8C8; --warning-300: #F0B478; --warning-500: #E8821A; --warning-700: #975008;
   --error-100:   #FDE2E2; --error-300:   #EF9A9A; --error-500:   #E05252; --error-700:   #B42323;
   --info-100:    #E0E5FF; --info-300:    #C8D1FF; --info-500:    #363EE8; --info-700:    #191FA8;
 
