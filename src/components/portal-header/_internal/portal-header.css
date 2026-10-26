@@ -100,7 +100,8 @@
   height: 16px;
   padding: 0 4px;
   border-radius: var(--radius-pill);
-  background: var(--error-500);
+  /* error-700, not 500: white 10px text on error-500 is 3.8:1, under AA (§13). */
+  background: var(--error-700);
   color: var(--color-white);
   font: 700 10px/16px var(--font-sans);
   text-align: center;

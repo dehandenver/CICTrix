@@ -34,7 +34,7 @@ Branch `feat/lnd-dashboard-pager-required-workexp`, rebased onto `main` at `047e
 | Logout label on its 12% fill | 5.49:1 | Pass |
 | Logout hover and pressed (20% fill) | 4.62:1 | Pass |
 | Avatar glyph on its 18% circle | 4.83:1 | Pass |
-| Bell badge count, white on `--error-500` | 3.82:1 | **Fails** for 10px text. Pre-existing (§3.6 solid fill); `--error-700` would pass. Not changed. |
+| Bell badge count, white on `--error-700` | 6.55:1 | Pass. Was 3.82:1 on `--error-500`; switched in a follow-up commit. |
 | Before the fix: name `#28343D` on the bar | 1.83:1 | Failed |
 
 ## Checks run
