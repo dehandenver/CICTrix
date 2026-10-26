@@ -1,7 +1,7 @@
 ---
 title: L&D dashboard redesign, Office Directory pagination, Required icon, multiple work experiences
 date: 2026-10-26
-status: In Progress
+status: Done
 summary: Five tasks done one at a time — L&D dashboard to the RSP dashboard pattern, server-style paginated Office Directory with URL state, icon-only Required column in PM Position Requirements, a repeatable work-experience list in the application form with a migration, and white text plus a pill Logout in the shared portal header.
 ---
 
