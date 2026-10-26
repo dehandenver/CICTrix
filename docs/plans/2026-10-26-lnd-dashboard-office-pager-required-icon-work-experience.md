@@ -2,7 +2,7 @@
 title: L&D dashboard redesign, Office Directory pagination, Required icon, multiple work experiences
 date: 2026-10-26
 status: In Progress
-summary: Four independent tasks done one at a time — L&D dashboard to the RSP dashboard pattern, server-style paginated Office Directory with URL state, icon-only Required column in PM Position Requirements, and a repeatable work-experience list in the application form with a migration.
+summary: Five tasks done one at a time — L&D dashboard to the RSP dashboard pattern, server-style paginated Office Directory with URL state, icon-only Required column in PM Position Requirements, a repeatable work-experience list in the application form with a migration, and white text plus a pill Logout in the shared portal header.
 ---
 
 ## Goal
@@ -67,6 +67,18 @@ summary: Four independent tasks done one at a time — L&D dashboard to the RSP 
   - I'll grep exports and CSVs for experience fields during the build and update any I find.
 - **Auto-summing for qualification checks.** This plan already sums the entries into `years_of_experience`, which is what qualification matching and scoring read. The caveat: entries have no dates, so overlapping or concurrent jobs double-count. If that matters, a follow-up should add from/to dates per entry and sum the merged date ranges.
 
+### Task 5: Portal header (added 2026-10-26)
+
+**Part A, top header.** The RSP Admin header is the reference; the Office Account and Employee headers must match it.
+
+- **What exists.** `main` gained `047e00d` (one shared `PortalHeader`, plan `2026-10-26-portal-header.md`) after this branch started; the branch was rebased onto it. RSP, L&D and PM use it through `AdminHeader`; the Office Account console and the Employee portal render it directly, with the bell as the optional `notifications` prop. Consolidation (point 3) is therefore already done; nothing is copied per portal.
+- **Dark text, root cause.** The header root is `<header class="ph abyan-ds">`. `.ph { color: white }` and the token block's `.abyan-ds { color: var(--neutral-800) }` have equal specificity on the same element, so the colour depends on stylesheet load order, which differs per page. Where the token file loads later (measured on RSP: name, role and avatar glyph computed `rgb(40,52,61)`), everything that inherits turns dark. `.ph-user-role` and the popover text rules tie with the `.abyan-ds :where(span, p…)` reset the same way.
+- **Fix in `portal-header.css` only.** The bar takes its white on `.ph-bar`, which does not carry `.abyan-ds`, and every colour-setting rule is scoped under `.ph`, so it outranks the reset and the global `span` rule regardless of load order. Colours are tokens: `--color-white` for text and icons, `--on-blue-muted` for the role line.
+- **Logout as a pill.** Radius `--radius-pill`, existing translucent fill and thin light border, white icon and SemiBold white label, with hover, focus-visible and a new active state. The height stays 44px, the same component RSP uses. This changes DESIGN_IDENTITY.md §9.1 ("Header Logout: glass rectangle, radius 12px"), so the guide is updated in the same change. The avatar stays a translucent circle with the divider before Logout.
+- **Verify.** Side-by-side screenshots of RSP, Office Account and Employee at 1366px and 375px, computed colours checked in the browser, and WCAG AA contrast ratios for every text and icon colour on `--color-primary`.
+
+**Part B, sidebar.** Not yet received; to be planned when its text arrives.
+
 ## Decisions (2026-10-26 approval)
 
 - D1: The active section is written to `?module=` in both L&D (already read on load) and PM (added, minimal), so a refresh returns to the Office Directory.
@@ -83,7 +95,8 @@ summary: Four independent tasks done one at a time — L&D dashboard to the RSP 
 3. Task 2: `src/lib/pagination.ts` and `Pagination.tsx` with tests, then `queryOfficeDirectory` with tests, then wire the component and the URL. Run checks and commit `feat(office-directory): paginate with page size, search and URL state`.
 4. Task 1: restructure the dashboard, reuse `Pagination`, test the period and office filter helpers. Run checks, render locally, commit `feat(lnd): redesign dashboard to the portal dashboard pattern`.
 5. Task 4: `workExperience.ts` with tests (validation, sum, legacy conversion, per-plantilla drafts), then the migration and the SQL backfill check, then the form, review step, submit and HR view. After checks and `npm run check:migrations`, commit the migration on its own (`feat(db): add applicants.work_experiences`), then the app changes (`feat(apply): allow multiple work experiences`).
-6. Session summary in `docs/session-summaries/`, then status Done.
+6. Task 5 Part A: rebase onto `main` (shared header), fix the colour cascade and the Logout radius in `portal-header.css`, update §9.1, add a test, verify. Commit `fix(ui): white header text and pill Logout in every portal`.
+7. Session summary in `docs/session-summaries/`, then status Done.
 
 ## Risks
 
