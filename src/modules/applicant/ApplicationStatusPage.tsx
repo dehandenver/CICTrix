@@ -1470,7 +1470,7 @@ export const ApplicationStatusPage = () => {
         </section>
 
         {/* Empty state */}
-        {searched && !record && !error && (
+        {searched && applications.length === 0 && !error && (
           <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
             <FileText size={40} className="mx-auto mb-3" style={{ color: '#C8D1FF' }} />
             <p className="font-semibold" style={{ color: '#040E6B' }}>No application found</p>
