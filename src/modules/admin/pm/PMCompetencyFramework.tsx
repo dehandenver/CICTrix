@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ErrorBanner } from '../../../components/ErrorBanner';
-import { BookOpen, Check, Grid3x3, Loader2, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { BookOpen, Check, CheckCircle2, Grid3x3, Loader2, RefreshCw, Search, Trash2, X, XCircle } from 'lucide-react';
 
 import { Dialog } from '../../../components/Dialog';
 import {
@@ -344,10 +344,16 @@ const PositionRequirementsPanel = ({
                           </span>
                         </td>
                         <td className="px-4 py-3">
+                          {/* Icon only: the word repeated what the icon already said. The
+                              label and tooltip keep it from relying on color alone. */}
                           {isRequired ? (
-                            <span className="text-xs font-semibold text-emerald-700">✅ Yes</span>
+                            <CheckCircle2 size={18} role="img" aria-label="Required" style={{ color: 'var(--success-500)' }}>
+                              <title>Required</title>
+                            </CheckCircle2>
                           ) : (
-                            <span className="text-xs font-semibold text-slate-400">❌ No</span>
+                            <XCircle size={18} role="img" aria-label="Not required" style={{ color: 'var(--neutral-400)' }}>
+                              <title>Not required</title>
+                            </XCircle>
                           )}
                         </td>
                         <td className="px-4 py-3">
