@@ -31,7 +31,18 @@ import {
     findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
-import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
+import { fetchEmployeeApplicationProfile, type EmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
+import {
+  MONTHS_PER_YEAR,
+  emptyWorkExperience,
+  entryFromLegacy,
+  formatDuration,
+  keepShownErrors,
+  toStoredWorkExperiences,
+  totalExperienceYears,
+  validateWorkExperiences,
+  type WorkExperienceEntry,
+} from '../../lib/workExperience';
 import { describeActionFailure } from '../../lib/friendlyErrors';
 import { linkApplicationToSlots } from '../../lib/plantillaSlots';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
@@ -107,11 +118,7 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   education_attainment: '',
   education_degree: '',
   education_school: '',
-  work_experience_years: '',
-  work_experience_months: '',
-  relevant_experience_position: '',
-  relevant_experience_company: '',
-  relevant_experience_duties: '',
+  work_experiences: [emptyWorkExperience()],
   gov_id_type: '',
   gov_id_expiration: '',
 };
@@ -140,6 +147,34 @@ const TAB_STATUS: Record<TabStatus, { label: string; Icon: typeof CircleCheck }>
 };
 
 const blankApp = (formData: ApplicantFormData): AppState => ({ formData, files: [], errors: {}, fileError: '' });
+
+/**
+ * Entry 1 from an employee's record (their most recent work experience), each
+ * field falling back to what is already in the form. Later entries are kept.
+ */
+const withProfileExperience = (
+  current: WorkExperienceEntry[],
+  profile: Pick<EmployeeApplicationProfile, 'workExperienceYears' | 'workExperienceMonths' | 'relevantExperiencePosition' | 'relevantExperienceCompany' | 'relevantExperienceDuties'> | null | undefined,
+): WorkExperienceEntry[] => {
+  const [first = emptyWorkExperience(), ...rest] = current;
+  const fromProfile = entryFromLegacy({
+    work_experience_years: profile?.workExperienceYears,
+    work_experience_months: profile?.workExperienceMonths,
+    relevant_experience_position: profile?.relevantExperiencePosition,
+    relevant_experience_company: profile?.relevantExperienceCompany,
+    relevant_experience_duties: profile?.relevantExperienceDuties,
+  });
+  return [
+    {
+      years: fromProfile.years || first.years,
+      months: fromProfile.months || first.months,
+      position: fromProfile.position || first.position,
+      company: fromProfile.company || first.company,
+      duties: fromProfile.duties || first.duties,
+    },
+    ...rest,
+  ];
+};
 
 const normalizeAuthValue = (value: string) => String(value ?? '').trim().toLowerCase();
 
@@ -404,16 +439,28 @@ export const ApplicantWizard: React.FC = () => {
     });
   }, []);
 
-  const changeHandlers = useRef<Record<string, (field: keyof ApplicantFormData, value: string | boolean) => void>>({});
+  const changeHandlers = useRef<Record<string, (field: keyof ApplicantFormData, value: ApplicantFormData[keyof ApplicantFormData]) => void>>({});
   /** A stable onChange per application, so child effects keyed on it don't loop. */
   const handleFormChangeFor = (key: string) => {
     if (!changeHandlers.current[key]) {
       changeHandlers.current[key] = (field, value) =>
-        updateApp(key, (app) => ({
-          ...app,
-          formData: { ...app.formData, [field]: value },
-          errors: app.errors[field as keyof ValidationErrors] ? { ...app.errors, [field]: undefined } : app.errors,
-        }));
+        updateApp(key, (app) => {
+          // Work experience errors are per entry: keep the ones still true, so a
+          // fixed field clears while untouched entries keep their messages.
+          if (field === 'work_experiences') {
+            const entries = value as WorkExperienceEntry[];
+            return {
+              ...app,
+              formData: { ...app.formData, work_experiences: entries },
+              errors: { ...app.errors, work_experiences: keepShownErrors(app.errors.work_experiences, validateWorkExperiences(entries)) },
+            };
+          }
+          return {
+            ...app,
+            formData: { ...app.formData, [field]: value },
+            errors: app.errors[field as keyof ValidationErrors] ? { ...app.errors, [field]: undefined } : app.errors,
+          };
+        });
     }
     return changeHandlers.current[key];
   };
@@ -516,11 +563,7 @@ export const ApplicantWizard: React.FC = () => {
                 education_attainment: profile?.educationAttainment || prev.education_attainment,
                 education_degree: profile?.educationDegree || prev.education_degree,
                 education_school: profile?.educationSchool || prev.education_school,
-                work_experience_years: profile?.workExperienceYears || prev.work_experience_years,
-                work_experience_months: profile?.workExperienceMonths || prev.work_experience_months,
-                relevant_experience_position: profile?.relevantExperiencePosition || prev.relevant_experience_position,
-                relevant_experience_company: profile?.relevantExperienceCompany || prev.relevant_experience_company,
-                relevant_experience_duties: profile?.relevantExperienceDuties || prev.relevant_experience_duties,
+                work_experiences: withProfileExperience(prev.work_experiences ?? [], profile),
               },
             };
           });
@@ -898,9 +941,9 @@ export const ApplicantWizard: React.FC = () => {
     const existing = await findExistingApplication(formData.email, choice?.slotId ?? null, plantillaItemNo);
     if (existing) return { status: 'already', referenceNo: existing.referenceNo };
 
-    const experienceYears = parseInt(formData.work_experience_years || '0', 10) || 0;
-    const experienceMonths = parseInt(formData.work_experience_months || '0', 10) || 0;
-    const totalExperienceYears = +(experienceYears + experienceMonths / 12).toFixed(2);
+    // Summed across entries: years_of_experience is what scoring and qualification checks read.
+    const totalYears = totalExperienceYears(formData.work_experiences ?? []);
+    const storedExperiences = toStoredWorkExperiences(formData.work_experiences ?? []);
 
     const applicantPayload: Record<string, any> = {
       first_name: formData.first_name.trim(),
@@ -918,7 +961,10 @@ export const ApplicantWizard: React.FC = () => {
       is_pwd: formData.is_pwd,
       application_type: applicationType,
       status: 'New Application',
-      years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
+      years_of_experience: totalYears > 0 ? totalYears : null,
+      // Every entry (migration 20261026015831). Dropped on the retry below if
+      // that migration hasn't reached this database yet.
+      work_experiences: storedExperiences,
       education_level: formData.education_attainment || null,
       // Persist degree/course + school (migration 20260812). Stripped on the
       // retry below if that migration hasn't run, so submission never breaks.
@@ -971,9 +1017,13 @@ export const ApplicantWizard: React.FC = () => {
         ({ data, error } = await insertWith('id, item_number'));
       }
 
-      if (isMissingColumn(error, 'education_degree', 'education_school')) {
-        delete applicantPayload.education_degree;
-        delete applicantPayload.education_school;
+      // Optional columns whose migrations may not have reached this database:
+      // drop whichever one the error names and retry, in any order.
+      const optionalColumns = [['education_degree', 'education_school'], ['work_experiences']];
+      for (let attempt = 0; attempt < optionalColumns.length; attempt += 1) {
+        const missing = optionalColumns.find((columns) => isMissingColumn(error, ...columns));
+        if (!missing) break;
+        missing.forEach((column) => delete applicantPayload[column]);
         ({ data, error } = await insertWith('id, item_number, reference_no'));
         if (isMissingColumn(error, 'reference_no')) {
           ({ data, error } = await insertWith('id, item_number'));
@@ -1067,7 +1117,8 @@ export const ApplicantWizard: React.FC = () => {
       educationAttainment: formData.education_attainment || undefined,
       educationDegree: formData.education_degree || undefined,
       educationSchool: formData.education_school || undefined,
-      workExperienceYears: totalExperienceYears > 0 ? Math.round(totalExperienceYears * 100) / 100 : undefined,
+      workExperienceYears: totalYears > 0 ? totalYears : undefined,
+      workExperiences: storedExperiences,
     });
 
     // Before migration 20260923 there is no reference_no; fall back to the row
@@ -1258,12 +1309,8 @@ export const ApplicantWizard: React.FC = () => {
         education_degree: profile?.educationDegree || '',
         education_school: profile?.educationSchool || '',
 
-        // Work experience — from employee_work_experience
-        work_experience_years: profile?.workExperienceYears || '',
-        work_experience_months: profile?.workExperienceMonths || '',
-        relevant_experience_position: profile?.relevantExperiencePosition || '',
-        relevant_experience_company: profile?.relevantExperienceCompany || '',
-        relevant_experience_duties: profile?.relevantExperienceDuties || '',
+        // Work experience — entry 1 from employee_work_experience
+        work_experiences: withProfileExperience([emptyWorkExperience()], profile),
       }),
     });
 
@@ -1854,9 +1901,28 @@ export const ApplicantWizard: React.FC = () => {
                           <div>
                             <dt>Relevant Work Experience</dt>
                             <dd>
-                              {fd.work_experience_years || fd.work_experience_months || fd.relevant_experience_position
-                                ? `${fd.work_experience_years || 0} yr ${fd.work_experience_months || 0} mo${fd.relevant_experience_position ? ` · ${fd.relevant_experience_position}` : ''}${fd.relevant_experience_company ? `, ${fd.relevant_experience_company}` : ''}`
-                                : '-'}
+                              {(() => {
+                                const entries = toStoredWorkExperiences(fd.work_experiences ?? []);
+                                if (entries.length === 0) return '-';
+                                const total = Math.round(totalExperienceYears(fd.work_experiences) * MONTHS_PER_YEAR);
+                                return (
+                                  <>
+                                    {entries.map((e, i) => (
+                                      <span key={i} className="af-review-line">
+                                        {entries.length > 1 && `${i + 1}. `}
+                                        {formatDuration(e.years, e.months)}
+                                        {e.position ? ` · ${e.position}` : ''}
+                                        {e.company ? `, ${e.company}` : ''}
+                                      </span>
+                                    ))}
+                                    {entries.length > 1 && (
+                                      <span className="af-review-line af-review-total">
+                                        Total {formatDuration(Math.floor(total / MONTHS_PER_YEAR), total % MONTHS_PER_YEAR)}
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </dd>
                           </div>
                           {fd.gov_id_type && (

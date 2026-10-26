@@ -62,6 +62,7 @@ import {
   usePendingDecision,
 } from '../../lib/pendingStatusDecision';
 import type { Applicant, JobPosting } from '../../types/recruitment.types';
+import { formatDuration, parseStoredWorkExperiences } from '../../lib/workExperience';
 
 type ApplicantRecord = {
   id: string;
@@ -2299,6 +2300,30 @@ function ApplicantDetailsPageView() {
                             })()}
                           </span>
                         </div>
+                        {(() => {
+                          // Each entry from the form (applicants.work_experiences). Rows
+                          // backfilled from an old total have no details, so they show
+                          // only the total above.
+                          const entries = parseStoredWorkExperiences((applicant as any)?.work_experiences)
+                            .filter((e) => e.position || e.company || e.duties);
+                          if (entries.length === 0) return null;
+                          return (
+                            <div className="flex items-start justify-between gap-4 py-2.5">
+                              <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Positions held</span>
+                              <ol className="min-w-0 space-y-2 text-right text-sm text-slate-800">
+                                {entries.map((e, i) => (
+                                  <li key={i}>
+                                    <p className="!mb-0 font-medium">
+                                      {[e.position, e.company].filter(Boolean).join(', ') || 'Position not given'}
+                                      <span className="text-slate-500"> · {formatDuration(e.years, e.months)}</span>
+                                    </p>
+                                    {e.duties && <p className="!mb-0 text-xs text-slate-500 whitespace-pre-line">{e.duties}</p>}
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          );
+                        })()}
                         <div className="flex items-start justify-between py-2.5">
                           <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Application Date</span>
                           <span className="text-sm text-slate-800 text-right">{formatDate(applicant.created_at)}</span>

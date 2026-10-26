@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Briefcase, BriefcaseBusiness, ClipboardList, GraduationCap, Mail, UserRound } from 'lucide-react';
+import { Briefcase, BriefcaseBusiness, ClipboardList, GraduationCap, Mail, Plus, Trash2, UserRound } from 'lucide-react';
 import { Input, Select } from '../../components';
 import { FormSection } from './flow/FlowUi';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
@@ -7,11 +7,19 @@ import { useDepartmentOptions } from '../../hooks/useDepartmentOptions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
 import { COURSE_GROUPS, OTHER_COURSE, isCanonicalCourse } from '../../lib/courses';
+import {
+  MAX_WORK_EXPERIENCES,
+  MONTHS_PER_YEAR,
+  emptyWorkExperience,
+  type WorkExperienceEntry,
+  type WorkExperienceErrors,
+  type WorkExperienceField,
+} from '../../lib/workExperience';
 
 interface ApplicantAssessmentFormProps {
   formData: ApplicantFormData;
   errors: ValidationErrors;
-  onChange: (field: keyof ApplicantFormData, value: string | boolean) => void;
+  onChange: (field: keyof ApplicantFormData, value: ApplicantFormData[keyof ApplicantFormData]) => void;
   applicationType?: 'job' | 'promotion';
   /** True when the user is verified as a current employee (active session or employee_id). */
   isEmployee?: boolean;
@@ -37,6 +45,136 @@ interface ApplicantAssessmentFormProps {
 
 const icon = (Icon: typeof UserRound) => <Icon size={20} strokeWidth={1.75} />;
 
+/**
+ * Relevant work experience as a repeatable list (lib/workExperience): one card
+ * per entry with the same five fields, its own heading and its own errors.
+ * Starts with one entry; Remove is hidden while only one remains.
+ */
+const WorkExperienceList = ({
+  entries,
+  errors,
+  idPrefix,
+  onChange,
+}: {
+  entries: WorkExperienceEntry[];
+  errors?: WorkExperienceErrors[];
+  idPrefix: string;
+  onChange: (next: WorkExperienceEntry[]) => void;
+}) => {
+  /** After Add, move focus to the new entry's heading so keyboard users land on it. */
+  const focusIndex = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusIndex.current === null) return;
+    document.getElementById(`${idPrefix}-exp-${focusIndex.current}-title`)?.focus();
+    focusIndex.current = null;
+  }, [entries.length, idPrefix]);
+
+  const update = (index: number, field: WorkExperienceField, value: string) =>
+    onChange(entries.map((entry, i) => (i === index ? { ...entry, [field]: value } : entry)));
+  const add = () => {
+    focusIndex.current = entries.length;
+    onChange([...entries, emptyWorkExperience()]);
+  };
+  const remove = (index: number) => onChange(entries.filter((_, i) => i !== index));
+  const atMax = entries.length >= MAX_WORK_EXPERIENCES;
+
+  return (
+    <div className="af-entries">
+      {entries.map((entry, i) => {
+        const err = errors?.[i] ?? {};
+        const base = `${idPrefix}-exp-${i}`;
+        return (
+          <fieldset key={i} className="af-entry" aria-labelledby={`${base}-title`}>
+            <div className="af-entry-head">
+              <h3 id={`${base}-title`} className="af-entry-title" tabIndex={-1}>Work experience {i + 1}</h3>
+              {entries.length > 1 && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => remove(i)}
+                  aria-label={`Remove work experience ${i + 1}`}
+                >
+                  <Trash2 size={16} strokeWidth={1.75} aria-hidden="true" /> Remove
+                </button>
+              )}
+            </div>
+            <div className="af-fields">
+              <Input
+                id={`${base}-years`}
+                label="Years of Relevant Experience"
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                placeholder="e.g. 5"
+                value={entry.years}
+                onChange={(e) => update(i, 'years', e.target.value)}
+                error={err.years}
+              />
+              <Input
+                id={`${base}-months`}
+                label="Additional Months"
+                type="number"
+                min={0}
+                max={MONTHS_PER_YEAR - 1}
+                step={1}
+                inputMode="numeric"
+                placeholder="e.g. 6"
+                value={entry.months}
+                onChange={(e) => update(i, 'months', e.target.value)}
+                error={err.months}
+              />
+              <Input
+                id={`${base}-position`}
+                label="Position Held"
+                placeholder="e.g. Senior Administrative Assistant"
+                value={entry.position}
+                onChange={(e) => update(i, 'position', e.target.value)}
+                error={err.position}
+              />
+              <Input
+                id={`${base}-company`}
+                label="Company / Organization"
+                placeholder="e.g. Department of Public Works and Highways"
+                value={entry.company}
+                onChange={(e) => update(i, 'company', e.target.value)}
+                error={err.company}
+              />
+              <div className="af-field af-field-full">
+                <label htmlFor={`${base}-duties`} className="af-label">
+                  Description of Duties (Related to the job applied for)
+                </label>
+                <textarea
+                  id={`${base}-duties`}
+                  placeholder="Describe your relevant duties and achievements..."
+                  value={entry.duties}
+                  onChange={(e) => update(i, 'duties', e.target.value)}
+                  className="af-control"
+                  aria-invalid={err.duties ? true : undefined}
+                  aria-describedby={err.duties ? `${base}-duties-msg` : undefined}
+                />
+                {err.duties && (
+                  <span id={`${base}-duties-msg`} className="af-error" role="alert">
+                    {err.duties}
+                  </span>
+                )}
+              </div>
+            </div>
+          </fieldset>
+        );
+      })}
+      <div className="af-entries-foot">
+        <button type="button" className="btn btn-secondary btn-md" onClick={add} disabled={atMax}>
+          <Plus size={16} strokeWidth={1.75} aria-hidden="true" /> Add another work experience
+        </button>
+        <span className="af-body-s">
+          {atMax ? `You've added the maximum of ${MAX_WORK_EXPERIENCES}.` : `Up to ${MAX_WORK_EXPERIENCES} entries.`}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
   formData,
   errors,
@@ -51,6 +189,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   page,
 }) => {
   const onPage = (n: number) => page === undefined || page === n;
+  const experiences = formData.work_experiences?.length ? formData.work_experiences : [emptyWorkExperience()];
   // Departments come from the canonical Supabase table, shared with every other
   // screen — never a list local to this form.
   const departmentOptions = useDepartmentOptions();
@@ -547,7 +686,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
       {afterEducation}
       </>)}
 
-      {/* Work Experience — wide: five fields plus a free-text description */}
+      {/* Work Experience — wide: a list of entries, five fields each */}
       {onPage(4) && (
       <FormSection
         icon={icon(BriefcaseBusiness)}
@@ -555,63 +694,20 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
         headingId={`${idPrefix}-experience`}
         wide
       >
-        <p className="af-notice" style={{ marginBottom: 20 }}>
+        <p className="af-notice" style={{ marginBottom: 12 }}>
           <strong>HR policy notice:</strong> Only enter work experience relevant to the position you are applying for,
           if required by HR policies.
         </p>
-        <div className="af-fields">
-          <Input
-            label="Years of Relevant Experience"
-            type="number"
-            min={0}
-            placeholder="e.g. 5"
-            value={formData.work_experience_years}
-            onChange={(e) => onChange('work_experience_years', e.target.value)}
-            error={errors.work_experience_years}
-          />
-          <Input
-            label="Additional Months"
-            type="number"
-            min={0}
-            max={11}
-            placeholder="e.g. 6"
-            value={formData.work_experience_months}
-            onChange={(e) => onChange('work_experience_months', e.target.value)}
-          />
-          <Input
-            label="Position Held"
-            placeholder="e.g. Senior Administrative Assistant"
-            value={formData.relevant_experience_position || ''}
-            onChange={(e) => onChange('relevant_experience_position', e.target.value)}
-            error={errors.relevant_experience_position}
-          />
-          <Input
-            label="Company / Organization"
-            placeholder="e.g. Department of Public Works and Highways"
-            value={formData.relevant_experience_company || ''}
-            onChange={(e) => onChange('relevant_experience_company', e.target.value)}
-            error={errors.relevant_experience_company}
-          />
-          <div className="af-field af-field-full">
-            <label htmlFor={`${idPrefix}-duties`} className="af-label">
-              Description of Duties (Related to the job applied for)
-            </label>
-            <textarea
-              id={`${idPrefix}-duties`}
-              placeholder="Describe your relevant duties and achievements..."
-              value={formData.relevant_experience_duties || ''}
-              onChange={(e) => onChange('relevant_experience_duties', e.target.value)}
-              className="af-control"
-              aria-invalid={errors.relevant_experience_duties ? true : undefined}
-              aria-describedby={errors.relevant_experience_duties ? `${idPrefix}-duties-msg` : undefined}
-            />
-            {errors.relevant_experience_duties && (
-              <span id={`${idPrefix}-duties-msg`} className="af-error" role="alert">
-                {errors.relevant_experience_duties}
-              </span>
-            )}
-          </div>
-        </div>
+        <p className="af-body-s" style={{ marginBottom: 20 }}>
+          Add one entry per position. Count each period once: if two jobs overlapped, don&rsquo;t enter the overlapping
+          months in both, because your total relevant experience is the sum of these entries.
+        </p>
+        <WorkExperienceList
+          entries={experiences}
+          errors={errors.work_experiences}
+          idPrefix={idPrefix}
+          onChange={(next) => onChange('work_experiences', next)}
+        />
       </FormSection>
       )}
     </>

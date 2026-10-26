@@ -29,7 +29,7 @@ export const FORM_PAGES: FormPage[] = [
   },
   {
     title: 'Relevant work experience',
-    fields: ['work_experience_years', 'relevant_experience_position', 'relevant_experience_company', 'relevant_experience_duties'],
+    fields: ['work_experiences'],
   },
   {
     title: 'Documents',
@@ -51,7 +51,8 @@ export const pageErrors = (page: number, errors: ValidationErrors, fileError: st
   const def = FORM_PAGES[clampFormPage(page) - 1];
   const scoped: ValidationErrors = {};
   for (const field of def.fields) {
-    if (errors[field]) scoped[field] = errors[field];
+    // Values differ by key (strings, or per-entry objects for work_experiences).
+    if (errors[field]) (scoped as Record<string, unknown>)[field] = errors[field];
   }
   const scopedFileError = def.documents ? fileError : '';
   return {

@@ -607,3 +607,19 @@
 @media (max-width: 639px) {
   .abyan-ds .af-strip { position: static; }
 }
+
+/* Relevant work experience: one card per entry (lib/workExperience) */
+.abyan-ds .af-entries { display: grid; gap: 16px; }
+.abyan-ds .af-entry {
+  margin: 0; min-width: 0; padding: 20px;
+  border: 1px solid var(--neutral-200); border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+.abyan-ds .af-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.abyan-ds .af-entry-title { margin: 0; color: var(--color-primary-900); font: 600 16px/24px var(--font-sans); }
+.abyan-ds .af-entry-title:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+.abyan-ds .af-entries-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+@media (max-width: 639px) { .abyan-ds .af-entry { padding: 16px; } }
+/* Review & Submit: one line per work experience entry */
+.abyan-ds .af-review-line { display: block; }
+.abyan-ds .af-review-total { margin-top: 4px; color: var(--neutral-600); font-weight: 500; }

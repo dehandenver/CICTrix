@@ -16,7 +16,7 @@ describe('formPages', () => {
   });
 
   it('finds the first page with an error', () => {
-    expect(firstPageWithErrors({ gov_id_type: 'required', relevant_experience_company: 'required' }, '')).toBe(3);
+    expect(firstPageWithErrors({ gov_id_type: 'required', work_experiences: [{ company: 'required' }] }, '')).toBe(3);
     expect(firstPageWithErrors({}, 'Missing required documents')).toBe(FORM_PAGE_COUNT);
     expect(firstPageWithErrors({}, '')).toBeNull();
   });

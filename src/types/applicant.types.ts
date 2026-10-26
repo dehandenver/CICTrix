@@ -1,3 +1,5 @@
+import type { WorkExperienceEntry, WorkExperienceErrors } from '../lib/workExperience';
+
 export interface ApplicantFormData {
   first_name: string;
   middle_name: string;
@@ -25,11 +27,8 @@ export interface ApplicantFormData {
   education_attainment: string;
   education_degree: string;
   education_school: string;
-  work_experience_years: string;
-  work_experience_months: string;
-  relevant_experience_position: string;
-  relevant_experience_company: string;
-  relevant_experience_duties: string;
+  /** Relevant work experience, at least one entry (one blank entry = none). See lib/workExperience. */
+  work_experiences: WorkExperienceEntry[];
   gov_id_type: string;
   gov_id_expiration: string;
 }
@@ -48,10 +47,8 @@ export interface ValidationErrors {
   employee_id?: string;
   current_position?: string;
   current_department?: string;
-  work_experience_years?: string;
-  relevant_experience_position?: string;
-  relevant_experience_company?: string;
-  relevant_experience_duties?: string;
+  /** Per-entry field errors, aligned with work_experiences; absent when all are valid. */
+  work_experiences?: WorkExperienceErrors[];
   gov_id_type?: string;
   gov_id_expiration?: string;
 }

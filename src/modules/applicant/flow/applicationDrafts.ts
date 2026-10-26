@@ -16,6 +16,7 @@ import type { ApplicantFormData } from '../../../types/applicant.types';
 import type { JobPosting, PlantillaSlot } from '../../../types/recruitment.types';
 import type { EmployeePortalAccount } from '../../../lib/employeePortalData';
 import { plantillaLabel } from '../../../lib/plantillaRules';
+import { isBlankWorkExperience, workExperiencesOf, type LegacyWorkExperienceFields } from '../../../lib/workExperience';
 
 export const DRAFTS_KEY = 'cictrix_apply_drafts_v2';
 /** The pre-redesign single-form cache; cleared so it can't resurrect old state. */
@@ -82,7 +83,9 @@ export const loadDrafts = (): ApplyDrafts => {
     const raw = sessionStorage.getItem(DRAFTS_KEY);
     if (!raw) return emptyDrafts();
     const parsed = JSON.parse(raw);
-    return parsed?.version === 2 ? { ...emptyDrafts(), ...parsed } : emptyDrafts();
+    if (parsed?.version !== 2) return emptyDrafts();
+    const state: ApplyDrafts = { ...emptyDrafts(), ...parsed };
+    return { ...state, drafts: Object.fromEntries(Object.entries(state.drafts ?? {}).map(([key, data]) => [key, withWorkExperienceList(data)])) };
   } catch {
     return emptyDrafts();
   }
@@ -104,6 +107,22 @@ export const clearDrafts = (): void => {
   }
 };
 
+/**
+ * Drafts saved before work experience became a list carry five flat fields;
+ * turn them into a one-item list so a reload keeps what was typed.
+ */
+const withWorkExperienceList = (data: ApplicantFormData & LegacyWorkExperienceFields): ApplicantFormData => {
+  const {
+    work_experience_years: _years,
+    work_experience_months: _months,
+    relevant_experience_position: _position,
+    relevant_experience_company: _company,
+    relevant_experience_duties: _duties,
+    ...rest
+  } = data;
+  return { ...rest, work_experiences: workExperiencesOf(data) };
+};
+
 /** True once the applicant has typed anything the posting didn't prefill. */
 export const draftHasData = (data: ApplicantFormData | undefined): boolean =>
   Boolean(
@@ -116,11 +135,7 @@ export const draftHasData = (data: ApplicantFormData | undefined): boolean =>
         data.address ||
         data.gender ||
         data.education_attainment ||
-        data.work_experience_years ||
-        data.work_experience_months ||
-        data.relevant_experience_position ||
-        data.relevant_experience_company ||
-        data.relevant_experience_duties ||
+        (data.work_experiences ?? []).some((entry) => !isBlankWorkExperience(entry)) ||
         data.gov_id_type ||
         data.employee_id),
   );

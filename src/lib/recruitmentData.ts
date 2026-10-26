@@ -9,6 +9,7 @@ import {
 import { supabase } from './supabase';
 import { fetchSlotsByJobPosting } from './plantillaSlots';
 import { POSITION_TO_DEPARTMENT_MAP } from '../constants/positions';
+import { MONTHS_PER_YEAR, type StoredWorkExperience } from './workExperience';
 
 const APPLICANTS_KEY = 'cictrix_qualified_applicants';
 const DELETED_JOB_REPORTS_KEY = 'cictrix_deleted_job_reports';
@@ -1115,6 +1116,8 @@ type ApplicantSubmissionSyncInput = {
   educationDegree?: string;
   educationSchool?: string;
   workExperienceYears?: number;
+  /** Every entry from the form; experience falls back to the total when absent. */
+  workExperiences?: StoredWorkExperience[];
 };
 
 type LegacyPortalApplicant = {
@@ -1288,9 +1291,15 @@ export const syncApplicantSubmissionToRecruitment = (
     education: input.educationDegree
       ? [{ degree: input.educationDegree, school: input.educationSchool ?? '', year: new Date().getFullYear() }]
       : [],
-    experience: input.workExperienceYears != null
-      ? [{ title: 'Applicant', company: '', years: input.workExperienceYears }]
-      : [],
+    experience: input.workExperiences?.length
+      ? input.workExperiences.map((e) => ({
+          title: e.position ?? 'Applicant',
+          company: e.company ?? '',
+          years: +(e.years + e.months / MONTHS_PER_YEAR).toFixed(2),
+        }))
+      : input.workExperienceYears != null
+        ? [{ title: 'Applicant', company: '', years: input.workExperienceYears }]
+        : [],
     skills: [],
     certifications: [],
     documents,
