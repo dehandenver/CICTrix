@@ -8,7 +8,7 @@ import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it } from 'vitest';
 
-const MIGRATION = path.resolve(__dirname, '../../supabase/migrations/20261026015831_applicant_work_experiences.sql');
+const MIGRATION = path.resolve(__dirname, '../../supabase/migrations/20261026120100_applicant_work_experiences.sql');
 
 const setup = async (yearsType: 'numeric' | 'text') => {
   const db = new PGlite();
