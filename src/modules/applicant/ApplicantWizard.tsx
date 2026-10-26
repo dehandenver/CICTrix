@@ -962,7 +962,7 @@ export const ApplicantWizard: React.FC = () => {
       application_type: applicationType,
       status: 'New Application',
       years_of_experience: totalYears > 0 ? totalYears : null,
-      // Every entry (migration 20261026015831). Dropped on the retry below if
+      // Every entry (migration 20261026120100). Dropped on the retry below if
       // that migration hasn't reached this database yet.
       work_experiences: storedExperiences,
       education_level: formData.education_attainment || null,

@@ -47,7 +47,7 @@ Branch `feat/lnd-dashboard-pager-required-workexp`, rebased onto `main` at `047e
 
 ## Open items
 
-1. **Migration version order.** The CLI named the migration `20261026015831`, which sorts before `…022600`, `…023000` and `…120000`, already on `main`. `check:migrations` passes (it does not check order), but the Supabase integration may skip or reject an out-of-order version. Before merging, regenerate it with `npx supabase migration new applicant_work_experiences` after 12:00 UTC on 2026-10-26, move the SQL over, and update the path in `src/lib/workExperience.migration.test.ts`.
+1. ~~**Migration version order.**~~ **Resolved.** The CLI's `20261026015831` sorted before migrations already on `main`. At the user's direction it was renamed to `20261026120100`, after `main`'s latest `…120000`, before anything was pushed. No local Supabase database exists on this machine (no Docker, no `supabase/config.toml`), so nothing had applied the old version and `supabase db reset` cannot run here. An ordered replay of all 117 migrations on PGlite runs this one last. A from-scratch replay cannot complete on this repo: 82 files fail on tables no migration creates (the known clone-schema gap, starting with the first file, `20260509…`), and this migration fails there the same way as `main`'s `…120000`, because `applicants` is never created.
 2. **New devDependency:** `@electric-sql/pglite` 0.5.8 (exact), used only by the migration test.
 3. **Follow-up:** add start and end dates per work-experience entry, so overlapping jobs can be merged instead of double-counted.
 4. **Task 5 Part B** (sidebar) text was not received.

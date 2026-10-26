@@ -3,7 +3,7 @@
  * with the same five fields. Pure helpers shared by the form, its validation,
  * drafts, submission and the HR view.
  *
- * Stored on applicants.work_experiences (migration 20261026015831) as
+ * Stored on applicants.work_experiences (migration 20261026120100) as
  * [{ years, months, position, company, duties }]; applicants.years_of_experience
  * keeps the total, which scoring and qualification checks read.
  */
