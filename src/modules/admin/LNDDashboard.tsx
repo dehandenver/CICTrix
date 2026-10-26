@@ -3,11 +3,12 @@ import {
   BarChart2,
   CalendarClock,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
   ClipboardCheck,
   ClipboardList,
   FileText,
+  GraduationCap,
+  Grid3x3,
   LayoutDashboard,
   Settings,
   Target,
@@ -15,15 +16,6 @@ import {
   X,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
 import { RailNav, type RailNavItem } from '../../components/RailNav';
@@ -35,7 +27,8 @@ import { TrainingCalendar } from './TrainingCalendar';
 import { TrainingPlan } from './TrainingPlan';
 import { CATEGORY_COLORS } from './trainingCategories';
 
-import { EmptyState } from '../../components/EmptyState';
+import { Pagination } from '../../components/Pagination';
+import { paginate } from '../../lib/pagination';
 import { listCalendarEvents, type CalendarEvent } from '../../lib/api/trainingCalendar';
 import { trainingProgress } from '../../lib/trainingProgress';
 import { computeNeedsAssessment, listActiveEmployees, type ActiveEmployee, type CompetencyNeed } from '../../lib/api/trainingNeeds';
@@ -46,7 +39,10 @@ import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingNeeds } from './LndTrainingNeeds';
 import { LndArchive } from './LndArchive';
 import { cycleYearFor, listSubmissions, type IdpSubmission } from '../../lib/api/idpSubmissions';
-import { idpOffices, tagSelectionsByOffice } from '../../lib/idpAnalytics';
+import { tagSelectionsByOffice } from '../../lib/idpAnalytics';
+import { ALL_OFFICES, PERIODS, PERIOD_LABEL, eventsInPeriod, inOffice, scopeNeedsToOffice, type Period } from './lndDashboardModel';
+import '../../styles/rsp-dashboard.css';
+import '../../styles/lnd-dashboard.css';
 import '../../styles/dashboard-scale.css';
 
 type MenuId =
@@ -152,12 +148,6 @@ const COMPETENCY_SHORT: Record<string, string> = {
   'Public Communication Skills': 'Public communication',
 };
 
-/** Fixed department color palette — separate from category colors to avoid confusion. */
-const DEPT_PALETTE = [
-  '#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed',
-  '#db2777', '#0891b2', '#65a30d', '#ea580c', '#6366f1',
-];
-
 // ── Dismissible warning (DESIGN_IDENTITY.md §9.9, warning) ───────────────────
 
 type WarningItem = { id: string; title: string; category: string | null; startDate: string };
@@ -233,15 +223,11 @@ const DismissibleWarning = ({ storageKey, title, message, items }: {
   );
 };
 
-// ── Dashboard building blocks (Layout A, docs/mockups/2026-10-14-lnd-dashboard-layout-a.html) ──
-
-/** Module accents: TNA = brand, IDP = the purple the IDP panels already use, Trainings = success. */
-const MODULE_ACCENT = {
-  tna: 'var(--color-primary)',
-  idp: '#7c3aed',
-  trainings: 'var(--success-500)',
-} as const;
-type ModuleKey = keyof typeof MODULE_ACCENT;
+// ── Dashboard building blocks ─────────────────────────────────────────────────
+// Portal dashboard pattern (RspDashboardOverview, rsp-dashboard.css): gradient
+// hero with period + office controls, then titled sections with KPI strips.
+// Supersedes Layout A's header and summary cards; its chart rows stay, restyled
+// (docs/plans/2026-10-26-lnd-dashboard-office-pager-required-icon-work-experience.md).
 
 /** Heatmap buckets: upper bound (exclusive) of % of office headcount with the gap. */
 const HEAT_STEPS = [
@@ -262,78 +248,96 @@ const COMPLIANCE_COLORS = { met: 'var(--success-500)', partial: 'var(--warning-5
 
 const pctOf = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
 
-const loadingVeil = <div className="absolute inset-0 z-10 rounded-2xl bg-white/50 backdrop-blur-[1px]" />;
+type StatTone = 'warn' | 'risk' | undefined;
 
-const ModuleLabel = ({ module, children }: { module: ModuleKey; children: React.ReactNode }) => (
-  <p className="text-caps" style={{ color: MODULE_ACCENT[module] }}>{children}</p>
-);
-
-const Kpi = ({ value, label, sub, tone }: { value: string; label: string; sub: string; tone?: 'muted' | 'alert' }) => (
-  <div className="min-w-0">
-    <p className="text-[28px] font-extrabold leading-tight" style={{ color: tone === 'muted' ? 'var(--neutral-300)' : 'var(--color-primary-900)' }}>{value}</p>
-    <p className="text-body-s mt-0.5" style={{ color: 'var(--neutral-600)' }}>{label}</p>
-    <p className="text-[11px] leading-4" style={{ color: tone === 'alert' ? 'var(--error-700)' : 'var(--neutral-400)' }}>{sub}</p>
+/** One KPI cell: muted label over a large value, with an optional inline note (§9.7). */
+const Stat = ({ label, value, note, tone }: { label: string; value: React.ReactNode; note?: string; tone?: StatTone }) => (
+  <div className={`rd-stat ${tone ?? ''}`}>
+    <span className="l">{label}</span>
+    <span className="v">
+      {value}
+      {note && <small> {note}</small>}
+    </span>
   </div>
 );
 
-const SummaryCard = ({ module, title, children, loading }: { module: ModuleKey; title: string; children: React.ReactNode; loading: boolean }) => (
-  <article
-    className="relative rounded-2xl border bg-white px-5 py-4"
-    style={{ borderColor: 'var(--neutral-200)', borderTop: `3px solid ${MODULE_ACCENT[module]}` }}
-  >
-    {loading && loadingVeil}
-    <ModuleLabel module={module}>{title}</ModuleLabel>
-    <div className="mt-2.5 grid grid-cols-3 gap-3">{children}</div>
-  </article>
+const SectionHead = ({ icon: Icon, title, desc, onViewAll }: {
+  icon: RailNavItem['icon'];
+  title: string;
+  desc: string;
+  /** Omitted in view-only mode, where there is no section to switch to. */
+  onViewAll?: () => void;
+}) => (
+  <div className="rd-sec-h">
+    <span className="rd-ico"><Icon size={16} aria-hidden="true" /></span>
+    <h2>{title}</h2>
+    <span className="rd-desc">{desc}</span>
+    {onViewAll && (
+      <button type="button" className="rd-link" onClick={onViewAll} aria-label={`View all: ${title}`}>View all ›</button>
+    )}
+  </div>
 );
 
-const ChartCard = ({ title, caption, children, loading, action }: {
+const Panel = ({ title, caption, action, children }: {
   title: string;
   caption?: string;
-  children: React.ReactNode;
-  loading: boolean;
   action?: React.ReactNode;
+  children: React.ReactNode;
 }) => (
-  <section className="relative flex min-w-0 flex-col rounded-2xl border bg-white px-5 py-4" style={{ borderColor: 'var(--neutral-200)' }}>
-    {loading && loadingVeil}
-    <div className="flex items-start justify-between gap-3">
+  <section className="rd-card ld-panel">
+    <div className="rd-h">
       <div className="min-w-0">
-        <h2 className="text-[15px] font-bold" style={{ color: 'var(--color-primary-900)' }}>{title}</h2>
-        {caption && <p className="text-body-s mt-0.5" style={{ color: 'var(--neutral-500)' }}>{caption}</p>}
+        <h3>{title}</h3>
+        {caption && <p className="ld-caption">{caption}</p>}
       </div>
       {action}
     </div>
-    <div className="mt-4 flex-1">{children}</div>
+    {children}
   </section>
 );
 
-const LegendSwatch = ({ color, label }: { color: string; label: string }) => (
-  <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--neutral-600)' }}>
-    <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />
-    {label}
-  </span>
+/** Empty panel (§12): icon, short title, and what will fill it. */
+const PanelEmpty = ({ icon: Icon, title, text }: { icon: RailNavItem['icon']; title: string; text: string }) => (
+  <div className="ld-empty">
+    <span className="ld-empty-ico"><Icon size={20} strokeWidth={1.75} aria-hidden="true" /></span>
+    <p className="ld-empty-t">{title}</p>
+    <p className="ld-empty-d">{text}</p>
+  </div>
+);
+
+/** A bar-list row: label, bar, right-aligned count. */
+const BarRow = ({ label, title, value, percent, color = 'var(--rd-accent)' }: {
+  label: string;
+  title?: string;
+  value: React.ReactNode;
+  percent: number;
+  color?: string;
+}) => (
+  <div className="ld-row" title={title ?? label}>
+    <span className="ld-row-l">{label}</span>
+    <div className="rd-bar"><i style={{ width: `${percent}%`, background: color, borderRadius: 6 }} /></div>
+    <b className="ld-row-n">{value}</b>
+  </div>
 );
 
 /** One stacked 0 / 1 / 2-of-2 bar. */
-const ComplianceBar = ({ met, partial, none, height, showCounts }: { met: number; partial: number; none: number; height: number; showCounts?: boolean }) => {
+const ComplianceBar = ({ met, partial, none, large, showCounts }: { met: number; partial: number; none: number; large?: boolean; showCounts?: boolean }) => {
   const total = met + partial + none;
   const segs = [
-    { key: 'met', n: met, color: COMPLIANCE_COLORS.met },
-    { key: 'partial', n: partial, color: COMPLIANCE_COLORS.partial },
-    { key: 'none', n: none, color: COMPLIANCE_COLORS.none },
-  ].filter((s) => s.n > 0);
-  if (total === 0) return <div className="rounded-md" style={{ height, background: 'var(--neutral-100)' }} />;
+    { key: 'met', n: met, color: COMPLIANCE_COLORS.met, label: `${REQUIRED_TRAININGS_PER_YEAR} of ${REQUIRED_TRAININGS_PER_YEAR}` },
+    { key: 'partial', n: partial, color: COMPLIANCE_COLORS.partial, label: '1 so far' },
+    { key: 'none', n: none, color: COMPLIANCE_COLORS.none, label: '0 so far' },
+  ];
   return (
-    <div className="flex overflow-hidden rounded-md text-xs font-bold text-white" style={{ height }}>
-      {segs.map((s) => (
-        <div
-          key={s.key}
-          className="flex items-center overflow-hidden whitespace-nowrap pl-2"
-          style={{ width: `${(s.n / total) * 100}%`, backgroundColor: s.color }}
-          title={`${s.n} employee${s.n === 1 ? '' : 's'}`}
-        >
+    <div
+      className={`ld-cbar ${large ? 'ld-cbar-lg' : ''}`}
+      role="img"
+      aria-label={segs.map((s) => `${s.n} ${s.label}`).join(', ')}
+    >
+      {total > 0 && segs.filter((s) => s.n > 0).map((s) => (
+        <i key={s.key} style={{ width: `${(s.n / total) * 100}%`, background: s.color }} title={`${s.n} employee${s.n === 1 ? '' : 's'}`}>
           {showCounts && `${s.n} · ${pctOf(s.n, total)}%`}
-        </div>
+        </i>
       ))}
     </div>
   );
@@ -353,12 +357,10 @@ const downloadCsv = (filename: string, rows: (string | number)[][]) => {
 
 /** Employees per page of the "still needs training" table. */
 const NEEDS_PAGE_SIZE = 10;
-/** Page-number buttons shown around the current page. */
-const NEEDS_PAGE_WINDOW = 5;
 
 // ── Dashboard component ───────────────────────────────────────────────────────
 
-const LndDashboardContent = () => {
+const LndDashboardContent = ({ onNavigate }: { onNavigate?: (id: MenuId) => void }) => {
   const [loading, setLoading] = useState(true);
   const [incompleteLocked, setIncompleteLocked] = useState<IncompleteLockedTraining[]>([]);
   const [lockingSoon, setLockingSoon] = useState<LockingSoonTraining[]>([]);
@@ -375,9 +377,15 @@ const LndDashboardContent = () => {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   /** Active employees in active offices — the denominator for every section. */
   const [employees, setEmployees] = useState<ActiveEmployee[]>([]);
-  const [trainingDept, setTrainingDept] = useState('');
+  const [period, setPeriod] = useState<Period>('year');
+  const [office, setOffice] = useState<string>(ALL_OFFICES);
   const [needsFilter, setNeedsFilter] = useState<'all' | 'none' | 'partial'>('all');
   const [needsPage, setNeedsPage] = useState(1);
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -407,23 +415,30 @@ const LndDashboardContent = () => {
     return () => { cancelled = true; };
   }, [idpCycle]);
 
-  const currentYear = new Date().getFullYear();
+  const currentYear = today.getFullYear();
+  const chooseOffice = (next: string) => {
+    setOffice(next);
+    setNeedsPage(1);
+  };
 
-  // ── Shared population ──
-  const offices = useMemo(() => Array.from(new Set(employees.map((e) => e.department))).sort(), [employees]);
-  const headcount = employees.length;
+  // ── Shared population, scoped to the office filter ──
+  const allOffices = useMemo(() => Array.from(new Set(employees.map((e) => e.department))).sort(), [employees]);
+  const offices = useMemo(() => allOffices.filter((o) => inOffice(o, office)), [allOffices, office]);
+  const scopedEmployees = useMemo(() => employees.filter((e) => inOffice(e.department, office)), [employees, office]);
+  const headcount = scopedEmployees.length;
+  const scopedNeeds = useMemo(() => scopeNeedsToOffice(needs, office), [needs, office]);
 
   // ── TNA ──
   const assessedOffices = useMemo(
-    () => Array.from(new Set(needs.flatMap((n) => n.offices.map((o) => o.office)))).sort(),
-    [needs]
+    () => Array.from(new Set(scopedNeeds.flatMap((n) => n.offices.map((o) => o.office)))).sort(),
+    [scopedNeeds]
   );
   const officeTotal = Math.max(offices.length, assessedOffices.length);
 
   /** Distinct employees with at least one identified competency gap. */
   const employeesWithGaps = useMemo(() => {
     const perOffice = new Map<string, number>();
-    for (const n of needs) {
+    for (const n of scopedNeeds) {
       for (const o of n.offices) {
         // An employee can appear under several competencies; the office's
         // headcount bounds it, so take the max rather than summing.
@@ -431,12 +446,12 @@ const LndDashboardContent = () => {
       }
     }
     return [...perOffice.values()].reduce((a, b) => a + b, 0);
-  }, [needs]);
+  }, [scopedNeeds]);
 
-  /** All 12 framework competencies, most-needed LGU-wide first. */
+  /** All 12 framework competencies, most-needed first. */
   const competencyRows = useMemo(() =>
     COMPETENCY_LIST.map((comp) => {
-      const need = needs.find((n) => n.competency === comp);
+      const need = scopedNeeds.find((n) => n.competency === comp);
       return {
         competency: comp,
         short: COMPETENCY_SHORT[comp] ?? comp,
@@ -444,453 +459,422 @@ const LndDashboardContent = () => {
         byOffice: new Map((need?.offices ?? []).map((o) => [o.office, o.demand])),
       };
     }).sort((a, b) => b.affected - a.affected || a.competency.localeCompare(b.competency)),
-    [needs]
+    [scopedNeeds]
   );
   const competenciesWithGaps = competencyRows.filter((r) => r.affected > 0).length;
-  const tnaHeadcount = headcount || needs[0]?.offices.reduce((sum, o) => sum + o.total, 0) || 0;
+  const tnaHeadcount = headcount || scopedNeeds[0]?.offices.reduce((sum, o) => sum + o.total, 0) || 0;
 
   // ── IDP ──
-  const submittedIds = useMemo(() => new Set(idpSubs.map((s) => s.employeeId)), [idpSubs]);
+  const scopedIdpSubs = useMemo(() => {
+    if (office === ALL_OFFICES) return idpSubs;
+    const ids = new Set(scopedEmployees.map((e) => e.id));
+    return idpSubs.filter((s) => ids.has(s.employeeId) || inOffice(s.office, office));
+  }, [idpSubs, scopedEmployees, office]);
+  const submittedIds = useMemo(() => new Set(scopedIdpSubs.map((s) => s.employeeId)), [scopedIdpSubs]);
   const idpByOffice = useMemo(() =>
-    offices.map((office) => {
-      const staff = employees.filter((e) => e.department === office);
+    offices.map((name) => {
+      const staff = scopedEmployees.filter((e) => e.department === name);
       const submitted = staff.filter((e) => submittedIds.has(e.id)).length;
-      return { office, total: staff.length, submitted };
+      return { office: name, total: staff.length, submitted };
     }),
-    [offices, employees, submittedIds]
+    [offices, scopedEmployees, submittedIds]
   );
   const officesWithIdps = idpByOffice.filter((o) => o.submitted > 0).length;
-  const idpOfficeList = useMemo(() => idpOffices(idpSubs), [idpSubs]);
-  const idpTagRows = useMemo(() => tagSelectionsByOffice(idpSubs), [idpSubs]);
-  const idpTopTag = useMemo(
-    () => idpTagRows.reduce((best, cur) => (cur.total > best.total ? cur : best), idpTagRows[0]),
-    [idpTagRows]
+  const idpTagRows = useMemo(
+    () => tagSelectionsByOffice(scopedIdpSubs).slice().sort((a, b) => b.total - a.total),
+    [scopedIdpSubs]
   );
-  const idpChartData = useMemo(
-    () => idpTagRows.map((r) => ({ category: r.label, ...r.byOffice })),
-    [idpTagRows]
-  );
+  const idpTopTag = idpTagRows[0];
+  const idpTagMax = Math.max(1, ...idpTagRows.map((r) => r.total));
 
   // ── Trainings ──
-  const progress = useMemo(() => trainingProgress(calendarEvents), [calendarEvents]);
-  const compliance = useMemo(() => trainingCompliance(employees, calendarEvents), [employees, calendarEvents]);
+  const periodEvents = useMemo(() => eventsInPeriod(calendarEvents, period, today), [calendarEvents, period, today]);
+  const progress = useMemo(() => trainingProgress(periodEvents), [periodEvents]);
+  const compliance = useMemo(() => trainingCompliance(scopedEmployees, calendarEvents), [scopedEmployees, calendarEvents]);
   const trainedAtLeastOnce = compliance.met + compliance.partial;
-
-  const deptCompliance = trainingDept
-    ? compliance.byDepartment.filter((d) => d.department === trainingDept)
-    : compliance.byDepartment;
-  const scope = trainingDept
-    ? deptCompliance[0] ?? { met: 0, partial: 0, none: 0, total: 0 }
-    : compliance;
+  const stillNeedsCount = compliance.partial + compliance.none;
   const stillNeeds = useMemo(
     () => compliance.employees.filter((e) =>
       e.completed < REQUIRED_TRAININGS_PER_YEAR
-      && (!trainingDept || e.department === trainingDept)
       && (needsFilter === 'all' || (needsFilter === 'none' ? e.completed === 0 : e.completed > 0))
     ),
-    [compliance, trainingDept, needsFilter]
+    [compliance, needsFilter]
   );
-  const stillNeedsCount = scope.partial + scope.none;
-  const needsPageCount = Math.max(1, Math.ceil(stillNeeds.length / NEEDS_PAGE_SIZE));
-  // Clamped so a filter that shrinks the list never strands the view on an empty page.
-  const needsCurrentPage = Math.min(needsPage, needsPageCount);
-  const needsPageStart = (needsCurrentPage - 1) * NEEDS_PAGE_SIZE;
-  const needsPageRows = stillNeeds.slice(needsPageStart, needsPageStart + NEEDS_PAGE_SIZE);
-  const needsFirstShown = Math.max(1, Math.min(needsCurrentPage - Math.floor(NEEDS_PAGE_WINDOW / 2), needsPageCount - NEEDS_PAGE_WINDOW + 1));
-  const needsPageNumbers = Array.from({ length: Math.min(NEEDS_PAGE_WINDOW, needsPageCount) }, (_, i) => needsFirstShown + i);
+  const needsPaged = paginate(stillNeeds, needsPage, NEEDS_PAGE_SIZE);
 
   const exportStillNeeds = () =>
     downloadCsv(
-      `employees-needing-training-${currentYear}${trainingDept ? `-${trainingDept}` : ''}.csv`,
+      `employees-needing-training-${currentYear}${office === ALL_OFFICES ? '' : `-${office}`}.csv`,
       [
         ['Employee', 'Department', 'Position', `Trainings completed (of ${REQUIRED_TRAININGS_PER_YEAR})`],
         ...stillNeeds.map((e) => [e.name, e.department, e.position, e.completed]),
       ]
     );
 
-  // Stacked IDP tag bar: one line per office in the hovered bar.
-  const stackTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="min-w-[160px] rounded-xl border border-gray-200 bg-white p-3 text-xs shadow-lg">
-        <p className="mb-2 font-semibold text-gray-800">{label}</p>
-        {payload.map((entry: any) => (
-          <div key={entry.dataKey} className="flex items-center gap-2 py-0.5">
-            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: entry.fill }} />
-            <span className="flex-1 truncate text-gray-600">{entry.dataKey}</span>
-            <span className="font-semibold text-gray-800">{entry.value}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
   const fmt = (n: number) => n.toLocaleString('en-US');
+  const officeScope = office === ALL_OFFICES ? 'all offices' : office;
+  const viewAll = (id: MenuId) => (onNavigate ? () => onNavigate(id) : undefined);
 
   return (
-    <div className="abyan-ds space-y-4 p-4 sm:p-6 lg:p-8">
-      {/* Header */}
-      <section className="flex flex-wrap items-end justify-between gap-3">
+    <div className="abyan-ds rspdash lnddash">
+      <section className="rd-hero">
         <div>
-          <p className="text-body-s">
-            <span style={{ color: 'var(--color-primary)' }}>L&amp;D</span>
-            <span className="mx-1" style={{ color: 'var(--neutral-400)' }}>/</span>
-            <span style={{ color: 'var(--neutral-600)' }}>Dashboard</span>
-          </p>
-          <h1 className="mt-1 text-[28px] font-bold leading-9" style={{ color: 'var(--color-primary-900)' }}>Dashboard &amp; Analytics</h1>
-          <p className="text-body-l" style={{ color: 'var(--neutral-500)' }}>
-            Needs assessment, development plans and trainings for {currentYear}.
-          </p>
+          <p className="ld-crumbs">L&amp;D › <b>Dashboard</b></p>
+          {/* Not an <h1>: admin.css forces .admin-content h1 to brand blue with !important. */}
+          <div className="rd-hero-title" role="heading" aria-level={1}>Dashboard &amp; Analytics</div>
+          <p className="rd-hero-sub">Needs assessment, development plans and trainings for {currentYear}</p>
+        </div>
+        <div className="ld-controls">
+          <div className="rd-filters">
+            <div className="rd-seg" role="group" aria-label="Period for training completion">
+              {PERIODS.map((p) => (
+                <button key={p} type="button" className={period === p ? 'on' : ''} aria-pressed={period === p} onClick={() => setPeriod(p)}>
+                  {p[0].toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+            </div>
+            <label className="rd-select">
+              <span className="sr-only">Office</span>
+              <select
+                value={office}
+                onChange={(e) => chooseOffice(e.target.value)}
+                aria-label="Filter by office"
+                // Global select rules color every select dark; the hero needs white.
+                style={{ color: '#fff' }}
+              >
+                <option value={ALL_OFFICES}>All offices</option>
+                {allOffices.map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} aria-hidden="true" />
+            </label>
+            <span className="rd-asof">As of {today.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+          <p className="ld-hero-note">The period applies to training completion only.</p>
         </div>
       </section>
 
-      <DismissibleWarning
-        storageKey="abyan:lnd-dismissed-incomplete"
-        title={`${incompleteLocked.length} training${incompleteLocked.length === 1 ? '' : 's'} went live incomplete`}
-        message="These locked within 3 days of their start while still in planning, so their detail fields were never completed. Complete trainings before the cutoff next time."
-        items={incompleteLocked}
-      />
-      <DismissibleWarning
-        storageKey="abyan:lnd-dismissed-locking-soon"
-        title={`${lockingSoon.length} training${lockingSoon.length === 1 ? '' : 's'} locking within 3 days, roster not finalized`}
-        message="These lock 3 days before they start and still have no enrolled attendees. Finalize their rosters now, before they go live empty."
-        items={lockingSoon}
-      />
+      <div className="rd-main" aria-busy={loading}>
+        <DismissibleWarning
+          storageKey="abyan:lnd-dismissed-incomplete"
+          title={`${incompleteLocked.length} training${incompleteLocked.length === 1 ? '' : 's'} went live incomplete`}
+          message="These locked within 3 days of their start while still in planning, so their detail fields were never completed. Complete trainings before the cutoff next time."
+          items={incompleteLocked}
+        />
+        <DismissibleWarning
+          storageKey="abyan:lnd-dismissed-locking-soon"
+          title={`${lockingSoon.length} training${lockingSoon.length === 1 ? '' : 's'} locking within 3 days, roster not finalized`}
+          message="These lock 3 days before they start and still have no enrolled attendees. Finalize their rosters now, before they go live empty."
+          items={lockingSoon}
+        />
 
-      {/* Summary row — one card per module */}
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <SummaryCard module="tna" title="Training Needs Assessment" loading={loading}>
-          <Kpi value={fmt(employeesWithGaps)} label="With skill gaps" sub={`${pctOf(employeesWithGaps, tnaHeadcount)}% of ${fmt(tnaHeadcount)} employees`} />
-          <Kpi value={`${assessedOffices.length}/${officeTotal}`} label="Offices assessed" sub="From rated IPCR data" />
-          <Kpi value={`${competenciesWithGaps}/${COMPETENCY_LIST.length}`} label="Competencies with gaps" sub={competencyRows[0]?.affected ? `Top: ${competencyRows[0].short}` : 'No gaps found yet'} />
-        </SummaryCard>
-        <SummaryCard module="idp" title="Individual Development Plans" loading={loading}>
-          <Kpi
-            value={`${pctOf(idpSubs.length, headcount)}%`}
-            label="Submitted"
-            sub={`${fmt(idpSubs.length)} of ${fmt(headcount)} · ${idpCycle} cycle`}
-            tone={idpSubs.length === 0 ? 'alert' : undefined}
+        {/* 1. Training Needs Assessment */}
+        <section className={`rd-sec ${loading ? 'ld-loading' : ''}`}>
+          <SectionHead
+            icon={ClipboardList}
+            title="Training Needs Assessment"
+            desc={`From rated IPCR data · ${officeScope}`}
+            onViewAll={viewAll('training-needs')}
           />
-          <Kpi value={`${officesWithIdps}/${offices.length}`} label="Offices with IDPs" sub="At least one submitted" />
-          <Kpi
-            value={idpTopTag?.total ? fmt(idpTopTag.total) : '—'}
-            label="Top requested tag"
-            sub={idpTopTag?.total ? idpTopTag.label : 'No IDPs yet'}
-            tone={idpTopTag?.total ? undefined : 'muted'}
-          />
-        </SummaryCard>
-        <SummaryCard module="trainings" title="Trainings Done" loading={loading}>
-          <Kpi value={`${progress.percent}%`} label="Completion" sub={`${progress.completed} of ${progress.total} trainings`} />
-          <Kpi
-            value={`${pctOf(compliance.met, compliance.total)}%`}
-            label={`Met ${REQUIRED_TRAININGS_PER_YEAR}-training rule`}
-            sub={`${fmt(compliance.partial + compliance.none)} still need training`}
-          />
-          <Kpi value={fmt(trainedAtLeastOnce)} label="Trained at least once" sub={`${pctOf(trainedAtLeastOnce, compliance.total)}% of employees`} />
-        </SummaryCard>
-      </section>
+          <div className="rd-stats rd-s3 rd-stats-card">
+            <Stat
+              label="With skill gaps"
+              value={fmt(employeesWithGaps)}
+              note={`${pctOf(employeesWithGaps, tnaHeadcount)}% of ${fmt(tnaHeadcount)}`}
+              tone={employeesWithGaps > 0 ? 'warn' : undefined}
+            />
+            <Stat
+              label="Offices assessed"
+              value={<>{assessedOffices.length}<small>/{officeTotal}</small></>}
+              note={officeTotal > assessedOffices.length ? `${officeTotal - assessedOffices.length} pending` : undefined}
+              tone={officeTotal > assessedOffices.length ? 'warn' : undefined}
+            />
+            <Stat
+              label="Competencies with gaps"
+              value={<>{competenciesWithGaps}<small>/{COMPETENCY_LIST.length}</small></>}
+              note={competencyRows[0]?.affected ? `top: ${competencyRows[0].short}` : undefined}
+            />
+          </div>
+        </section>
 
-      {/* ── TNA row ── */}
-      <div className="pt-4"><ModuleLabel module="tna">TNA · Assessed gaps · {COMPETENCY_LIST.length} competencies</ModuleLabel></div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ChartCard
-            title="Competency gaps by category and office"
-            caption="% of each office's employees with a gap · rows sorted by LGU-wide need"
-            loading={loading}
+        {/* 2. Competency Gaps */}
+        <section className={`rd-sec ${loading ? 'ld-loading' : ''}`}>
+          <SectionHead
+            icon={AlertTriangle}
+            title="Competency Gaps"
+            desc={`${COMPETENCY_LIST.length} competencies · share of each office's employees with a gap`}
+            onViewAll={viewAll('summary-of-ratings')}
+          />
+          <div className="ld-two">
+            <Panel title="Competency gaps by category and office" caption="Rows sorted by need across the selected offices">
+              {assessedOffices.length === 0 ? (
+                <PanelEmpty
+                  icon={Grid3x3}
+                  title="No assessed gaps yet"
+                  text="Each office fills in here once its IPCR ratings are matched to competencies."
+                />
+              ) : (
+                <>
+                  <div className="ld-heat-scroll">
+                    <div
+                      className="ld-heat"
+                      style={{ gridTemplateColumns: `minmax(150px, 190px) repeat(${assessedOffices.length}, minmax(64px, 1fr))` }}
+                    >
+                      <div />
+                      {assessedOffices.map((o) => (
+                        <div key={o} className="ld-heat-col" title={o}>{o}</div>
+                      ))}
+                      {competencyRows.map((row) => (
+                        <Fragment key={row.competency}>
+                          <div className="ld-heat-row" title={row.competency}>{row.short}</div>
+                          {assessedOffices.map((o) => {
+                            const v = row.byOffice.get(o) ?? 0;
+                            const step = heatStep(v);
+                            return (
+                              <div
+                                key={o}
+                                className="ld-heat-cell"
+                                style={{ background: heatBg(step), color: step >= HEAT_DARK_FROM ? 'var(--color-white)' : 'var(--neutral-800)' }}
+                                title={`${row.competency} · ${o}: ${v}% of employees`}
+                              >
+                                {v}%
+                              </div>
+                            );
+                          })}
+                        </Fragment>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="ld-heat-legend">
+                    <span className="rd-subtitle">% of employees with a gap</span>
+                    <div className="ld-heat-scale">
+                      {HEAT_STEPS.map((s, i) => (
+                        <span key={s.label} style={{ background: heatBg(i), color: i >= HEAT_DARK_FROM ? 'var(--color-white)' : 'var(--neutral-800)' }}>
+                          {s.label}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="ld-muted">Low → high priority</span>
+                  </div>
+                </>
+              )}
+            </Panel>
+            <Panel title="Top competency needs" caption={`Employees with the gap, of ${fmt(tnaHeadcount)} active`}>
+              {competenciesWithGaps === 0 ? (
+                <PanelEmpty
+                  icon={BarChart2}
+                  title="No gaps yet"
+                  text="Competencies are ranked here once ratings show at least one gap."
+                />
+              ) : (
+                <div className="ld-rows">
+                  {competencyRows.map((row) => (
+                    <BarRow
+                      key={row.competency}
+                      label={row.short}
+                      title={row.competency}
+                      value={fmt(row.affected)}
+                      percent={pctOf(row.affected, tnaHeadcount)}
+                    />
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </div>
+        </section>
+
+        {/* 3. Individual Development Plans */}
+        <section className={`rd-sec ${loading ? 'ld-loading' : ''}`}>
+          <SectionHead
+            icon={Target}
+            title="Individual Development Plans"
+            desc={`${idpCycle} cycle · ${officeScope}`}
+            onViewAll={viewAll('idp-form')}
+          />
+          <div className="rd-stats rd-s3 rd-stats-card">
+            <Stat
+              label="IDPs submitted"
+              value={<>{pctOf(scopedIdpSubs.length, headcount)}<small>%</small></>}
+              note={`${fmt(scopedIdpSubs.length)} of ${fmt(headcount)}`}
+              tone={headcount > 0 && scopedIdpSubs.length === 0 ? 'risk' : undefined}
+            />
+            <Stat
+              label="Offices with IDPs"
+              value={<>{officesWithIdps}<small>/{offices.length}</small></>}
+              tone={officesWithIdps < offices.length ? 'warn' : undefined}
+            />
+            <Stat
+              label="Top requested tag"
+              value={idpTopTag?.total ? fmt(idpTopTag.total) : '—'}
+              note={idpTopTag?.total ? idpTopTag.label : 'no IDPs yet'}
+            />
+          </div>
+          <div className="ld-two">
+            <Panel title="IDP submission by office" caption="Active employees who submitted this cycle">
+              {offices.length === 0 ? (
+                <PanelEmpty icon={Users} title="No employees" text="Offices appear here once they have active employees." />
+              ) : (
+                <div className="ld-rows">
+                  {idpByOffice.map((o) => (
+                    <BarRow
+                      key={o.office}
+                      label={o.office}
+                      value={<>{o.submitted}<span className="ld-muted"> / {o.total}</span></>}
+                      percent={pctOf(o.submitted, o.total)}
+                    />
+                  ))}
+                </div>
+              )}
+            </Panel>
+            <Panel title="Development requests by tag" caption="Employees who ticked each tag; one person can tick several">
+              {scopedIdpSubs.length === 0 ? (
+                <PanelEmpty
+                  icon={Target}
+                  title="No IDPs yet"
+                  text={`Tag counts appear here as employees submit their ${idpCycle} IDPs.`}
+                />
+              ) : (
+                <div className="ld-rows">
+                  {idpTagRows.map((r) => (
+                    <BarRow key={r.tag} label={r.label} value={fmt(r.total)} percent={pctOf(r.total, idpTagMax)} />
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </div>
+        </section>
+
+        {/* 4. Trainings */}
+        <section className={`rd-sec ${loading ? 'ld-loading' : ''}`}>
+          <SectionHead
+            icon={GraduationCap}
+            title="Trainings"
+            desc={`Completion ${PERIOD_LABEL[period].toLowerCase()} · ${REQUIRED_TRAININGS_PER_YEAR}-training rule for ${currentYear}`}
+            onViewAll={viewAll('training-calendar')}
+          />
+          <div className="rd-stats rd-s3 rd-stats-card">
+            <Stat
+              label={`Completion · ${PERIOD_LABEL[period].toLowerCase()}`}
+              value={<>{progress.percent}<small>%</small></>}
+              note={`${progress.completed} of ${progress.total} trainings`}
+            />
+            <Stat
+              label={`Met ${REQUIRED_TRAININGS_PER_YEAR}-training rule`}
+              value={<>{pctOf(compliance.met, compliance.total)}<small>%</small></>}
+              note={`${fmt(stillNeedsCount)} still need training`}
+              tone={stillNeedsCount > 0 ? 'warn' : undefined}
+            />
+            <Stat
+              label="Trained at least once"
+              value={fmt(trainedAtLeastOnce)}
+              note={`${pctOf(trainedAtLeastOnce, compliance.total)}% of employees`}
+            />
+          </div>
+
+          <Panel
+            title={`Employees who completed their ${REQUIRED_TRAININGS_PER_YEAR} required trainings`}
+            caption={`Counts finished trainings marked Present · ${fmt(compliance.total)} employees · ${currentYear}`}
           >
-            {assessedOffices.length === 0 && !loading ? (
-              <EmptyState title="No assessed gaps yet" description="Gaps appear once IPCR ratings have been matched to competencies." />
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <div
-                    className="grid min-w-[560px] items-center gap-1 text-[11px]"
-                    style={{ gridTemplateColumns: `minmax(150px, 190px) repeat(${assessedOffices.length}, minmax(64px, 1fr))`, color: 'var(--neutral-600)' }}
+            <ComplianceBar met={compliance.met} partial={compliance.partial} none={compliance.none} large showCounts />
+            <div className="rd-legend ld-legend-gap">
+              <span style={{ ['--c' as string]: COMPLIANCE_COLORS.met }}>Completed {REQUIRED_TRAININGS_PER_YEAR} of {REQUIRED_TRAININGS_PER_YEAR}</span>
+              <span style={{ ['--c' as string]: COMPLIANCE_COLORS.partial }}>1 so far, needs 1 more</span>
+              <span style={{ ['--c' as string]: COMPLIANCE_COLORS.none }}>0 so far, needs {REQUIRED_TRAININGS_PER_YEAR}</span>
+            </div>
+            <p className="rd-subtitle ld-sub-gap">By office</p>
+            <div className="ld-rows">
+              {compliance.byDepartment.map((d) => (
+                <div key={d.department} className="ld-row">
+                  <button
+                    type="button"
+                    className="ld-row-l ld-row-btn"
+                    onClick={() => chooseOffice(d.department)}
+                    title={`Show only ${d.department}`}
                   >
-                    <div />
-                    {assessedOffices.map((o) => (
-                      <div key={o} className="truncate px-1 text-center font-semibold" title={o}>{o}</div>
-                    ))}
-                    {competencyRows.map((row) => (
-                      <Fragment key={row.competency}>
-                        <div className="truncate pr-2" title={row.competency}>{row.short}</div>
-                        {assessedOffices.map((o) => {
-                          const v = row.byOffice.get(o) ?? 0;
-                          const step = heatStep(v);
-                          return (
-                            <div
-                              key={o}
-                              className="flex h-[26px] items-center justify-center rounded font-semibold"
-                              style={{ background: heatBg(step), color: step >= HEAT_DARK_FROM ? 'var(--color-white)' : 'var(--neutral-800)' }}
-                              title={`${row.competency} · ${o}: ${v}% of employees`}
-                            >
-                              {v}%
-                            </div>
-                          );
-                        })}
-                      </Fragment>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px]" style={{ color: 'var(--neutral-600)' }}>
-                  <span className="font-semibold" style={{ color: 'var(--neutral-800)' }}>Legend · % of employees with a gap</span>
-                  <div className="flex overflow-hidden rounded text-center font-semibold">
-                    {HEAT_STEPS.map((s, i) => (
-                      <div
-                        key={s.label}
-                        className="w-[58px] py-1"
-                        style={{ background: heatBg(i), color: i >= HEAT_DARK_FROM ? 'var(--color-white)' : 'var(--neutral-800)' }}
-                      >
-                        {s.label}
-                      </div>
-                    ))}
-                  </div>
-                  <span style={{ color: 'var(--neutral-400)' }}>Low priority ← → High priority</span>
-                </div>
-                <p className="mt-1.5 text-[11px]" style={{ color: 'var(--neutral-400)' }}>
-                  Each cell is one office and one competency: the share of that office&rsquo;s employees whose ratings show a gap in it.
-                </p>
-              </>
-            )}
-          </ChartCard>
-        </div>
-        <ChartCard title="Top competency needs" caption="LGU-wide · employees with the gap / active employees" loading={loading}>
-          {competenciesWithGaps === 0 && !loading ? (
-            <EmptyState title="No gaps yet" description="Nothing to rank until ratings are matched to competencies." />
-          ) : (
-            <div className="grid gap-2.5 text-xs" style={{ color: 'var(--neutral-800)' }}>
-              {competencyRows.map((row) => (
-                <div key={row.competency} title={row.competency}>
-                  <div className="flex justify-between gap-2">
-                    <span className="truncate">{row.short}</span>
-                    <b className="whitespace-nowrap">{fmt(row.affected)} / {fmt(tnaHeadcount)}</b>
-                  </div>
-                  <div className="mt-1 h-2 overflow-hidden rounded" style={{ background: 'var(--color-primary-50)' }}>
-                    <div className="h-full rounded" style={{ width: `${pctOf(row.affected, tnaHeadcount)}%`, background: 'var(--color-primary)' }} />
-                  </div>
+                    {d.department}
+                  </button>
+                  <ComplianceBar met={d.met} partial={d.partial} none={d.none} />
+                  <b className="ld-row-n">{d.percentMet}%</b>
                 </div>
               ))}
             </div>
-          )}
-        </ChartCard>
-      </div>
+            <p className="ld-muted ld-sub-gap">Most complete office first. Select an office to filter the whole dashboard. Trainings with no attendance marked count for no one.</p>
+          </Panel>
 
-      {/* ── IDP row ── */}
-      <div className="pt-4"><ModuleLabel module="idp">IDP · Development plans · {idpCycle} cycle</ModuleLabel></div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ChartCard title="IDP submission by office" caption="Active employees who have submitted their IDP this cycle" loading={loading}>
-            {offices.length === 0 && !loading ? (
-              <EmptyState title="No employees" description="No active employees were found in the active offices." />
+          <Panel
+            title="Still needs training"
+            caption={`${fmt(stillNeedsCount)} employee${stillNeedsCount === 1 ? '' : 's'} below ${REQUIRED_TRAININGS_PER_YEAR} of ${REQUIRED_TRAININGS_PER_YEAR} · fewest trainings first`}
+            action={
+              <button type="button" onClick={exportStillNeeds} disabled={stillNeeds.length === 0} className="btn btn-secondary btn-sm shrink-0">
+                Export list
+              </button>
+            }
+          >
+            <div className="rd-seg-light ld-filter" role="group" aria-label="Trainings completed">
+              {([
+                ['all', `All ${stillNeedsCount}`],
+                ['none', `0 of ${REQUIRED_TRAININGS_PER_YEAR} · ${compliance.none}`],
+                ['partial', `1 of ${REQUIRED_TRAININGS_PER_YEAR} · ${compliance.partial}`],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={needsFilter === key ? 'on' : ''}
+                  aria-pressed={needsFilter === key}
+                  onClick={() => { setNeedsFilter(key); setNeedsPage(1); }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {stillNeeds.length === 0 ? (
+              <PanelEmpty
+                icon={GraduationCap}
+                title={loading ? 'Loading…' : 'Everyone here has met the requirement'}
+                text={`Employees below ${REQUIRED_TRAININGS_PER_YEAR} trainings this year are listed here.`}
+              />
             ) : (
               <>
-                <div className="mb-3 flex flex-wrap gap-4">
-                  <LegendSwatch color={MODULE_ACCENT.idp} label="Submitted" />
-                  <LegendSwatch color="var(--neutral-200)" label="Not yet submitted" />
+                <div className="abyan-table-wrap is-flush ld-table-scroll">
+                  <table className="abyan-table is-compact ld-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Employee</th>
+                        <th scope="col">Office</th>
+                        <th scope="col">Position</th>
+                        <th scope="col" className="n">Trainings completed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {needsPaged.pageItems.map((e) => (
+                        <tr key={e.id}>
+                          <td className="ld-strong">{e.name}</td>
+                          <td>{e.department}</td>
+                          <td>{e.position || '—'}</td>
+                          <td className="n">
+                            <span className={`rd-pill ${e.completed === 0 ? 'rd-p-risk' : 'rd-p-warn'}`}>
+                              {e.completed} / {REQUIRED_TRAININGS_PER_YEAR}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="grid items-center gap-x-3 gap-y-2.5 text-[11px]" style={{ gridTemplateColumns: 'minmax(110px, 180px) 1fr 84px', color: 'var(--neutral-600)' }}>
-                  {idpByOffice.map((o) => (
-                    <Fragment key={o.office}>
-                      <div className="truncate" title={o.office}>{o.office}</div>
-                      <div className="h-4 overflow-hidden rounded" style={{ background: 'var(--neutral-200)' }}>
-                        <div className="h-full" style={{ width: `${pctOf(o.submitted, o.total)}%`, background: MODULE_ACCENT.idp }} />
-                      </div>
-                      <div className="text-right"><b style={{ color: 'var(--neutral-800)' }}>{o.submitted}</b> / {o.total}</div>
-                    </Fragment>
-                  ))}
-                </div>
-                {idpSubs.length === 0 && !loading && (
-                  <p className="text-body-s mt-4 rounded-lg px-3 py-2" style={{ background: '#f5f0ff', color: MODULE_ACCENT.idp }}>
-                    No IDPs have been submitted for the {idpCycle} cycle yet.
-                  </p>
-                )}
+                <Pagination
+                  total={stillNeeds.length}
+                  page={needsPaged.current}
+                  pageSize={NEEDS_PAGE_SIZE}
+                  onPageChange={setNeedsPage}
+                  itemLabel="employees"
+                  label="Still needs training pages"
+                />
               </>
             )}
-          </ChartCard>
-        </div>
-        <ChartCard title="Development requests by tag" caption="Employees who ticked each tag · one person can tick several" loading={loading}>
-          {idpSubs.length === 0 && !loading ? (
-            <div className="flex h-full min-h-[220px] items-center justify-center rounded-xl border border-dashed px-4 text-center text-body-s" style={{ borderColor: 'var(--neutral-300)', color: 'var(--neutral-400)' }}>
-              Tag counts appear here once IDPs come in.
-            </div>
-          ) : (
-            <div className="h-[280px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={idpChartData} layout="vertical" margin={{ top: 0, right: 12, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
-                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#6b7280' }} allowDecimals={false} />
-                  <YAxis type="category" dataKey="category" width={110} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#374151' }} />
-                  <Tooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} content={stackTooltip} />
-                  {idpOfficeList.map((office, i) => (
-                    <Bar key={office} dataKey={office} stackId="idp" fill={DEPT_PALETTE[i % DEPT_PALETTE.length]} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </ChartCard>
+          </Panel>
+        </section>
       </div>
-
-      {/* ── Trainings row ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-        <ModuleLabel module="trainings">Trainings done · {REQUIRED_TRAININGS_PER_YEAR}-training requirement</ModuleLabel>
-        <label className="flex items-center gap-2 text-body-s" style={{ color: 'var(--neutral-500)' }}>
-          Department
-          <select
-            value={trainingDept}
-            onChange={(e) => { setTrainingDept(e.target.value); setNeedsPage(1); }}
-            className="rounded-lg border bg-white px-3 py-1.5 text-sm"
-            style={{ borderColor: 'var(--neutral-300)', color: 'var(--neutral-800)' }}
-          >
-            <option value="">All departments</option>
-            {compliance.byDepartment.map((d) => (
-              <option key={d.department} value={d.department}>{d.department}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <ChartCard
-        title={`Employees who completed their ${REQUIRED_TRAININGS_PER_YEAR} required trainings`}
-        caption={`Each employee must attend ${REQUIRED_TRAININGS_PER_YEAR} trainings per year · counts finished trainings marked Present · ${fmt(scope.total)} employees · ${currentYear}`}
-        loading={loading}
-      >
-        <ComplianceBar met={scope.met} partial={scope.partial} none={scope.none} height={28} showCounts />
-        <div className="mt-2 flex flex-wrap gap-4">
-          <LegendSwatch color={COMPLIANCE_COLORS.met} label={`Completed ${REQUIRED_TRAININGS_PER_YEAR} of ${REQUIRED_TRAININGS_PER_YEAR}`} />
-          <LegendSwatch color={COMPLIANCE_COLORS.partial} label="1 so far, needs 1 more" />
-          <LegendSwatch color={COMPLIANCE_COLORS.none} label={`0 so far, needs ${REQUIRED_TRAININGS_PER_YEAR}`} />
-        </div>
-        <p className="text-body-s mt-5" style={{ color: 'var(--neutral-800)' }}>By department</p>
-        <div className="mt-2 grid items-center gap-x-3 gap-y-2.5 text-[11px]" style={{ gridTemplateColumns: 'minmax(110px, 180px) 1fr 72px', color: 'var(--neutral-600)' }}>
-          {deptCompliance.map((d) => (
-            <Fragment key={d.department}>
-              <button
-                type="button"
-                onClick={() => { setTrainingDept(d.department); setNeedsPage(1); }}
-                className="truncate text-left hover:underline"
-                title={`Show only ${d.department}`}
-              >
-                {d.department}
-              </button>
-              <ComplianceBar met={d.met} partial={d.partial} none={d.none} height={16} />
-              <div className="text-right"><b style={{ color: 'var(--neutral-800)' }}>{d.percentMet}%</b> done</div>
-            </Fragment>
-          ))}
-        </div>
-        <p className="mt-3 text-[11px]" style={{ color: 'var(--neutral-400)' }}>
-          Most complete department first. Click a department to filter this section. Trainings with no attendance marked count for no one.
-        </p>
-      </ChartCard>
-      <ChartCard
-        title="Still needs training"
-        caption={`${fmt(stillNeedsCount)} employee${stillNeedsCount === 1 ? '' : 's'} below ${REQUIRED_TRAININGS_PER_YEAR} of ${REQUIRED_TRAININGS_PER_YEAR} · fewest trainings first`}
-        loading={loading}
-        action={
-          <button type="button" onClick={exportStillNeeds} disabled={stillNeeds.length === 0} className="btn btn-secondary btn-sm shrink-0 disabled:opacity-40">
-            Export list
-          </button>
-        }
-      >
-        <div className="flex flex-wrap gap-1.5 text-[11px]">
-          {([
-            ['all', `All ${stillNeedsCount}`],
-            ['none', `0 of ${REQUIRED_TRAININGS_PER_YEAR} · ${scope.none}`],
-            ['partial', `1 of ${REQUIRED_TRAININGS_PER_YEAR} · ${scope.partial}`],
-          ] as const).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => { setNeedsFilter(key); setNeedsPage(1); }}
-              className="rounded-full border px-2.5 py-1"
-              style={needsFilter === key
-                ? { background: 'var(--color-primary-900)', borderColor: 'var(--color-primary-900)', color: 'var(--color-white)' }
-                : { borderColor: 'var(--neutral-200)', color: 'var(--neutral-600)' }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {stillNeeds.length === 0 ? (
-          <p className="text-body-s py-8 text-center" style={{ color: 'var(--neutral-400)' }}>
-            {loading ? 'Loading…' : 'Everyone here has met the requirement.'}
-          </p>
-        ) : (
-          <>
-            <div className="abyan-table-wrap mt-3">
-              <table className="abyan-table w-full min-w-[640px] text-left">
-                <thead>
-                  <tr className="border-b" style={{ borderColor: 'var(--neutral-200)', color: 'var(--neutral-500)' }}>
-                    <th className="px-3 py-2.5 font-semibold">Employee</th>
-                    <th className="px-3 py-2.5 font-semibold">Department</th>
-                    <th className="px-3 py-2.5 font-semibold">Position</th>
-                    <th className="px-3 py-2.5 text-right font-semibold">Trainings completed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {needsPageRows.map((e) => (
-                    <tr key={e.id} className="border-b last:border-b-0 hover:bg-[var(--bg-row-hover)]" style={{ borderColor: 'var(--neutral-100)' }}>
-                      <td className="px-3 py-2.5 font-medium" style={{ color: 'var(--neutral-800)' }}>{e.name}</td>
-                      <td className="px-3 py-2.5" style={{ color: 'var(--neutral-600)' }}>{e.department}</td>
-                      <td className="px-3 py-2.5" style={{ color: 'var(--neutral-600)' }}>{e.position || '—'}</td>
-                      <td className="px-3 py-2.5 text-right">
-                        <span className={`badge ${e.completed === 0 ? 'badge-error' : 'badge-warning'}`}>
-                          {e.completed} / {REQUIRED_TRAININGS_PER_YEAR}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <nav
-              aria-label="Still needs training pages"
-              className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t pt-3"
-              style={{ borderColor: 'var(--neutral-200)' }}
-            >
-              <p className="!mb-0 text-xs" style={{ color: 'var(--neutral-600)' }}>
-                Showing {needsPageStart + 1}–{needsPageStart + needsPageRows.length} of {fmt(stillNeeds.length)} entries
-              </p>
-              {needsPageCount > 1 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNeedsPage(needsCurrentPage - 1)}
-                    disabled={needsCurrentPage === 1}
-                    className="inline-flex h-10 items-center gap-1 rounded-lg border border-[#E2E8F0] bg-white px-4 text-sm font-medium text-[#28343D] hover:border-[#C8D1FF] hover:bg-[#EEF0FF] disabled:cursor-not-allowed disabled:border-[#E2E8F0] disabled:bg-[#F8FAFC] disabled:text-[#94A3B8]"
-                  >
-                    <ChevronLeft className="h-4 w-4" /> Previous
-                  </button>
-                  {needsPageNumbers.map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setNeedsPage(n)}
-                      aria-label={`Page ${n}`}
-                      aria-current={n === needsCurrentPage ? 'page' : undefined}
-                      className={`h-10 w-10 rounded-lg text-sm font-medium ${
-                        n === needsCurrentPage
-                          ? 'bg-[#363EE8] text-white'
-                          : 'border border-[#E2E8F0] bg-white text-[#28343D] hover:border-[#C8D1FF] hover:bg-[#EEF0FF]'
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setNeedsPage(needsCurrentPage + 1)}
-                    disabled={needsCurrentPage === needsPageCount}
-                    className="inline-flex h-10 items-center gap-1 rounded-lg border border-[#E2E8F0] bg-white px-4 text-sm font-medium text-[#28343D] hover:border-[#C8D1FF] hover:bg-[#EEF0FF] disabled:cursor-not-allowed disabled:border-[#E2E8F0] disabled:bg-[#F8FAFC] disabled:text-[#94A3B8]"
-                  >
-                    Next <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-            </nav>
-          </>
-        )}
-      </ChartCard>
     </div>
   );
 };
@@ -943,7 +927,7 @@ export const LNDDashboard = ({
         <main className="min-w-0 flex-1">
           {effectiveModule === 'dashboard' ? (
             <div className="dash-lg">
-              <LndDashboardContent />
+              <LndDashboardContent onNavigate={viewOnly ? undefined : setActiveModule} />
             </div>
           ) : effectiveModule === 'summary-of-ratings' ? (
             <LndSummaryOfRatings />

@@ -98,3 +98,16 @@
 .dash-lg .pmdash .pd-legend { font-size: 16.8px; }
 .dash-lg .pmdash .pd-callout { font-size: 16.8px; }
 .dash-lg .pmdash .pd-avatar { font-size: 16.8px; }
+/* ---- L&D dashboard additions (lnd-dashboard.css, 1.4x by hand) ---- */
+.dash-lg .rspdash.lnddash .ld-crumbs { font-size: 16.8px; }
+.dash-lg .rspdash.lnddash .ld-hero-note { font-size: 16.8px; }
+.dash-lg .rspdash.lnddash .rd-select select { font-size: 16.8px; }
+.dash-lg .rspdash.lnddash .ld-caption { font-size: 16.8px; }
+.dash-lg .rspdash.lnddash .ld-muted { font-size: 15.4px; }
+.dash-lg .rspdash.lnddash .ld-empty-t { font-size: 19.6px; }
+.dash-lg .rspdash.lnddash .ld-empty-d { font-size: 16.8px; }
+.dash-lg .rspdash.lnddash .ld-row { font-size: 16.8px; }
+.dash-lg .rspdash.lnddash .ld-cbar i { font-size: 16.8px; }
+.dash-lg .rspdash.lnddash .ld-heat { font-size: 15.4px; }
+.dash-lg .rspdash.lnddash .ld-heat-scale span { font-size: 15.4px; }
+.dash-lg .rspdash.lnddash .rd-seg-light button { font-size: 16.8px; }

@@ -1,0 +1,77 @@
+/* ============================================================================
+   L&D dashboard additions. The page reuses rsp-dashboard.css (.rspdash: hero,
+   segmented toggle, select, section header, stat strip, card, bar, legend,
+   table, pills); this file adds only what that one lacks. Scoped to
+   .rspdash.lnddash, so an RSP-only edit there can't be undone here, but note
+   that changing a shared .rd-* rule also changes this page.
+   Colors are the --rd-* tokens from rsp-dashboard.css or abyan-tokens.css.
+   Font sizes here have 1.4x twins in dashboard-scale.css.
+   ============================================================================ */
+
+/* ── Hero ─────────────────────────────────────────────────────────────────── */
+.rspdash.lnddash .ld-crumbs { font-size: 12px; color: rgba(255, 255, 255, .85); margin-bottom: 4px; }
+.rspdash.lnddash .ld-crumbs b { color: #fff; font-weight: 600; }
+.rspdash.lnddash .ld-controls { display: flex; flex-direction: column; gap: 6px; }
+.rspdash.lnddash .ld-hero-note { font-size: 12px; color: rgba(255, 255, 255, .8); }
+/* A native select is as wide as its longest option; office names are long. */
+.rspdash.lnddash .rd-select select { max-width: 260px; text-overflow: ellipsis; }
+
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.rspdash.lnddash .rd-sec-h .rd-link { white-space: nowrap; }
+.rspdash.lnddash .ld-two { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: stretch; }
+.rspdash.lnddash .ld-panel { display: flex; flex-direction: column; }
+.rspdash.lnddash .ld-panel > .rd-h { align-items: flex-start; }
+.rspdash.lnddash .ld-caption { font-size: 12px; color: var(--rd-ink-2); margin-top: 2px; }
+.rspdash.lnddash .ld-muted { font-size: 11px; color: var(--rd-ink-2); }
+.rspdash.lnddash .ld-sub-gap { margin-top: 14px; margin-bottom: 8px; display: block; }
+.rspdash.lnddash .ld-legend-gap { margin-top: 8px; }
+.rspdash.lnddash .ld-loading { opacity: .55; transition: opacity 150ms ease-out; }
+
+/* ── Empty state (§12: icon, title, what fills it) ────────────────────────── */
+.rspdash.lnddash .ld-empty { flex: 1; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; padding: 24px 16px; border: 1px dashed var(--rd-line); border-radius: 10px; }
+.rspdash.lnddash .ld-empty-ico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--rd-accent-soft); color: var(--rd-accent); margin-bottom: 4px; }
+.rspdash.lnddash .ld-empty-t { font-size: 14px; font-weight: 600; color: var(--rd-ink); }
+.rspdash.lnddash .ld-empty-d { font-size: 12px; color: var(--rd-ink-2); max-width: 320px; }
+
+/* ── Bar-list rows: label, bar, right-aligned count ───────────────────────── */
+.rspdash.lnddash .ld-rows { display: grid; gap: 10px; }
+.rspdash.lnddash .ld-row { display: grid; grid-template-columns: minmax(110px, 200px) 1fr 64px; gap: 10px; align-items: center; font-size: 12px; color: var(--rd-ink-2); }
+.rspdash.lnddash .ld-row-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.rspdash.lnddash .ld-row-n { text-align: right; color: var(--rd-ink); font-weight: 600; white-space: nowrap; }
+.rspdash.lnddash .ld-row-btn { color: var(--rd-accent); }
+.rspdash.lnddash .ld-row-btn:hover { text-decoration: underline; }
+.rspdash.lnddash .ld-row-btn:focus-visible { outline: 2px solid var(--rd-accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ── 0 / 1 / 2-of-2 compliance bar ────────────────────────────────────────── */
+.rspdash.lnddash .ld-cbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--rd-line); }
+.rspdash.lnddash .ld-cbar i { display: flex; align-items: center; padding-left: 8px; overflow: hidden; white-space: nowrap; font-style: normal; font-size: 12px; font-weight: 600; color: #fff; }
+.rspdash.lnddash .ld-cbar-lg { height: 28px; }
+
+/* ── Heatmap ──────────────────────────────────────────────────────────────── */
+.rspdash.lnddash .ld-heat-scroll { overflow-x: auto; }
+.rspdash.lnddash .ld-heat { display: grid; gap: 4px; align-items: center; min-width: 560px; font-size: 11px; color: var(--rd-ink-2); }
+.rspdash.lnddash .ld-heat-col { text-align: center; font-weight: 600; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rspdash.lnddash .ld-heat-row { padding-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rspdash.lnddash .ld-heat-cell { height: 26px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+.rspdash.lnddash .ld-heat-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 14px; }
+.rspdash.lnddash .ld-heat-scale { display: flex; border-radius: 4px; overflow: hidden; }
+.rspdash.lnddash .ld-heat-scale span { width: 58px; padding: 4px 0; text-align: center; font-size: 11px; font-weight: 600; }
+
+/* ── Still needs training ─────────────────────────────────────────────────── */
+.rspdash.lnddash .ld-filter { display: inline-flex; margin-bottom: 12px; }
+.rspdash.lnddash .ld-filter button:focus-visible { outline: 2px solid var(--rd-accent); outline-offset: -2px; }
+.rspdash.lnddash .ld-table-scroll { overflow-x: auto; margin-bottom: 12px; }
+.rspdash.lnddash .ld-table { min-width: 560px; }
+.rspdash.lnddash .ld-table tbody tr:hover { background: var(--bg-row-hover); }
+.rspdash.lnddash .ld-strong { font-weight: 500; }
+
+@media (max-width: 1100px) {
+  .rspdash.lnddash .ld-two { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  /* rsp-dashboard.css only collapses 4-up strips; do the same for 3-up. */
+  .rspdash.lnddash .rd-s3 { grid-template-columns: 1fr; }
+  .rspdash.lnddash .rd-s3 .rd-stat { border-right: 0; border-bottom: 1px solid var(--rd-line); }
+  .rspdash.lnddash .rd-s3 .rd-stat:last-child { border-bottom: 0; }
+  .rspdash.lnddash .ld-row { grid-template-columns: minmax(90px, 130px) 1fr 56px; }
+}
