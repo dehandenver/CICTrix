@@ -30,6 +30,7 @@
     "recharts": "^3.8.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.0",
     "@types/react": "^18.2.43",
