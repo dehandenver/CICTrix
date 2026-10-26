@@ -21,6 +21,8 @@ export interface RailNavItem {
   onSelect?: () => void;
   /** Hover tooltip, e.g. the item's sublabel. */
   title?: string;
+  /** A count drawn on the icon chip, e.g. items waiting for review. Hidden at 0. */
+  badge?: { count: number; label: string };
 }
 
 const CLOSE_DELAY_MS = 250;              // grace period so brushing past the edge doesn't snap it shut
@@ -124,16 +126,21 @@ export function RailNav({ items, label = 'Main navigation' }: { items: RailNavIt
 
   const renderItem = (item: RailNavItem) => {
     const Icon = item.icon;
+    const badge = item.badge && item.badge.count > 0 ? item.badge : null;
     const shared = {
       ref: (el: HTMLElement | null) => { if (el) itemRefs.current.set(item.path, el); else itemRefs.current.delete(item.path); },
       className: `rail-item${item.isActive ? ' active' : ''}`,
-      'aria-label': item.label,
+      // The chip's count is aria-hidden, so it is spoken as part of the name.
+      'aria-label': badge ? `${item.label}, ${badge.count} ${badge.label}` : item.label,
       'aria-current': item.isActive ? ('page' as const) : undefined,
       title: item.title,
     };
     const content = (
       <>
-        <span className="rail-chip"><Icon size={20} strokeWidth={1.75} aria-hidden /></span>
+        <span className="rail-chip">
+          <Icon size={20} strokeWidth={1.75} aria-hidden />
+          {badge && <span className="rail-badge" aria-hidden="true">{badge.count}</span>}
+        </span>
         <span className="rail-label">{item.label}</span>
       </>
     );

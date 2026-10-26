@@ -24,6 +24,7 @@ import {
   GitCompare
 } from 'lucide-react';
 import { PortalHeader } from '../../../components/portal-header';
+import { RailNav, type RailNavItem } from '../../../components/RailNav';
 import { readEmployeeSession } from '../../../lib/employeeSession';
 import { supabase } from '../../../lib/supabase';
 import {
@@ -167,6 +168,17 @@ const INITIAL_RATINGS: EmployeeRating[] = [
 const INITIAL_TRANSMITTALS: TransmittalRecord[] = [
   { id: 'TX-001', batchId: 'BATCH-2025-01', verifiedCount: 4, transmittedAt: '2026-06-28 14:30', status: 'In PM Vault' },
   { id: 'TX-002', batchId: 'BATCH-2025-02', verifiedCount: 3, transmittedAt: '2026-06-29 09:15', status: 'In PM Vault' }
+];
+
+type OfficeTabId = 'ipcr' | 'training-requests' | 'training-attendees' | 'critical-positions' | 'gap-analysis';
+
+/** Console sections, in rail order. The sublabel is the item's tooltip, as in L&D and PM. */
+const OFFICE_TABS: { id: OfficeTabId; label: string; sublabel: string; icon: RailNavItem['icon'] }[] = [
+  { id: 'ipcr', label: 'IPCR', sublabel: 'Targets & ratings validation', icon: ClipboardCheck },
+  { id: 'training-requests', label: 'Training Request', sublabel: 'Guidance & WSM Prioritization', icon: GraduationCap },
+  { id: 'training-attendees', label: 'Training Courses', sublabel: "Review L&D's list, add, send back", icon: UserCheck },
+  { id: 'critical-positions', label: 'Critical Positions', sublabel: 'Manage & configure requirements', icon: Target },
+  { id: 'gap-analysis', label: 'Gap Analysis', sublabel: 'Compare employees vs. requirements', icon: GitCompare },
 ];
 
 export const OfficeAccountConsole: React.FC = () => {
@@ -351,7 +363,7 @@ export const OfficeAccountConsole: React.FC = () => {
     void refreshPendingApprovals();
   };
   const switchEnabled = officeRole !== null;
-  const [activeTab, setActiveTab] = useState<'ipcr' | 'training-requests' | 'training-attendees' | 'critical-positions' | 'gap-analysis'>('ipcr');
+  const [activeTab, setActiveTab] = useState<OfficeTabId>('ipcr');
   const [ipcrSubtab, setIpcrSubtab] = useState<'targets' | 'ratings'>('targets');
 
   // Subtabs
@@ -645,97 +657,20 @@ export const OfficeAccountConsole: React.FC = () => {
           : undefined}
       />
 
-      {/* ── Main Layout ── */}
-      <div className="flex flex-col lg:flex-row">
-        {/* Sidebar — horizontal tab strip under lg, fixed column at lg+ */}
-        <aside className="w-full shrink-0 border-b border-slate-200 bg-white px-3 py-3 print:hidden lg:min-h-[calc(100vh-70px)] lg:w-64 lg:border-b-0 lg:border-r lg:py-4">
-          <div className="mb-2 px-3 lg:mb-4">
-            <span className="text-[10px] uppercase font-semibold text-black tracking-wider">Office Console</span>
-          </div>
-          <nav className="flex gap-1.5 overflow-x-auto lg:flex-col lg:space-y-1.5">
-            <button
-              onClick={() => setActiveTab('ipcr')}
-              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'ipcr' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-                }`}
-            >
-              <ClipboardCheck className={`h-5 w-5 ${activeTab === 'ipcr' ? 'text-white' : 'text-black'}`} />
-              <div>
-                <p className={`text-sm font-semibold leading-tight whitespace-nowrap lg:whitespace-normal ${activeTab === 'ipcr' ? 'text-white' : 'text-black'}`}>
-                  IPCR
-                </p>
-                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'ipcr' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
-                  Targets &amp; ratings validation
-                </p>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('training-requests')}
-              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'training-requests' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-                }`}
-            >
-              <GraduationCap className={`h-5 w-5 ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`} />
-              <div>
-                <p className={`text-sm font-semibold leading-tight whitespace-nowrap lg:whitespace-normal ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`}>
-                  Training Request
-                </p>
-                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'training-requests' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
-                  Guidance & WSM Prioritization
-                </p>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('training-attendees')}
-              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'training-attendees' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-                }`}
-            >
-              <UserCheck className={`h-5 w-5 ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`} />
-              <div className="flex-1">
-                <p className={`text-sm font-semibold leading-tight flex items-center gap-2 whitespace-nowrap lg:whitespace-normal ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`}>
-                  Training Courses
-                  {recsToReview.length > 0 && (
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${activeTab === 'training-attendees' ? 'bg-white text-indigo-700' : 'bg-indigo-600 text-white'
-                      }`}>
-                      {recsToReview.length}
-                    </span>
-                  )}
-                </p>
-                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'training-attendees' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
-                  Review L&amp;D's list, add, send back
-                </p>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('critical-positions')}
-              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'critical-positions' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-                }`}
-            >
-              <Target className={`h-5 w-5 ${activeTab === 'critical-positions' ? 'text-white' : 'text-black'}`} />
-              <div>
-                <p className={`text-sm font-semibold leading-tight whitespace-nowrap lg:whitespace-normal ${activeTab === 'critical-positions' ? 'text-white' : 'text-black'}`}>
-                  Critical Positions
-                </p>
-                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'critical-positions' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
-                  Manage & configure requirements
-                </p>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('gap-analysis')}
-              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'gap-analysis' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-                }`}
-            >
-              <GitCompare className={`h-5 w-5 ${activeTab === 'gap-analysis' ? 'text-white' : 'text-black'}`} />
-              <div>
-                <p className={`text-sm font-semibold leading-tight whitespace-nowrap lg:whitespace-normal ${activeTab === 'gap-analysis' ? 'text-white' : 'text-black'}`}>
-                  Gap Analysis
-                </p>
-                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'gap-analysis' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
-                  Compare employees vs. requirements
-                </p>
-              </div>
-            </button>
-          </nav>
-        </aside>
+      {/* ── Main Layout: side rail (§9.12), as in the L&D, RSP and PM portals ── */}
+      <div className="flex">
+        <RailNav
+          label="Office Console"
+          items={OFFICE_TABS.map((tab) => ({
+            path: `office:${tab.id}`,
+            label: tab.label,
+            icon: tab.icon,
+            isActive: activeTab === tab.id,
+            onSelect: () => setActiveTab(tab.id),
+            title: `${tab.label} · ${tab.sublabel}`,
+            badge: tab.id === 'training-attendees' ? { count: recsToReview.length, label: 'to review' } : undefined,
+          }))}
+        />
 
         {/* Content Body */}
         <main className="min-w-0 flex-1 space-y-6 p-4 sm:p-6">
