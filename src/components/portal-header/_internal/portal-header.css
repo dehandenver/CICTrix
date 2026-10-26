@@ -1,14 +1,23 @@
 /* Portal top bar (DESIGN_IDENTITY §8.2). The root carries `.abyan-ds`, so every
-   value below is a token from abyan-tokens.css and text inherits its colour.
-   globals.css styles `button:hover` (specificity 0,1,1), so each button here
-   states its own :hover with two classes to win. */
+   value below is a token from abyan-tokens.css.
+
+   Colour, and why every colour rule below starts with `.ph`:
+   - abyan-tokens.css gives `.abyan-ds` itself `color: var(--neutral-800)`. On the
+     root that ties with any one-class rule here, so the winner depended on which
+     stylesheet a page happened to load last; on RSP the name, role and avatar
+     came out dark. The bar's white therefore lives on `.ph-bar`, which is not
+     the `.abyan-ds` element.
+   - `.abyan-ds :where(span, p, …) { color: inherit }` (0,1,0) and globals.css
+     `span, p … { color }` (0,0,1) would likewise tie with or beat a one-class
+     rule. Two classes (0,2,0) win over both, whatever the load order.
+   globals.css also styles `button:hover` (0,1,1), so each button states its own
+   :hover with two classes. */
 
 .ph {
   position: sticky;
   top: 0;
   z-index: 40;
   background: var(--color-primary);
-  color: var(--color-white);
   box-shadow: var(--shadow-2);
 }
 
@@ -16,7 +25,8 @@
   .ph { display: none; }
 }
 
-.ph-bar {
+.ph .ph-bar {
+  color: var(--color-white);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -54,7 +64,8 @@
 /* ── Right side ── */
 .ph-right { display: flex; align-items: center; gap: 12px; flex: none; }
 
-.ph-mock {
+.ph .ph-mock {
+  color: var(--color-white);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -81,7 +92,7 @@
 .ph .ph-icon-btn:hover { background: var(--on-blue-active); }
 .ph .ph-icon-btn:focus-visible { outline: 2px solid var(--color-white); outline-offset: 2px; }
 
-.ph-badge {
+.ph .ph-badge {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -96,7 +107,8 @@
 }
 
 .ph-user { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.ph-avatar {
+.ph .ph-avatar {
+  color: var(--color-white);
   width: 36px;
   height: 36px;
   display: grid;
@@ -109,11 +121,11 @@
 .ph .ph-avatar-btn:hover { background: rgba(255, 255, 255, .30); }
 .ph .ph-avatar-btn:focus-visible { outline: 2px solid var(--color-white); outline-offset: 2px; }
 .ph-user-meta { display: flex; flex-direction: column; min-width: 0; max-width: 16rem; }
-.ph-user-name { font: 600 14px/18px var(--font-sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ph-user-role { font: 400 12px/16px var(--font-sans); color: var(--on-blue-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph .ph-user-name { font: 600 14px/18px var(--font-sans); color: var(--color-white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph .ph-user-role { font: 400 12px/16px var(--font-sans); color: var(--on-blue-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ph-divider { width: 1px; height: 28px; background: rgba(255, 255, 255, .25); flex: none; }
 
-/* Header Logout (§9.1): glass rectangle, label and icon always white. */
+/* Header Logout (§9.1): glass pill, label and icon always white. */
 .ph .ph-logout {
   display: inline-flex;
   align-items: center;
@@ -123,7 +135,7 @@
   min-height: 44px;
   padding: 0 16px;
   border: 1px solid rgba(255, 255, 255, .35);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, .12);
   color: var(--color-white);
   font: 600 14px/18px var(--font-sans);
@@ -131,11 +143,14 @@
   transition: background var(--duration-fast), box-shadow var(--duration-fast);
 }
 .ph .ph-logout:hover { background: rgba(255, 255, 255, .20); }
+/* Pressed keeps the hover fill (white label 4.6:1) and sinks; a lighter fill would drop under AA. */
+.ph .ph-logout:active { background: rgba(255, 255, 255, .20); box-shadow: inset 0 2px 4px rgba(4, 14, 107, .35); }
 .ph .ph-logout:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--on-blue-border); }
+.ph .ph-logout-label { color: var(--color-white); }
 
 /* ── Popovers (notifications, account switch): elevation 2, radius 12px ── */
 .ph-pop-anchor { position: relative; }
-.ph-pop {
+.ph .ph-pop {
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
@@ -151,7 +166,7 @@
   box-shadow: var(--shadow-2);
   text-align: left;
 }
-.ph-pop-head {
+.ph .ph-pop-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -160,30 +175,30 @@
   font: 600 14px/20px var(--font-sans);
   color: var(--color-primary-900);
 }
-.ph-pop-new {
+.ph .ph-pop-new {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   background: var(--color-primary-50);
   color: var(--color-primary-700);
   font: 600 12px/16px var(--font-sans);
 }
-.ph-pop-empty { padding: 24px 16px; text-align: center; font: 500 14px/18px var(--font-sans); color: var(--neutral-600); }
+.ph .ph-pop-empty { padding: 24px 16px; text-align: center; font: 500 14px/18px var(--font-sans); color: var(--neutral-600); }
 .ph-pop-list { list-style: none; margin: 0; padding: 0; }
 .ph-pop-item { display: flex; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--neutral-200); }
 .ph-pop-item:first-child { border-top: 0; }
 .ph-pop-item.is-unread { background: var(--color-primary-50); }
-.ph-pop-item svg { flex: none; margin-top: 2px; color: var(--color-primary); }
-.ph-pop-item.is-alert svg { color: var(--error-500); }
-.ph-pop-title { margin: 0; font: 600 14px/18px var(--font-sans); color: var(--color-primary-900); }
-.ph-pop-msg { margin: 2px 0 0; font: 500 13px/18px var(--font-sans); color: var(--neutral-800); overflow-wrap: anywhere; }
-.ph-pop-time { margin: 4px 0 0; font: 500 12px/16px var(--font-sans); color: var(--neutral-600); }
+.ph .ph-pop-item svg { flex: none; margin-top: 2px; color: var(--color-primary); }
+.ph .ph-pop-item.is-alert svg { color: var(--error-500); }
+.ph .ph-pop-title { margin: 0; font: 600 14px/18px var(--font-sans); color: var(--color-primary-900); }
+.ph .ph-pop-msg { margin: 2px 0 0; font: 500 13px/18px var(--font-sans); color: var(--neutral-800); overflow-wrap: anywhere; }
+.ph .ph-pop-time { margin: 4px 0 0; font: 500 12px/16px var(--font-sans); color: var(--neutral-600); }
 
 .ph-switch { width: 260px; padding: 16px; }
-.ph-switch p { margin: 0 0 12px; font: 600 14px/20px var(--font-sans); color: var(--color-primary-900); }
+.ph .ph-switch p { margin: 0 0 12px; font: 600 14px/20px var(--font-sans); color: var(--color-primary-900); }
 .ph-switch-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* ── Optional module navigation row (e.g. the Employee portal tabs) ── */
-.ph-nav { padding: 0 24px 12px; }
+.ph .ph-nav { padding: 0 24px 12px; color: var(--color-white); }
 
 /* ── Responsive (§8.2, §8.3) ── */
 @media (max-width: 1023px) {
@@ -198,10 +213,10 @@
   .ph-user-meta, .ph-divider, .ph-mock-label { display: none; }
   .ph-logout-label { display: none; }
   .ph .ph-logout { padding: 0; }
-  .ph-nav { padding: 0 16px 12px; }
+  .ph .ph-nav { padding: 0 16px 12px; }
   /* Anchored to a 44px icon, a 320px panel runs off the left edge, so on
      phones it spans the viewport under the 56px bar instead. */
-  .ph-pop { position: fixed; top: 64px; left: 16px; right: 16px; width: auto; max-width: none; }
+  .ph .ph-pop { position: fixed; top: 64px; left: 16px; right: 16px; width: auto; max-width: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

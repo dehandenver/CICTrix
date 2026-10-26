@@ -456,7 +456,7 @@ Tables scroll horizontally inside their container on small screens. Toolbars wra
 |---|---|
 | **Solid white** | Bg `#FFFFFF`, text/icon `#363EE8` or `#040E6B`, soft shadow. E.g. **Apply for a Job**, **Login** |
 | **Ghost / outline white** | Transparent bg, 1px border `rgba(255,255,255,.5)`, text `#FFFFFF`. E.g. **Track Application** |
-| **Header Logout** | Glass rectangle: bg `rgba(255,255,255,.12)`, 1px border `rgba(255,255,255,.35)`, radius 12px, min 44×44px, padding `0 16px`, Poppins SemiBold 14px. Leading `log-out` icon 16px. **The "Logout" label and the icon are always `#FFFFFF`**, in every portal and state. Hover bg `rgba(255,255,255,.20)`; focus ring `0 0 0 3px rgba(255,255,255,.5)`. Below 640px the label hides and the button becomes icon-only, still 44×44px with `aria-label="Logout"`. |
+| **Header Logout** | Glass pill: bg `rgba(255,255,255,.12)`, 1px border `rgba(255,255,255,.35)`, radius `--radius-pill` (999px; a circle when icon-only), min 44×44px, padding `0 16px`, Poppins SemiBold 14px. Leading `log-out` icon 16px. **The "Logout" label and the icon are always `#FFFFFF`**, in every portal and state. Hover bg `rgba(255,255,255,.20)`; pressed keeps that fill and adds an inset shadow `inset 0 2px 4px rgba(4,14,107,.35)` (a lighter fill would drop the label under 4.5:1); focus ring `0 0 0 3px rgba(255,255,255,.5)`. Below 640px the label hides and the button becomes icon-only, still 44×44px with `aria-label="Logout"`. |
 
 > **Logout label must be white.** The legacy `globals.css` sets a dark `color` directly on every `span`, `p`, `label`, `a` and `button`. A `<span>Logout</span>` inside a white button therefore renders **dark** unless the span gets its own white color. Always set `color: #FFFFFF` on the label element itself (or render it inside an `.abyan-ds` scope, which resets text to inherit).
 
@@ -472,7 +472,7 @@ Tables scroll horizontally inside their container on small screens. Toolbars wra
   just when the user is waiting to find out whether it worked. Reserve the
   width so nothing reflows. Use `.btn.is-loading`, or the shared `Button`'s
   `loading` prop.
-- Don't use square or slightly rounded buttons. Rounded-rectangles (12px) are reserved for the header **Login** and **Logout** buttons, nav pills, and pagination.
+- Don't use square or slightly rounded buttons. Rounded-rectangles (12px) are reserved for the header **Login** button, nav pills, and pagination. The header **Logout** is a pill like every other button (changed 2026-10-26 to match the RSP header).
 
 > **Note:** The button kit lists the Small **Secondary** height as 45px, which appears to be a typo. Use **36px** for all Small buttons.
 
@@ -1137,7 +1137,7 @@ These were found while compiling this guide and should be resolved by the design
 5. **Primary button color** in the kit appears slightly more violet than `#363EE8`. This guide standardizes on `#363EE8` → `#191FA8` for the gradient. Update tokens if the design file uses a different value.
 6. **KPI card reference** was described but no image was attached; §9.7 follows the description (small icon + KPI title). Adjust if the source mock differs.
 7. **Logo file** is referenced as `USWAG (3)`. Add the final SVG to the repo (e.g. `/assets/brand/abyan-logo.svg`) and reference that path here.
-8. **Legacy global text color.** `src/styles/globals.css` sets `color: var(--text-primary)` directly on `span, p, label, button, a` and headings, so they ignore their parent's color. This is why Logout labels rendered dark on the blue header. It is patched per component for now: explicit white on header labels, and a text-inherit reset inside `.abyan-ds`. Remove the global rule once every portal uses the token file.
+8. **Legacy global text color.** `src/styles/globals.css` sets `color: var(--text-primary)` directly on `span, p, label, button, a` and headings, so they ignore their parent's color. This is why Logout labels rendered dark on the blue header. It is patched per component for now: explicit white on header labels, and a text-inherit reset inside `.abyan-ds`. Remove the global rule once every portal uses the token file. A related trap: the token block also gives `.abyan-ds` itself `color: var(--neutral-800)`, which ties with any one-class colour rule on the same element, so load order decides. Set colours with two classes (e.g. `.ph .ph-user-name`), or on a child that isn't the `.abyan-ds` element; this is why the shared header's name and role rendered dark on some portals until 2026-10-26.
 9. ~~**Admin header lockup.**~~ **Resolved** 2026-10-26: every signed-in portal (RSP, L&D, PM, Super Admin, Interviewer, Department Head, Employee) renders the shared `PortalHeader` (`src/components/portal-header/`), which uses the single-line lockup in §8.2.
 10. ~~**Side navigation: Settings has no active state.**~~ **Resolved** in the RSP rollout: the highlight lives on the rail itself (not inside a single nav group), so it can travel to Settings too. See §9.12 implementation notes.
 11. ~~**Side navigation: focus ring on the active item.**~~ **Resolved** in the RSP rollout: the active item's focus ring is `--color-primary` instead of white when the rail is open. See §9.12 implementation notes.
