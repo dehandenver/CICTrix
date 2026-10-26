@@ -77,7 +77,13 @@ summary: Five tasks done one at a time — L&D dashboard to the RSP dashboard pa
 - **Logout as a pill.** Radius `--radius-pill`, existing translucent fill and thin light border, white icon and SemiBold white label, with hover, focus-visible and a new active state. The height stays 44px, the same component RSP uses. This changes DESIGN_IDENTITY.md §9.1 ("Header Logout: glass rectangle, radius 12px"), so the guide is updated in the same change. The avatar stays a translucent circle with the divider before Logout.
 - **Verify.** Side-by-side screenshots of RSP, Office Account and Employee at 1366px and 375px, computed colours checked in the browser, and WCAG AA contrast ratios for every text and icon colour on `--color-primary`.
 
-**Part B, sidebar.** Not yet received; to be planned when its text arrives.
+**Part B, Office Account sidebar (received 2026-10-26).** The Office console's wide white "OFFICE CONSOLE" panel becomes the shared `RailNav` (§9.12), the same rail L&D, RSP and PM use.
+- **Variant:** §9.12's collapsible rail. It is a 72px icon rail that opens to 256px with text labels on hover, keyboard focus or tap, which is the guide's labelled variant; there is no separate always-expanded variant. Items are buttons (`onSelect`), because the console switches sections in place, as L&D and PM do.
+- **Labels:** each item keeps its label (shown when open, and as its `aria-label`), and its old sublabel becomes the tooltip ("IPCR · Targets & ratings validation"). The "Office Console" heading becomes the rail landmark's accessible name (`<aside aria-label="Office Console">`); a visible heading has no place in the §9.12 rail.
+- **Badge:** Training Courses carried a count of recommendations to review. `RailNavItem` gains an optional `badge` count, drawn on the icon chip in tokens and added to the item's accessible name, so the count isn't lost.
+- **No logic change:** the same five items, `activeTab` state, active detection and role-gated content. There is no Settings item, so nothing is pinned to the bottom.
+- **Layout:** the page becomes `[rail][main]` as in the other portals, replacing the mobile horizontal strip with the rail, which §9.12 keeps at every width.
+- **Verify:** the content (title, "Phase 1" heading, cards) for overlap and double scrollbars at 1366, 768 and 375 px. The Employee portal has no sidebar; its sections are tabs in the header's nav row.
 
 ## Decisions (2026-10-26 approval)
 
