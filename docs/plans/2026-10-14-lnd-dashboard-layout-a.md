@@ -13,6 +13,10 @@ sensible sizing, and can tell which employees still have not met the mandated
 
 ## Approach
 
+> **Superseded 2026-10-26** for the header and summary cards by
+> `docs/plans/2026-10-26-lnd-dashboard-office-pager-required-icon-work-experience.md`
+> (RSP dashboard pattern). The chart rows below still apply.
+
 Mockup: `docs/mockups/2026-10-14-lnd-dashboard-layout-a.html` (v5 from the
 ui-preview session). Layout comes from the mockup; colors and components come
 from `DESIGN_IDENTITY.md` / `abyan-tokens.css`, not the mockup's hex values.
