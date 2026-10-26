@@ -187,22 +187,5 @@ export const buildKpiSets = (rows: CandidateRow[], todayKey: string): Record<Kpi
   return { pending, today, completed };
 };
 
-// Design Identity §9.6: first, last, current ±1, with ellipses past 7 pages.
-export const getPageList = (current: number, total: number): Array<number | 'gap'> => {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages = new Set([1, total, current - 1, current, current + 1]);
-  const sorted = [...pages].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
-  const out: Array<number | 'gap'> = [];
-  sorted.forEach((p, i) => {
-    if (i > 0 && p - sorted[i - 1] > 1) out.push('gap');
-    out.push(p);
-  });
-  return out;
-};
-
-export const paginate = <T,>(items: T[], page: number, pageSize: number) => {
-  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
-  const current = Math.min(Math.max(1, page), pageCount);
-  const start = (current - 1) * pageSize;
-  return { pageCount, current, start, pageItems: items.slice(start, start + pageSize) };
-};
+// Moved to the shared helpers; re-exported so existing imports keep working.
+export { getPageList, paginate } from '../../lib/pagination';

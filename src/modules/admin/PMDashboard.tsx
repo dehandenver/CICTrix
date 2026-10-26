@@ -32,6 +32,7 @@ import {
   X} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
+import { useSectionParam } from '../../hooks/useSectionParam';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
@@ -123,6 +124,11 @@ interface PerformanceStats {
 
 const FALLBACK_CYCLES: EvaluationCycle[] = [];
 
+const PM_SECTIONS = [
+  'dashboard', 'office-directory', 'summary-of-ratings', 'ipcr-management', 'competency',
+  'promotions', 'analytics', 'archive', 'weighting', 'settings',
+] as const;
+
 /**
  * `viewOnly` is the super admin looking at this division, not operating it.
  * Distinct from isDashboardView, which is true for the PM admin's own route.
@@ -140,16 +146,10 @@ export const PMDashboard = ({
   const [editingCycle, setEditingCycle] = useState<EvaluationCycle | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'office-directory' | 'summary-of-ratings' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'archive' | 'weighting' | 'settings'
-  >('dashboard');
-
-  // Locked to the dashboard when a super admin is viewing: they have no PM
-  // navigation to leave it with, and a value left over from a previous visit
-  // would otherwise drop them into a working section.
-  useEffect(() => {
-    if (viewOnly) setActiveSection('dashboard');
-  }, [viewOnly]);
+  // Kept in ?module= so a refresh returns to the section. Locked to the
+  // dashboard when a super admin is viewing: they have no PM navigation to
+  // leave it with, and on /admin ?module= names the division.
+  const [activeSection, setActiveSection] = useSectionParam(PM_SECTIONS, 'dashboard', !viewOnly);
 
   const [newCycle, setNewCycle] = useState<{
     title: string;

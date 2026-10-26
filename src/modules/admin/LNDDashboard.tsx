@@ -27,6 +27,7 @@ import {
 import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
 import { RailNav, type RailNavItem } from '../../components/RailNav';
+import { useSectionParam } from '../../hooks/useSectionParam';
 
 import { LndIdpFormSettings } from './LndIdpFormSettings';
 import { SeminarEnrollment } from './SeminarEnrollment';
@@ -81,6 +82,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'office-directory', label: 'Office Directory', sublabel: 'All employees', icon: Users },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
+const LND_MENU_IDS = LND_MENU.map((item) => item.id);
 
 
 // Side navigation rail (DESIGN_IDENTITY.md §9.12), same as the RSP portal.
@@ -902,9 +904,10 @@ const LndDashboardContent = () => {
 export const LNDDashboard = ({
   viewOnly = false,
 }: { isDashboardView?: boolean; viewOnly?: boolean }) => {
-  const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
-  // In view-only mode the section is fixed: there is no navigation to leave it
-  // with, and a stale value from a previous visit would show a working section.
+  // The section lives in ?module= so a refresh returns to it. In view-only mode
+  // it is fixed to the dashboard: there is no navigation to leave it with, and
+  // on /admin ?module= names the division, not an L&D section.
+  const [activeModule, setActiveModule] = useSectionParam(LND_MENU_IDS, 'dashboard', !viewOnly);
   const effectiveModule: MenuId = viewOnly ? 'dashboard' : activeModule;
   // Deep-link support: /admin/lnd?module=archive&office=…&employee=… lands
   // straight on the L&D Archive at a specific office/employee (e.g. from a
@@ -915,12 +918,8 @@ export const LNDDashboard = ({
   });
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const mod = params.get('module');
-    if (mod && LND_MENU.some((m) => m.id === mod)) {
-      setActiveModule(mod as MenuId);
-      if (mod === 'archive') {
-        setArchiveDeepLink({ office: params.get('office'), employee: params.get('employee') });
-      }
+    if (params.get('module') === 'archive') {
+      setArchiveDeepLink({ office: params.get('office'), employee: params.get('employee') });
     }
   }, []);
 
@@ -959,7 +958,10 @@ export const LNDDashboard = ({
           ) : effectiveModule === 'archive' ? (
             <LndArchive initialOffice={archiveDeepLink.office} focusEmployeeId={archiveDeepLink.employee} />
           ) : effectiveModule === 'office-directory' ? (
-            <OfficeDirectorySection showBulkRequest={false} />
+            // Same page gutter PM gives this section; without it the table ran into the rail.
+            <div className="p-4 sm:p-6">
+              <OfficeDirectorySection showBulkRequest={false} />
+            </div>
           ) : effectiveModule === 'idp-form' ? (
             <LndIdpFormSettings />
           ) : (

@@ -1,0 +1,67 @@
+/* ============================================================================
+   Shared pagination (DESIGN_IDENTITY.md §9.6) for src/components/Pagination.tsx.
+   Token values only. The root also carries .abyan-tokens so the variables
+   resolve wherever the pager is placed.
+   ============================================================================ */
+
+.abyan-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: var(--font-sans);
+}
+.abyan-pager :where(span, p, label, button, select) { color: inherit; margin: 0; }
+
+.abyan-pager-info { font: 500 12px/16px var(--font-sans); letter-spacing: .1px; color: var(--neutral-600); }
+.abyan-pager-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+/* "Show [n] entries" (§9.4) */
+.abyan-pager-size { display: inline-flex; align-items: center; gap: 8px; font: 500 14px/18px var(--font-sans); color: var(--color-primary-900); }
+.abyan-pager-size select {
+  height: var(--control-h-compact);
+  padding: 0 28px 0 12px;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  font: 500 14px/18px var(--font-sans);
+  color: var(--color-primary-900);
+  cursor: pointer;
+}
+.abyan-pager-size select:hover { border-color: var(--color-primary-200); }
+.abyan-pager-size select:focus-visible { outline: none; border: 1.5px solid var(--color-primary); box-shadow: var(--ring-input); }
+
+.abyan-pager-btns { display: flex; align-items: center; gap: 8px; }
+.abyan-page {
+  min-width: var(--control-h-compact);
+  height: var(--control-h-compact);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  font: 500 14px/18px var(--font-sans);
+  color: var(--neutral-800);
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+.abyan-page:hover:not(:disabled):not(.is-active) { background: var(--color-primary-50); border-color: var(--color-primary-200); }
+.abyan-page:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.abyan-page.is-active { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-white); }
+.abyan-page:disabled { color: var(--neutral-400); background: var(--bg-disabled); cursor: not-allowed; }
+.abyan-page--nav { padding: 0 16px; }
+.abyan-page-gap { min-width: 20px; text-align: center; color: var(--neutral-400); }
+
+@media (max-width: 639px) {
+  .abyan-pager { justify-content: center; }
+  .abyan-pager-info { width: 100%; text-align: center; }
+  .abyan-pager-right { justify-content: center; }
+  /* Phones keep Previous / current / Next only. */
+  .abyan-page-num, .abyan-page-gap { display: none; }
+  .abyan-page-num.is-active { display: inline-flex; }
+}

@@ -15,6 +15,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { DEFAULT_PAGE_SIZE, paginate } from '../pagination';
 
 const supabase = supabaseClient as any;
 
@@ -360,6 +361,55 @@ export async function getOfficeDirectory(): Promise<
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/**
+ * Narrowing beyond search. Empty for now: reserved so a filter (e.g. department
+ * head assigned / unassigned) can be added without changing callers.
+ */
+export type OfficeDirectoryFilters = Record<string, never>;
+
+export interface OfficeDirectoryQuery {
+  /** 1-based; out-of-range values are clamped. */
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  filters?: OfficeDirectoryFilters;
+}
+
+export interface OfficeDirectoryPage {
+  rows: OfficeDirectoryRow[];
+  /** Rows matching search + filters, across all pages. */
+  total: number;
+  /** The page actually returned, after clamping. */
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+
+/**
+ * One page of active offices matching `search`. Pure, so the paging rules are
+ * testable without a database.
+ */
+export function pageOfficeDirectory(rows: OfficeDirectoryRow[], query: OfficeDirectoryQuery = {}): OfficeDirectoryPage {
+  const pageSize = query.pageSize && query.pageSize > 0 ? query.pageSize : DEFAULT_PAGE_SIZE;
+  const matching = filterOfficeDirectory(rows.filter((r) => r.isActive), query.search ?? '');
+  const { current, pageCount, pageItems } = paginate(matching, query.page ?? 1, pageSize);
+  return { rows: pageItems, total: matching.length, page: current, pageSize, pageCount };
+}
+
+/**
+ * Paged Office Directory. The directory is assembled from several tables joined
+ * on normalized office names (see getOfficeDirectory), so paging happens here,
+ * in the service layer, after that join rather than with a database range.
+ * getOfficeDirectory() stays as-is for callers that need every office.
+ */
+export async function queryOfficeDirectory(
+  query: OfficeDirectoryQuery = {},
+): Promise<{ ok: boolean; data?: OfficeDirectoryPage; error?: string }> {
+  const result = await getOfficeDirectory();
+  if (result.ok === false) return { ok: false, error: (result as { error: string }).error };
+  return { ok: true, data: pageOfficeDirectory(result.data, query) };
 }
 
 /** Case-insensitive filter across office name, dept-head name, and supervisor names. */
