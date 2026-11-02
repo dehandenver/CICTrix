@@ -39,7 +39,10 @@ export const useModalBehavior = ({ open, dismissible, onClose, panelRef, bodyRef
     const first = initialFocusRef?.current
       ?? bodyRef.current?.querySelector<HTMLElement>('[data-autofocus]')
       ?? bodyRef.current?.querySelector<HTMLElement>('input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])')
-      ?? closeRef.current;
+      // A non-dismissible modal disables Close, and a disabled button can't take focus.
+      ?? (closeRef.current?.matches(':disabled') ? null : closeRef.current)
+      ?? panelRef.current?.querySelector<HTMLElement>(FOCUSABLE)
+      ?? panelRef.current;
     first?.focus();
 
     const onKey = (e: KeyboardEvent) => {
