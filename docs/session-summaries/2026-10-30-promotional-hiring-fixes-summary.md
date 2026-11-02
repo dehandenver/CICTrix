@@ -1,7 +1,7 @@
 ---
 title: Promotional hiring implementation progress
 date: 2026-10-30
-summary: Tasks 1–3, the reported Task 3A defect, and Task 7 legacy-sync guards are committed and verified. Task 7 has 19 focused regressions and clean Sol review; 1,283 src tests, TypeScript and lint pass. Tasks 4–6 and 8 remain pending; Task 4 requires an isolated database.
+summary: Tasks 1–3, the reported Task 3A defect, Task 7 legacy-sync guards and the Task 4 appointment transaction are committed and verified. Task 4 passes its database and two-session tests on a local copy of the production schema. Tasks 5–6 and 8 remain pending.
 ---
 
 ## Scope and current state
@@ -29,6 +29,22 @@ Shipped as `180c831` on `fix/interviewer-scheduled-promotions`, stacked on `fix/
 Planned vs. shipped: the plan allowed changes to schedule, assignment, posting and evaluation code "as evidence requires". The evidence pointed only at the `@example.com` demo filter in `InterviewerDashboard.tsx` and `InterviewerApplicantsList.tsx`, and that is the only product change. `EvaluationForm.tsx` already read the persisted application type, so it got a regression test but no edit. Closed-posting reachability, realtime and rescheduling, assignment changes, same-title postings across offices, read-failure reporting and the submit round trip were not covered. The plan lists them as follow-ups. The submit round trip moves to Step 3 of [Fix applicant score and status writes](../plans/2026-10-30-applicant-status-and-score-writes.md), which now owns `EvaluationForm.tsx`. Live data evidence for both plans is in [the live database check](2026-10-30-live-db-claims-verification-summary.md). The fixes plan's "Before starting Tasks 4–8" section lists where the two plans touch.
 
 Checks: the new tests fail without the fix and pass with it. Results: `npx vitest run src/lib/applicantSchedule.scheduled.test.ts src/modules/interviewer` gives 8 files / 54 tests passed; `npx tsc --noEmit` and `npm run lint` pass. The full `npm test` run gives 1,266 of 1,268 tests passed. The 2 failures are pre-existing: the live-data seed test and `trainingProgress.test.ts`, which also fails on the base commit when the clock is in UTC. Live data was read with the publishable key using GET only; nothing was written.
+
+## Task 4: atomic promotion transaction (2026-11-02)
+
+Shipped on `fix/promotional-appointment-transaction`, cut from `upstream/main` (`e110977`). Not pushed. Built inline in a Claude Code session (Opus), the same route deviation as Task 3A.
+
+Planned vs. shipped: `public.complete_promotional_appointment(p_applicant_id, p_actor_user_id)` as specified. It updates the existing employee's position, office, division and plantilla number; fills the reserved plantilla; writes `Hired`; and appends one `promoted` history row by the verified actor, all in one transaction. It never inserts an employee or account and never touches the account, hire date or employment status. Deviations: the lock order is employee → plantilla → application → account rather than plantilla first, because the plantilla-first draft deadlocks when two promotions of one person run together. Errors carry machine-readable hints for Task 5, and the history row is matched to its application by its `remarks` text so replays need no schema change.
+
+Test database: Docker Desktop and a local Supabase stack (CLI 2.122.0) were set up on this machine. The repo migrations cannot replay from empty because several core tables were created by hand in production, so production's public schema was generated from its catalog through read-only MCP queries and loaded locally. It fingerprint-matches production (123 tables, 73 functions, 41 triggers, 5 views, 104 policies, grants and indexes; constraints after normalizing equivalent cast text). Nothing was written to production.
+
+Checks:
+- `psql -U postgres -v ON_ERROR_STOP=1 -f supabase/tests/promotional_appointment.test.sql` on the local stack: all 8 groups pass (completion, replay, replay after a later promotion, service-role caller, 7 refused callers, 18 data rejections, 2 partial-completion conflicts, injected-failure rollback, grants). It failed before the migration existed.
+- `DB_CONTAINER=supabase_db_cictrix-schema-test bash supabase/tests/promotional_appointment_concurrency.sh`: both scenarios pass (same application twice: one completion and one `already_completed`; same employee, two promotions: no deadlock, the second is refused), and its cleanup leaves no rows.
+- `npm run check:migrations`: OK, 129 files.
+- No TypeScript or Python changed, so `tsc`, lint and Vitest were not rerun. `src/types/database.types.ts` was not regenerated.
+
+Open: `npx supabase init` added `supabase/config.toml` and `supabase/.gitignore`, which are left uncommitted pending a team decision. The repo's inability to build a database from its migrations is a separate gap.
 
 ## Checks observed before implementation
 
