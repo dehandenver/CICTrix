@@ -1,7 +1,7 @@
 ---
 title: Promotional hiring implementation progress
 date: 2026-10-30
-summary: Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct) but the plan is Blocked on a score save that erases the written exam, plus two copy defects on this branch and a pre-existing external-hire fallback failure.
+summary: Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct) The score-save and copy defects it found (F1–F3) are fixed; the plan stays Blocked on a pre-existing external-hire fallback failure (F4).
 ---
 
 ## Scope and current state
@@ -66,7 +66,7 @@ Run in the browser against the local Supabase stack with synthetic Filipino-name
 
 Passed: the fresh-browser promotional application through screening, scheduling, interviewer PCPT (visible in counts, list and history after reload), scoring, reserve/revoke/reserve and completion. The completion kept one employee with the same UUID, number, hire date and account, recorded one history event, filled the plantilla, archived the rival and withdrew the other open application. A replay changed nothing; clean-browser sign-in with the existing account worked; a mixed batch issued credentials, email and a print card only to the external hire; stale, busy (`57014` after 8 s) and concurrent completions changed nothing and showed actionable rows; the result modal held up at 375 and 768 px.
 
-Blocked on F1: saving promotion categories after the written exam erases the exam score in the database while the page still shows it. Also found on this branch: F2, all-failed batches say “Check your connection” and “Employee Records Created”; F3, the busy message repeats its retry advice. Pre-existing: F4, the external fallback remaps offices to inactive names, so those hires fail; F5, a failed upload leaves an application with no document; F6–F8, minor copy and status issues.
+F1, F2 and F3 were fixed afterwards in `d18d4b4` (test-first; full suite 149 files / 1,366 tests, tsc and lint pass; F1 confirmed against the local stack). The plan stays Blocked on F4. Originally found: F1, saving promotion categories after the written exam erased the exam score in the database while the page still showed it. Also found on this branch: F2, all-failed batches say “Check your connection” and “Employee Records Created”; F3, the busy message repeats its retry advice. Pre-existing: F4, the external fallback remaps offices to inactive names, so those hires fail; F5, a failed upload leaves an application with no document; F6–F8, minor copy and status issues.
 
 Not covered: rejected score save and response loss in the browser, the FastAPI external route, real email, screenshots. `npm run build` fails with an esbuild temp-file “Access is denied” on this machine, identically on the base commit, so it is environmental.
 
