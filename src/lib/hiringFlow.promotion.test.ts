@@ -306,6 +306,35 @@ describe('generateEmployeeCredentials with promotions', () => {
       expect(outcome.failures[0]).not.toMatch(/not promoted/i);
     });
 
+    it.each([
+      ['failed', new PromotionalAppointmentError('Failed.', { kind: 'failed', retryable: true })],
+      ['a plain error', new Error('Network dropped.')],
+    ])('reports an unconfirmed result when the check fails with %s', async (_label, checkError) => {
+      mocks.completePromotionalAppointment
+        .mockRejectedValueOnce(uncertainError())
+        .mockRejectedValueOnce(checkError);
+
+      const outcome = await generateEmployeeCredentials([promotionRow()]);
+
+      expect(outcome.unconfirmed).toBe(1);
+      expect(outcome.failures[0]).toContain('Juan Dela Cruz: result not confirmed.');
+      expect(outcome.failures[0]).not.toMatch(/not promoted/i);
+    });
+
+    it.each([
+      ['not_authorized', 'You are not authorized to complete promotions.'],
+      ['not_deployed', 'Promotions are not available yet.'],
+    ] as const)('keeps a %s answer on the check as "not promoted"', async (kind, message) => {
+      mocks.completePromotionalAppointment
+        .mockRejectedValueOnce(uncertainError())
+        .mockRejectedValueOnce(new PromotionalAppointmentError(message, { kind }));
+
+      const outcome = await generateEmployeeCredentials([promotionRow()]);
+
+      expect(outcome.unconfirmed).toBe(0);
+      expect(outcome.failures).toEqual([`Juan Dela Cruz: not promoted. ${message}`]);
+    });
+
     it('keeps a definite rejection on the check as "not promoted"', async () => {
       mocks.completePromotionalAppointment
         .mockRejectedValueOnce(uncertainError())
