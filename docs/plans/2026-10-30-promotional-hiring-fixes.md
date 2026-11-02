@@ -413,6 +413,27 @@ Decisions approved in chat (all as recommended); Opus builds in this session, te
 - Tests: 7 new or changed tests failed first (4 service, 1 component, 3 Generate flow; one F1 test that encoded the F12 behaviour was rewritten, and one timing assumption updated because the category save now reads first). Then `npx tsc --noEmit`, `npm run lint` and `vitest run src` (851 files / 7,394 tests) pass.
 - Local stack recheck (Sonnet, medium), synthetic Rolando Cabatuan, Estrella Magbanua and Napoleon Tubungbanua: a refused exam save keeps the modal open with “Exam scores were not saved. Your entries are still here. …”, the folder stays Pending, nothing is cached, and the row is unchanged; after the fault is removed the save persists exam 88 in both fields. An exam corrected 70 → 88 stays 88 after a category save. With the first promotion response lost, Generate checks again, the replay returns `already_completed` and the modal reads “Promotions Completed”; with every response lost it reads “Result Not Confirmed … result not confirmed …”, never “not promoted”. Each promotion committed once (one employee row, one history row, one account, no email). Results modals open with focus on Done inside the dialog. Injected faults were removed; traffic stayed on the local host.
 
+### I1 and M1 from the F9–F12 review — proposed 2026-11-03, awaiting approval
+
+A Sonnet (high) review of `ead20c2..2d0183f` found no critical issues. Two findings are fixed here; M2–M8 are left as tracked minors (small, transient, or out of scope).
+
+**I1. A second call that comes back "busy" is reported as "nothing was saved".** In `completeOrConfirmPromotion` (`src/lib/hiringFlow.ts`), only a second `uncertain` result counts as unconfirmed. A lost first response does not cancel its transaction, so the second call can wait on that transaction's locks and fail as `busy` (57014) while the first one commits afterwards. The row then reads "not promoted … nothing was saved", which F11 set out to remove.
+
+- Change: once the first call was `uncertain`, report any second-call failure as unconfirmed except `rejected`, `not_authorized` and `not_deployed`, which are definite. Carry that through to `unconfirmed` and the "result not confirmed" wording.
+- Tests (written first, in `src/lib/hiringFlow.promotion.test.ts`): uncertain then busy → unconfirmed with "result not confirmed"; uncertain then rejected → "not promoted" with the rejection message; busy on the first call stays "not promoted" and is not retried.
+
+**M1. The exam save writes back an old copy of the page's scores.** `handleSaveExam` (`src/components/QualifiedApplicantsSection.tsx`) copies `catScores` before awaiting the save, then sets state from that copy, so a score load that lands during the save is overwritten.
+
+- Change: build the update inside `setCatScores((prev) => …)`, as `handleSaveCatScores` already does, and drop `catScores` from the callback's dependencies.
+- Test: in `QualifiedApplicantsSection.examSave.test.tsx`, assert the page shows the saved exam score after a successful save.
+
+**Executor:** Sonnet, medium effort, one builder. The change is about 20 lines across two files with exact locations given, so it needs no planning judgment.
+
+**Checks:** the two test files above, `npx tsc --noEmit`, `npm run lint`, then `vitest run src`. No browser rerun: the I1 path needs a lock-wait timeout the local stack can't produce on demand, and the unit tests cover the classification.
+
+- [ ] I1 fixed with tests
+- [ ] M1 fixed with test
+
 ## Risks
 
 - **Security remains unresolved by explicit scope choice.** The legacy login still uses plaintext credentials; existing broad grants can bypass even a correctly guarded new RPC. Functional acceptance must not be described as production-security readiness.
