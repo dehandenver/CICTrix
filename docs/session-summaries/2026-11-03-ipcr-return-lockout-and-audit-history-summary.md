@@ -32,11 +32,24 @@ Implements [the plan](../plans/2026-11-03-ipcr-return-lockout-and-audit-history.
 - `npx vitest run --dir src`: 152 files, 1,340 tests passed. The Part 1 tests failed before the fix (8 failures) and pass after it. `npm test` without `--dir src` also picks up the nested worktree folders.
 - New tests: `ipcrApproval.test.ts`, `ipcrAudit.test.ts`, `ipcrAudit.history.test.ts`, `ipcrRatings.audit.test.ts`, `ipcrTargets.submit.test.ts`, plus cases added to `ipcrTargets.test.ts` and `EmployeePage.ipcr.test.tsx`, and `IpcrHistory.test.tsx`.
 
+## Follow-up verification (same day)
+
+**Browser, real app with the network fully stubbed.** The harness replaced every Supabase request and the realtime socket, so nothing reached the live project. The stub recorded zero writes. The harness files were deleted.
+- **Employee page.** A returned IPCR whose workspace row still said `Targets Submitted`, with the Phase 1 window closed, showed only "Needs Revision", the supervisor's comment, an editable MFO field, and Save Draft and Submit. The same data as a plain draft showed the closed banner and a locked form, so the window really was closed and only the returned record bypassed it.
+- **Console.** `/office/dashboard` shows the History subtab in Phase 1 and in Phase 2. Phase 1 listed the entries with badges. Phase 2 listed four entries, labelled "Self-rating submitted", "Ratings approved", "Returned for revision" and "Ratings edited", with only Phase 2 actions.
+- **Layout.** History checked at desktop, tablet (768px) and phone (375px) widths, and the loading skeleton matched the column layout. The two faults found earlier were fixed.
+
+**Live database, read-only `SELECT`s.**
+- Exactly one IPCR is returned for revision, and its workspace row is stuck at `Targets Submitted`. That employee is affected by this bug today and is freed once this deploys.
+- `ipcr_audit_log` holds 34 rows from Oct 28 to 29: 12 `approve`, 2 `return`, 11 employee `rate`, 9 reviewer `rate`. There are no `submit` or `admin_edit` rows, which fits nothing having logged them before.
+- The browser key can read the log (row-level security is off and `SELECT` is granted), so History will show those rows.
+- Not in scope, but worth a decision: the migration revoked `UPDATE` and `DELETE` on the log, yet `anon` and `authenticated` still hold `INSERT`, `TRUNCATE`, `TRIGGER` and `REFERENCES`. With row-level security off, anyone holding the public key can insert forged audit rows. The log is only append-only for updates and deletes.
+
 ## Not verified
 
-- **The employee page was not checked in a browser.** Its lockout fix is covered by tests only.
-- **The History tab was checked in a browser on a throwaway page with stubbed rows, not inside the signed-in console.** Sign-in needs a password, so the subtab wiring in `OfficeAccountConsole.tsx` is covered by type-check only. On that page it rendered correctly at desktop and 375px with rows, filter plus search, paging, and the empty and error states. Measured values matched §9.3 to §9.6 (36px controls and pager, 8px radius, 22px badges, `#F1F5F9` header). The check found two faults, both fixed: the card title rendered `#28343D` instead of `#040E6B`, and the search placeholder was cut off. Tablet width and the loading skeleton were not checked. The throwaway files were deleted.
-- **No live data.** How many employees are stuck, and what the real audit log holds, were not checked. `npm run build` was not run.
-- **Office scope.** A console user with no office role gets no scope, so History shows every office, the same as the pending list does today. A user with an office role sees only their office. The log has no row-level security, so this filter is the only barrier.
+- **`npm run build` fails on this machine, on `origin/main` as well as on this branch.** esbuild cannot delete its temp file (`Access is denied`), including with the temp folder redirected and outside the sandbox. `tsc` passes and all 3,147 modules transform, so this is an environment fault, not a code error. A build on another machine or in CI is still needed.
+- **The branch is 7 commits ahead and 32 behind `origin/main`, and a merge conflicts** in `docs/plans/index.html` (generated, so regenerate it) and `EmployeePage.ipcr.test.tsx` (upstream's row-alignment commit `7e34f31` added tests to the same file). `EmployeePage.tsx` merges cleanly. The branch has not been merged or tested against current `main`.
+- **The real sign-in, and any write.** Approve, return and resubmit were not run end to end against a database. The tests cover those writes with mocks.
+- **Office scope.** A console user with no office role gets no scope, so History shows every office, the same as the pending list does today. The log has no row-level security, so the office filter is the only barrier.
 - **Row cap.** The reader takes the newest 1,000 entries for a phase before the office filter, so an office's older entries could be missing if other offices dominate.
 - Entries from before this change have no employee-submit events, so older history starts at the first reviewer action.
