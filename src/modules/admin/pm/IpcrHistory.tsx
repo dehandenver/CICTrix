@@ -126,7 +126,7 @@ export function IpcrHistory({ phase, scope }: { phase: AuditPhase; scope: Office
     <div className="abyan-ds space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="text-title-s">{phase === 'target' ? 'Target review history' : 'Rating review history'}</h3>
+          <h3 className="text-title-s" style={{ color: 'var(--color-primary-900)' }}>{phase === 'target' ? 'Target review history' : 'Rating review history'}</h3>
           <p className="text-body-l" style={{ color: 'var(--neutral-600)' }}>
             {phase === 'target'
               ? 'Submissions, approvals, returns and edits for your office’s Phase 1 targets.'
@@ -141,7 +141,7 @@ export function IpcrHistory({ phase, scope }: { phase: AuditPhase; scope: Office
               type="search"
               value={query}
               onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-              placeholder="Search employee, reviewer, reason…"
+              placeholder="Search name or reason…"
               className={`${toolbarControl} w-[260px] pl-9`}
             />
           </label>

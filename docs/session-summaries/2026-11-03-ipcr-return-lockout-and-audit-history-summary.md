@@ -34,7 +34,8 @@ Implements [the plan](../plans/2026-11-03-ipcr-return-lockout-and-audit-history.
 
 ## Not verified
 
-- **No browser check** of the History tab or the employee page, and not at mobile, tablet and desktop widths. The DESIGN_IDENTITY §16 visual items are unchecked. The tests mock the data layer.
+- **The employee page was not checked in a browser.** Its lockout fix is covered by tests only.
+- **The History tab was checked in a browser on a throwaway page with stubbed rows, not inside the signed-in console.** Sign-in needs a password, so the subtab wiring in `OfficeAccountConsole.tsx` is covered by type-check only. On that page it rendered correctly at desktop and 375px with rows, filter plus search, paging, and the empty and error states. Measured values matched §9.3 to §9.6 (36px controls and pager, 8px radius, 22px badges, `#F1F5F9` header). The check found two faults, both fixed: the card title rendered `#28343D` instead of `#040E6B`, and the search placeholder was cut off. Tablet width and the loading skeleton were not checked. The throwaway files were deleted.
 - **No live data.** How many employees are stuck, and what the real audit log holds, were not checked. `npm run build` was not run.
 - **Office scope.** A console user with no office role gets no scope, so History shows every office, the same as the pending list does today. A user with an office role sees only their office. The log has no row-level security, so this filter is the only barrier.
 - **Row cap.** The reader takes the newest 1,000 entries for a phase before the office filter, so an office's older entries could be missing if other offices dominate.
