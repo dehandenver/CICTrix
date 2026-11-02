@@ -41,6 +41,8 @@
 .abyan-table th.is-num, .abyan-table td.is-num { text-align: right; font-variant-numeric: tabular-nums; }
 .abyan-table th.is-center, .abyan-table td.is-center { text-align: center; }
 .abyan-table th.is-action, .abyan-table td.is-action { text-align: right; white-space: nowrap; }
+/* Cells that hold form controls or stacked content start at the top of the row. */
+.abyan-table td.is-top { vertical-align: top; }
 /* Sort buttons inside headers keep the header's look. */
 .abyan-table th button { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; background: transparent; }
 

@@ -12,7 +12,7 @@ The one table design for the whole app, modelled on the Succession Planning tabl
 | Hover / selected | `--bg-row-hover` / `--color-primary-50` (`tr.is-selected`) |
 | Zebra | none |
 | Primary / secondary text | `.abyan-cell-primary` 600 `--color-primary-900`; `.abyan-cell-secondary` 500 14px `--neutral-600` |
-| Alignment | text left; `.is-num` right with tabular figures; `.is-center` |
+| Alignment | text left; `.is-num` right with tabular figures; `.is-center`; `td.is-top` aligns a cell to the top of the row (a `vertical-align` on the `<tr>` has no effect, because the cells set their own) |
 | Badges | the existing `.badge-*` classes (§9.8) |
 | Compact | `.abyan-table.is-compact` (10/12px padding) for nested tables |
 | Readability | inside a table, light-grey utilities (`text-slate-300/400/500`, `text-gray-400/500`) lift to `--neutral-600`, and 9–13px text to 14px; badges and pills are excluded |
