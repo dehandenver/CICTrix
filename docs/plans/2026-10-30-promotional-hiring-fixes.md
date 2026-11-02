@@ -1,7 +1,7 @@
 ---
 title: Repair the promotional hiring pipeline
 date: 2026-10-30
-status: In Progress
+status: Blocked
 summary: Repair the active employee application and RSP promotion flow, including scheduled interviewer visibility, durable scores, selection visibility, appointment completion, and existing-account preservation. Security remediation and the unused PM promotion module are excluded.
 spec: docs/session-summaries/2026-10-30-promotional-hiring-audit-summary.md
 ---
@@ -63,7 +63,7 @@ The transaction is a proposed implementation detail for review: independent empl
 
 ### Implementation checkpoint — paused after Task 3
 
-Paused at the user's request on 2026-10-30. Tasks 1–3 are implemented, reviewed and committed on `fix/promotional-hiring-pipeline`: `1dda88f`, `c29adba`, `20c24f1`. Task 3A was completed afterwards (see the Task 3A checkpoint below). Task 7 was subsequently completed separately on `fix/applicant-status-promotion-followups` as `273259e`, with 19 focused regressions and independent Sol/high review. Task 4 was completed on 2026-11-02 on `fix/promotional-appointment-transaction` (see the Task 4 checkpoint). Tasks 5 and 6 were completed the same day (see their checkpoints). Resume at **Task 8**; only Task 8 remains pending. Do not rerun Task 7.
+Paused at the user's request on 2026-10-30. Tasks 1–3 are implemented, reviewed and committed on `fix/promotional-hiring-pipeline`: `1dda88f`, `c29adba`, `20c24f1`. Task 3A was completed afterwards (see the Task 3A checkpoint below). Task 7 was subsequently completed separately on `fix/applicant-status-promotion-followups` as `273259e`, with 19 focused regressions and independent Sol/high review. Task 4 was completed on 2026-11-02 on `fix/promotional-appointment-transaction` (see the Task 4 checkpoint). Tasks 5 and 6 were completed the same day (see their checkpoints). Task 8 ran on 2026-11-02 against the local stack (see the Task 8 checkpoint). The promotion transaction passed every acceptance check, but the plan is **Blocked** on gate F1 (a score save erases the written exam) and the defects F2–F4 listed there. Do not rerun Task 7.
 
 Combined verification after Task 3: **136 src test files / 1,239 tests passed**; `npx tsc --noEmit`, repository-wide `npm run lint`, `npm run build`, and `git diff --check` passed. After merging `upstream/main` to clear the PR conflict (merge `7b115ef`), the full suite passed **139 files / 1,248 tests**, with lint and build green. Tests/build used synthetic localhost Supabase settings, not production credentials. Existing React act/refused-localhost test warnings and Vite/Browserslist/bundle-size warnings remain. No migrations were added; live-data seed tests and database/browser end-to-end acceptance were not run. Docker/Podman/local Postgres remain unavailable, blocking Task 4's required transaction verification and Task 8's isolated acceptance. Overall plan stays In Progress, not Done.
 
@@ -322,12 +322,38 @@ OpenAI owns plan/summary tracking, the generated dashboard and independent revie
 
 ### Task 8: Verify the functional pipeline in an isolated environment
 
-- [ ] Use synthetic Filipino-named employee/applicant fixtures on a local or approved preview database; use a mail sink/mock for external credential sends. No copied live passwords or personal records. Browser tests must point at the isolated database because app startup still contains legacy writes.
+- [x] Use synthetic Filipino-named employee/applicant fixtures on a local or approved preview database; use a mail sink/mock for external credential sends. No copied live passwords or personal records. Browser tests must point at the isolated database because app startup still contains legacy writes.
 - [ ] From an empty-cache browser, sign in to apply, submit for an exact open plantilla, screen and schedule. In a separate interviewer browser, confirm the promotional interview appears in dashboard counts and the applicant list, open its PCPT form, submit and reload to verify completion/history and RSP receipt. Then save promotion categories and written exam, reload, confirm report/For Hiring totals, reserve, revoke once, reserve again, and complete signing.
-- [ ] Verify one employee before/after, the same employee UUID/number/original hire date and unchanged portal account, the new assignment, one promotion history event, the target slot filled, other target-slot applicants archived, and other open applications handled by existing triggers. Replaying the same completion must change nothing. Do not reopen the former posting automatically.
+- [x] Verify one employee before/after, the same employee UUID/number/original hire date and unchanged portal account, the new assignment, one promotion history event, the target slot filled, other target-slot applicants archived, and other open applications handled by existing triggers. Replaying the same completion must change nothing. Do not reopen the former posting automatically.
 - [ ] Sign in again from a clean browser using the existing account and confirm the updated role/office. Run an external-hire regression and a mixed promotion/external batch; verify only the external applicant receives newly issued credentials and credential print output.
 - [ ] Exercise rejected score save, stale reservation, concurrent completion, and response loss in the isolated stack. Verify no duplicate/partial transaction and actionable UI feedback.
 - [ ] Run the checks below, inspect the whole branch, complete `DESIGN_IDENTITY.md` §16 for touched UI, and record outcomes/remaining limits in the implementation session summary. Mark this plan Done only after the functional acceptance checks pass; otherwise record Blocked with the precise failed gate.
+
+#### Task 8 checkpoint — 2026-11-02 (Blocked)
+
+Run on `fix/promotional-appointment-transaction` at `feebbfb` with no code changes. The app ran against the local Supabase stack (`127.0.0.1:54321`, production schema, no production rows); the network log showed no request to the production project. A local sink on `:8000` recorded `/api` calls and sent nothing; every other `/api` route answered 404, so external hires took the client fallback. Test-only local scaffolding: an `applicant-attachments` bucket with permissive policies, a document attached through the storage API after F5, and the rival, external and extra promotion applicants inserted with SQL. Synthetic people: Maricel Dela Cruz, Ligaya Bautista and Danilo Reyes (promotions), Ramon Aquino and Rowena Bautista (external), Jomar Villanueva (rival), Liza Santos (RSP), Arnel Reyes (rater).
+
+**Passed**
+
+- Fresh-browser promotional application (prefilled from the employee record), RSP document validation, qualify and schedule. The interviewer dashboard counted the interview (To evaluate 1, Due today 1) and listed it; the PCPT form opened, submitted and, after reload, showed Completed with a 4.0 rating in history.
+- Categories then written exam saved; Applicant Score and For Hiring both show 72.00 and 82/100. Reserve, revoke once (“Did not report”) and reserve again all worked.
+- Completion from Generate: one employee with the same UUID, number, hire date and `user_account_id`; the portal account is byte-identical; only department, position, division, plantilla and `modified_by/at` changed; one `promoted` history row performed by the RSP user; target plantilla filled; the rival became Not Selected; her other open application became Withdrawn - Hired Elsewhere; no Newly Hired row, no email, no posting created or reopened.
+- Replay through PostgREST as RSP returned `already_completed: true`, and a fingerprint of employees, accounts, applicants, plantillas, history and plantilla links was unchanged.
+- Clean-browser sign-in with the existing portal account worked and loaded the updated record. The visited employee pages do not display position or office, so this was checked on the fetched record, not on screen.
+- Mixed batch (Ramon external, Ligaya promotion, Rowena external): Ramon got an employee, account, Newly Hired row, one recorded email and the only print card; Ligaya’s account was unchanged and she got no email; Rowena’s failure (F4) left nothing partial.
+- Stale reservation: refused with “not currently selected for this plantilla. Select them again before completing”, nothing changed. Busy: with the employee row locked for 20 s the RPC returned `57014` at 8 s, the row showed the busy copy, and nothing changed. Concurrent completion: two simultaneous RPC calls returned one `already_completed: false` and one `true`, with one history row.
+- Result modal at 375 px and 768 px: no page overflow, tables scroll inside their containers, white header title, focus inside. Esc does not close it, by design (`dismissible={false}` protects shown passwords).
+
+**Failed gate and defects**
+
+- **F1 (gate; Tasks 2–3 scope).** Saving the promotion categories after the written exam reset `written_exam` to empty and `written_exam_raw_score` to 0, while the exam page kept showing 82 from browser storage. Saving the exam after the categories keeps both. The exam-only save also created the row as `appointment_type = original`, `is_finalized = true` for a promotion applicant.
+- **F2 (this branch, Generate page).** When every selected row fails, the page banner says “Check your connection and try again” and the modal says “Employee Records Created … Credentials were emailed where an address was on file” with an empty table and a Print button.
+- **F3 (this branch, busy fix).** The busy row message repeats the retry advice: `BUSY_MESSAGE` already says retrying is safe, and `promotionFailureMessage` appends its own retry sentence.
+- **F4 (pre-existing, external fallback).** `hireExternalApplicant`’s fallback maps office names to legacy labels (`Budget Office` → `Finance`), which `enforce_active_office` rejects, so external hires that reach the fallback for remapped offices fail; the row says “Try again” although a retry cannot help. The fallback also leaves `plantilla_num` empty. The FastAPI route was not exercised.
+- **F5 (pre-existing, applicant wizard).** The application row is inserted before files upload, so a failed upload leaves an application with no document while the page says “not submitted”, and the retry then says “already applied”. Promotional uploads are typed `other`, so screening needs the manual Validate Documents override.
+- **F6–F8 (pre-existing, minor).** Prefill put “Dela” into the middle name from a compound surname. Interviewer submit and revoke write the legacy `Reviewed` status (the applicant-status plan). The Shortlist tooltip still says documents are missing after validation; a legacy applicants upsert gets 400 for missing columns on qualify and generate; the score modal shows “Oral Exam 14.00 / 5” and “PCPT Converted 12/10”.
+
+**Not covered:** rejected score save and response loss in the browser (unit-tested only); the FastAPI external route and real email delivery; screenshots (the pane was hidden); a full keyboard pass beyond the result modal. `npm run build` fails on this machine with esbuild “remove …\Temp\esbuild-…: Access is denied”, identically on the base `e110977` and outside the command sandbox, so it is environmental and not evidence about this branch; the last passing build is the Task 3 checkpoint.
 
 ## Risks
 

@@ -1,7 +1,7 @@
 ---
 title: Promotional hiring implementation progress
 date: 2026-10-30
-summary: Tasks 1–6 (including the reported Task 3A defect) and Task 7 are committed and verified. Tasks 4–6 add a retry-safe promotion transaction, route every promotion hire path to it, and keep existing accounts untouched on the credentials page. Task 8 remains pending.
+summary: Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct) but the plan is Blocked on a score save that erases the written exam, plus two copy defects on this branch and a pre-existing external-hire fallback failure.
 ---
 
 ## Scope and current state
@@ -59,6 +59,16 @@ Shipped on `fix/promotional-appointment-transaction`. Not pushed. Two Sonnet (hi
 Checks (rerun by the reviewer): `npx vitest run src/lib/hiringFlow src/components/GenerateCredentialsPage` 4 files / 28 passed; `npx tsc --noEmit` and `npm run lint` pass; full `npx vitest run src` with placeholder Supabase settings 149 files / 1,347 tests passed, with one unhandled teardown error from the untouched `CompetencyFrameworkPage.test.tsx`. Red evidence: 8 of 9 new hiringFlow tests and 5 of the new page tests failed against the old code.
 
 Branch review (Opus, Tasks 4–6): ready with fixes, no critical issues. The one important finding is fixed: a stale cached type could let the external steps reset a promoted employee's password, so `hireApplicantWithOutcome` now reports promotions and the batch stops before any account step. Four of the seven minor findings were then fixed at the user's request (retryable lock and deadlock errors, replay before the account check, NULL status, ambiguous office); the other three are listed in the plan's Task 6 checkpoint. For those fixes: the DB suite (with three new cases) and both concurrency scenarios pass on the local stack, with the replay-after-account-change case failing first against the old function; 4 new TS cases and 6 new backend cases failed first; then 36 related files / 665 tests, backend 20 tests, full suite 149 files / 1,353 tests (one to five unhandled teardown errors from untouched files, varying by run), tsc, lint and `check:migrations` pass. After the fix: 6 related files / 79 tests, full suite 149 files / 1,348 tests (same unrelated teardown error), tsc and lint pass.
+
+## Task 8: isolated acceptance (2026-11-02)
+
+Run in the browser against the local Supabase stack with synthetic Filipino-named people, a local mail sink and no production access. No code changed. Full results and finding IDs are in the plan’s Task 8 checkpoint.
+
+Passed: the fresh-browser promotional application through screening, scheduling, interviewer PCPT (visible in counts, list and history after reload), scoring, reserve/revoke/reserve and completion. The completion kept one employee with the same UUID, number, hire date and account, recorded one history event, filled the plantilla, archived the rival and withdrew the other open application. A replay changed nothing; clean-browser sign-in with the existing account worked; a mixed batch issued credentials, email and a print card only to the external hire; stale, busy (`57014` after 8 s) and concurrent completions changed nothing and showed actionable rows; the result modal held up at 375 and 768 px.
+
+Blocked on F1: saving promotion categories after the written exam erases the exam score in the database while the page still shows it. Also found on this branch: F2, all-failed batches say “Check your connection” and “Employee Records Created”; F3, the busy message repeats its retry advice. Pre-existing: F4, the external fallback remaps offices to inactive names, so those hires fail; F5, a failed upload leaves an application with no document; F6–F8, minor copy and status issues.
+
+Not covered: rejected score save and response loss in the browser, the FastAPI external route, real email, screenshots. `npm run build` fails with an esbuild temp-file “Access is denied” on this machine, identically on the base commit, so it is environmental.
 
 ## Checks observed before implementation
 
