@@ -1,7 +1,7 @@
 ---
 title: Repair the promotional hiring pipeline
 date: 2026-10-30
-status: Blocked
+status: In Progress
 summary: Repair the active employee application and RSP promotion flow, including scheduled interviewer visibility, durable scores, selection visibility, appointment completion, and existing-account preservation. Security remediation and the unused PM promotion module are excluded.
 spec: docs/session-summaries/2026-10-30-promotional-hiring-audit-summary.md
 ---
@@ -63,7 +63,7 @@ The transaction is a proposed implementation detail for review: independent empl
 
 ### Implementation checkpoint — paused after Task 3
 
-Paused at the user's request on 2026-10-30. Tasks 1–3 are implemented, reviewed and committed on `fix/promotional-hiring-pipeline`: `1dda88f`, `c29adba`, `20c24f1`. Task 3A was completed afterwards (see the Task 3A checkpoint below). Task 7 was subsequently completed separately on `fix/applicant-status-promotion-followups` as `273259e`, with 19 focused regressions and independent Sol/high review. Task 4 was completed on 2026-11-02 on `fix/promotional-appointment-transaction` (see the Task 4 checkpoint). Tasks 5 and 6 were completed the same day (see their checkpoints). Task 8 ran on 2026-11-02 against the local stack (see the Task 8 checkpoint). The promotion transaction passed every acceptance check, F1–F3 were then fixed in `d18d4b4`. The plan stays **Blocked** on the external-hire regression (F4, pre-existing), which needs its own decision. Do not rerun Task 7.
+Paused at the user's request on 2026-10-30. Tasks 1–3 are implemented, reviewed and committed on `fix/promotional-hiring-pipeline`: `1dda88f`, `c29adba`, `20c24f1`. Task 3A was completed afterwards (see the Task 3A checkpoint below). Task 7 was subsequently completed separately on `fix/applicant-status-promotion-followups` as `273259e`, with 19 focused regressions and independent Sol/high review. Task 4 was completed on 2026-11-02 on `fix/promotional-appointment-transaction` (see the Task 4 checkpoint). Tasks 5 and 6 were completed the same day (see their checkpoints). Task 8 ran on 2026-11-02 against the local stack (see the Task 8 checkpoint). The promotion transaction passed every acceptance check, F1–F3 were then fixed in `d18d4b4`. F4 (pre-existing external-hire office failure) was fixed in `2d3fe26`; see the F4 section. Do not rerun Task 7.
 
 Combined verification after Task 3: **136 src test files / 1,239 tests passed**; `npx tsc --noEmit`, repository-wide `npm run lint`, `npm run build`, and `git diff --check` passed. After merging `upstream/main` to clear the PR conflict (merge `7b115ef`), the full suite passed **139 files / 1,248 tests**, with lint and build green. Tests/build used synthetic localhost Supabase settings, not production credentials. Existing React act/refused-localhost test warnings and Vite/Browserslist/bundle-size warnings remain. No migrations were added; live-data seed tests and database/browser end-to-end acceptance were not run. Docker/Podman/local Postgres remain unavailable, blocking Task 4's required transaction verification and Task 8's isolated acceptance. Overall plan stays In Progress, not Done.
 
@@ -359,6 +359,28 @@ Run on `fix/promotional-appointment-transaction` at `feebbfb` with no code chang
 - Then `npx tsc --noEmit`, `npm run lint` and the full suite (149 files / 1,366 tests) passed.
 
 **Not covered:** rejected score save and response loss in the browser (unit-tested only); the FastAPI external route and real email delivery; screenshots (the pane was hidden); a full keyboard pass beyond the result modal. `npm run build` fails on this machine with esbuild “remove …\Temp\esbuild-…: Access is denied”, identically on the base `e110977` and outside the command sandbox, so it is environmental and not evidence about this branch; the last passing build is the Task 3 checkpoint.
+
+### F4: external hires take their office from the plantilla — approved 2026-11-02
+
+Opus orchestrates and reviews (medium); two Sonnet (high) builders work test-first in parallel. Read-only checks of the live schema and data before planning:
+
+- `employees` has no `department_id` column, so the FastAPI insert that sends it cannot succeed.
+- 33 departments are active (not 5). Live postings use active names except 4 under "Information Technology" and 4 under "Legal", which are inactive; hires for those stay refused, now with a message naming the office. Fixing those postings is a separate data decision.
+- Six job titles have more than one posting, so the title lookup errors (client, swallowed) or picks an arbitrary posting (backend).
+- All 179 plantilla labels are "Plantilla <n>", and no reserved plantilla lacks its application link.
+- `employees_with_department` returns `current_division` as NULL and omits `plantilla_num`, but every reader of division and plantilla number (employee application profile, IDP form, performance evaluations) reads `employees` directly, so no view change is needed.
+
+Rule for both paths, matching `complete_promotional_appointment`: with `applicants.plantilla_slot_id`, read the slot and its posting; the office is the posting's department matched case- and space-insensitively to one active department and written with that department's name; division is the slot's, else the posting's; `plantilla_num` is the number in a "Plantilla <n>" label (left empty otherwise, without blocking the hire). Without a slot, use the posting only when exactly one non-deleted posting has the title, else the applicant's office, with the same active-office match. No active match refuses the hire before any insert. The legacy office and position-to-office maps are deleted.
+
+- **T1 web app fallback.** Files: `src/lib/api/employeesApi.ts`, `src/lib/hiringFlow.ts`, new `src/lib/api/employeesApi.external.test.ts`, `src/lib/hiringFlow.promotion.test.ts`. `hireExternalApplicant` applies the rule and throws a non-retryable `ExternalHireError` for an inactive office; the Generate row shows that message without "Try again".
+- **T2 backend route.** Files: `backend/app/routes/employees.py`, `backend/test_promotional_hiring.py`. `hire_from_applicant` applies the rule, drops `department_id`, and returns 422 with the same message before any insert.
+- **Verification.** `npx tsc --noEmit`, `npm run lint`, full Vitest, the backend pytest file, then a local-stack external hire (valid office: office, division and plantilla number set; inactive office: refused, nothing written).
+
+**F4 fixed (`2d3fe26`, 2026-11-02).** T1 also updated the fallback fixtures in `employeesApi.promotion.test.ts`. The client keeps its own label regex because `plantillaNumberOf` is case-insensitive and the RPC is not. Read errors on the slot, posting, title lookup or departments throw a plain (retryable) error instead of guessing.
+- Tests first: 22 client tests and 16 backend cases failed before the change; afterwards the 3 client files pass (48 tests) and `python -m unittest test_promotional_hiring` passes 33.
+- `npx tsc --noEmit` and `npm run lint` pass. `npm test` ran 861 files because it also collects the `.claude/worktrees/` checkouts: 859 passed; the 2 failures are `scripts/seed-training-attendance.test.mjs` (a data-count assertion, 172 vs 167, last changed 2026-10-28) and its stale worktree copy (missing `.env`). Neither touches this change. `npx vitest run src` passed 850/850 files.
+- Local stack, the real client code with the backend unreachable, signed in as RSP: Rowena Bautista (posting office Budget Office, active locally) was hired as `EMP-D7F5D631` with `department` Budget Office, `division` Records Division, `plantilla_num` 2 and applicant status Hired. Jasmin Villareal, a synthetic applicant on a posting under the inactive "Information Technology", was refused with `ExternalHireError` naming the office; no employee row was written and her application stayed Qualified.
+- Not covered: the full Generate batch for these rows (plantilla fill, account, email) was not re-run; the FastAPI route ran only in unit tests. The 8 live postings under the inactive "Information Technology" and "Legal" offices still cannot be hired into until their office is changed or reactivated.
 
 ## Risks
 
