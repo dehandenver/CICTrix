@@ -62,13 +62,18 @@
   <main>
     <h1>Plans</h1>
     <p class="lede">Feature plans and their session summaries. Newest first.</p>
-    <p class="counts">125 plans &middot; 101 done</p>
+    <p class="counts">126 plans &middot; 102 done</p>
 
     <section>
       <h2>Plans</h2>
       <table>
         <thead><tr><th>Date</th><th>Plan</th><th>Status</th></tr></thead>
         <tbody>
+      <tr>
+        <td class="date">2026-11-02</td>
+        <td><a href="2026-11-02-ipcr-target-row-alignment.md">Top-align MFO and Success Indicator inputs in the employee IPCR targets form</a><p class="summary">The MFO input sits lower than the first Success Indicator input because the shared table rule centers cells vertically. Top-align the cells so the first MFO and first indicator share a baseline.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
       <tr>
         <td class="date">2026-10-30</td>
         <td><a href="2026-10-30-promotional-hiring-fixes.md">Repair the promotional hiring pipeline</a><p class="summary">Repair the active employee application and RSP promotion flow, including scheduled interviewer visibility, durable scores, selection visibility, appointment completion, and existing-account preservation. Security remediation and the unused PM promotion module are excluded.</p></td>
@@ -704,8 +709,12 @@
         <thead><tr><th>Date</th><th>Summary</th></tr></thead>
         <tbody>
       <tr>
+        <td class="date">2026-11-02</td>
+        <td><a href="../session-summaries/2026-11-02-ipcr-target-row-alignment-summary.md">IPCR target row alignment: summary</a></td>
+      </tr>
+      <tr>
         <td class="date">2026-10-30</td>
-        <td><a href="../session-summaries/2026-10-30-promotional-hiring-fixes-summary.md">Promotional hiring implementation progress</a><p class="summary">Tasks 1–3, the reported Task 3A defect, and Task 7 legacy-sync guards are committed and verified. Task 7 has 19 focused regressions and clean Sol review; 1,283 src tests, TypeScript and lint pass. Tasks 4–6 and 8 remain pending; Task 4 requires an isolated database.</p></td>
+        <td><a href="../session-summaries/2026-10-30-promotional-hiring-fixes-summary.md">Promotional hiring implementation progress</a><p class="summary">Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct). The defects it found that block the plan, F1–F3 and the pre-existing external-hire office failure F4, are fixed; F5–F8 are pre-existing and tracked separately. The 2026-11-02 failure-path run and branch review fixed the shared modal focus gap (`4a947ed`) and found F9–F12 in score saving and the uncertain-promotion message; all four are fixed (`3d60c60`, `0deca4a`) and rechecked on the local stack. A review of those fixes found two more gaps, I1 and M1, fixed in `40e0dc1`. Only `npm run build` remains, blocked by this machine.</p></td>
       </tr>
       <tr>
         <td class="date">2026-10-30</td>
