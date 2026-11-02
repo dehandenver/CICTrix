@@ -436,6 +436,20 @@ A Sonnet (high) review of `ead20c2..2d0183f` found no critical issues. Two findi
 
 Done 2026-11-03 by one Sonnet (medium) builder. The uncertain-then-busy test failed first and passes now; the uncertain-then-rejected test and the new exam-table test guard the success paths and passed before and after, since M1 is a race the unit test cannot trigger. `npx tsc --noEmit`, `npm run lint` and `vitest run src` (851 files) pass.
 
+### Test gaps from the I1/M1 review — requested 2026-11-03
+
+The review of `40e0dc1` passed with no critical or important issues. At the user's request, its two test gaps are closed before pushing. Tests only; no production code changes unless a test exposes a bug, which would come back as a new decision.
+
+- Second-call errors (`src/lib/hiringFlow.promotion.test.ts`): after a first call with no answer, a second call failing as `failed` or with a plain `Error` is unconfirmed; `not_authorized` and `not_deployed` stay "not promoted".
+- The M1 race (`src/components/QualifiedApplicantsSection.examSave.test.tsx`): scores loaded from the database while an exam save is waiting must survive the save. Check that the test fails on the pre-fix `handleSaveExam` (from `2d0183f`) and passes on the current code.
+- Done inline (no subagent): a few tests in two files.
+- Checks: both files, `npx tsc --noEmit`, `npm run lint`, `vitest run src`.
+
+- [x] Second-call error tests (`5435113`)
+- [x] M1 race test, shown to fail on the pre-fix code (`5435113`)
+
+Done 2026-11-03 inline. Four second-call tests (`failed`, a plain error, `not_authorized`, `not_deployed`) pass with no code change. The race test resolves a database score load while the exam save is pending; it failed against `handleSaveExam` from `2d0183f` and passes on `40e0dc1`. `npx tsc --noEmit`, `npm run lint` and `vitest run src` (851 files / 7,402 tests) pass.
+
 ## Risks
 
 - **Security remains unresolved by explicit scope choice.** The legacy login still uses plaintext credentials; existing broad grants can bypass even a correctly guarded new RPC. Functional acceptance must not be described as production-security readiness.
