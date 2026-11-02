@@ -17,6 +17,7 @@ const { fake } = vi.hoisted(() => ({
     classificationError: null as { message: string } | null,
     viewRow: null as Record<string, unknown> | null,
     viewError: null as { message: string } | null,
+    departments: [] as Array<{ name: string; is_active: boolean }>,
     rpcResult: null as { data: unknown; error: unknown } | null,
     rpcThrows: null as unknown,
   },
@@ -34,6 +35,12 @@ vi.mock('../supabase', () => {
       if (fake.viewError) return { data: null, error: fake.viewError };
       return { data: fake.viewRow, error: fake.viewRow ? null : { code: 'PGRST116', message: 'no rows' } };
     }
+    if (q.table === 'departments') {
+      return { data: fake.departments, error: null };
+    }
+    if (q.table === 'job_postings') {
+      return { data: [], error: null };
+    }
     if (q.table === 'employees' && q.op === 'insert') {
       return { data: { id: 'inserted-employee-uuid', ...(q.payload as object) }, error: null };
     }
@@ -50,6 +57,7 @@ vi.mock('../supabase', () => {
       upsert: (payload: unknown) => { q.op = 'upsert'; q.payload = payload; return b; },
       delete: () => { q.op = 'delete'; return b; },
       eq: (column: string, value: unknown) => { q.filters.push([column, value]); return b; },
+      is: (column: string, value: unknown) => { q.filters.push([column, value]); return b; },
       ilike: (column: string, value: unknown) => { q.filters.push([column, value]); return b; },
       maybeSingle: () => Promise.resolve(resolveQuery(q)),
       single: () => Promise.resolve(resolveQuery(q)),
@@ -134,6 +142,7 @@ beforeEach(() => {
       gender: 'Female',
     },
   };
+  fake.departments = [{ name: 'Human Resource Management Office', is_active: true }];
   fake.classificationError = null;
   fake.viewRow = employeeView;
   fake.viewError = null;
@@ -317,6 +326,7 @@ describe('hireApplicant: external applicants keep the existing path', () => {
       last_name: 'Reyes',
       email: 'ana.reyes@example.org',
       position: 'Clerk I',
+      department: 'Human Resource Management Office',
     });
     const statusUpdate = fake.calls.find((c) => c.table === 'applicants' && c.op === 'update');
     expect(statusUpdate?.payload).toMatchObject({ status: 'Hired' });

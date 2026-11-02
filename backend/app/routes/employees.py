@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import date
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
@@ -234,6 +235,94 @@ def complete_promotion(client, applicant_id: str, current_user: TokenData) -> di
     return view_res.data[0]
 
 
+# Same pattern the database uses to read the number from a plantilla label
+# (complete_promotional_appointment), e.g. "Plantilla 3" -> "3".
+PLANTILLA_LABEL_PATTERN = re.compile(r"^\s*[Pp]lantilla\s+([0-9]+)\s*$")
+NO_PLANTILLA_POSTING_DETAIL = "The job posting for this plantilla no longer exists."
+NO_OFFICE_DETAIL = "This application has no office. Set the job posting's office, then hire again."
+
+
+def _clean(value) -> Optional[str]:
+    """Trimmed text, or None when blank."""
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def resolve_hire_office(client, app_data: dict, position_name: str) -> dict:
+    """Work out the office, division and plantilla number for an external hire.
+
+    Mirrors the Target assignment step of complete_promotional_appointment: the
+    office is the plantilla's job posting office, matched to exactly one active
+    department and written with that department's own name. Every refusal is a
+    422 raised here, before the caller writes anything.
+    """
+    division = None
+    plantilla_num = None
+    office_source = None
+    slot_id = app_data.get("plantilla_slot_id")
+
+    if slot_id:
+        slot_res = (
+            client.table("plantilla_slots")
+            .select("id, job_posting_id, label, division")
+            .eq("id", slot_id)
+            .execute()
+        )
+        slot = slot_res.data[0] if slot_res.data else None
+        posting = None
+        if slot and slot.get("job_posting_id"):
+            posting_res = (
+                client.table("job_postings")
+                .select("id, department, division")
+                .eq("id", slot["job_posting_id"])
+                .is_("deleted_at", "null")
+                .execute()
+            )
+            posting = posting_res.data[0] if posting_res.data else None
+        if not slot or not posting:
+            raise HTTPException(status_code=422, detail=NO_PLANTILLA_POSTING_DETAIL)
+
+        office_source = posting.get("department")
+        division = _clean(slot.get("division")) or _clean(posting.get("division"))
+        label_match = PLANTILLA_LABEL_PATTERN.match(str(slot.get("label") or ""))
+        plantilla_num = label_match.group(1) if label_match else None
+    else:
+        # Titles are not unique: only a single matching posting is trusted.
+        posting_res = (
+            client.table("job_postings")
+            .select("department, division")
+            .ilike("title", position_name)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        if len(posting_res.data or []) == 1 and _clean(posting_res.data[0].get("department")):
+            office_source = posting_res.data[0]["department"]
+            division = _clean(posting_res.data[0].get("division"))
+        else:
+            office_source = app_data.get("office")
+
+    office = _clean(office_source)
+    if office is None:
+        raise HTTPException(status_code=422, detail=NO_OFFICE_DETAIL)
+
+    dept_res = client.table("departments").select("id, name").eq("is_active", True).execute()
+    matches = [d for d in (dept_res.data or []) if (_clean(d.get("name")) or "").lower() == office.lower()]
+    if not matches:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f'Office "{office}" is not an active office. '
+                "Change the job posting's office to an active one, then hire again."
+            ),
+        )
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail=f'Office "{office}" matches more than one active office. Resolve the duplicate first.',
+        )
+    return {"department": matches[0]["name"], "division": division, "plantilla_num": plantilla_num}
+
+
 @router.post("/from-applicant/{applicant_id}", response_model=EmployeeResponse, status_code=201)
 async def hire_from_applicant(
     applicant_id: str,
@@ -257,53 +346,7 @@ async def hire_from_applicant(
     today_str = date.today().isoformat()
     position_name = app_data.get("position") or app_data.get("current_position") or "Staff"
     
-    # Determine department name using Job Postings as the single source of truth
-    job_res = client.table("job_postings").select("department").ilike("title", position_name).execute()
-    if job_res.data and job_res.data[0].get("department"):
-        department_name = job_res.data[0]["department"]
-    else:
-        department_name = app_data.get("office") or app_data.get("current_department") or "Operations"
-        pos_to_dept = {
-            'Administrative Officer': 'Operations',
-            'Human Resource Specialist': 'Human Resources',
-            'IT Specialist': 'Information Technology',
-            'Accountant': 'Finance',
-            'Budget Officer': 'Finance',
-            'Legal Officer': 'Legal',
-            'Project Coordinator': 'Operations',
-            'Data Analyst': 'Product Management',
-        }
-        department_name = pos_to_dept.get(position_name, department_name)
-
-    # Normalize to canonical department names
-    legacy_map = {
-        'Human Resource Management Office': 'Human Resources',
-        'Information Technology Office': 'Information Technology',
-        'City Planning and Development Office': 'Operations',
-        'City Health Office': 'Operations',
-        'City Engineering Office': 'Operations',
-        "Treasurer's Office": 'Finance',
-        'Budget Office': 'Finance',
-        'General Services Office': 'Operations',
-        'Office of the City Engineer': 'Operations',
-        'Office of the City Accountant': 'Finance',
-        'Office of the City Social Welfare and Development': 'Operations',
-        'IT Department': 'Information Technology',
-        'HR Department': 'Human Resources',
-        'Finance Department': 'Finance',
-        'Legal Department': 'Legal',
-        'IT Division': 'Information Technology',
-        'Health Office': 'Operations',
-        'Treasury Department': 'Finance'
-    }
-    if department_name in legacy_map:
-        department_name = legacy_map[department_name]
-
-    # Resolve department_name to department_id UUID
-    dept_id = None
-    dept_res = client.table("departments").select("id").eq("name", department_name).execute()
-    if dept_res.data:
-        dept_id = dept_res.data[0]["id"]
+    office = resolve_hire_office(client, app_data, position_name)
 
     # New Hire: Insert/Upsert new employee
     emp_id = app_data.get("employee_id")
@@ -327,8 +370,9 @@ async def hire_from_applicant(
         "current_address_street": app_data.get("address"),
         "sex": app_data.get("gender"),
         "position": position_name,
-        "department": department_name,
-        "department_id": dept_id,
+        "department": office["department"],
+        "division": office["division"],
+        "plantilla_num": office["plantilla_num"],
         "employment_status": "Regular",
         "date_hired": today_str,
         "status": "Active",

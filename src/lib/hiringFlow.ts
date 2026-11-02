@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { hireApplicantWithOutcome } from './api/employeesApi';
+import { ExternalHireError, hireApplicantWithOutcome } from './api/employeesApi';
 import { normalizeApplicationType } from './api/applicantScores';
 import { completePromotionalAppointment, PromotionalAppointmentError } from './api/promotionalHiring';
 import type { PromotionalAppointmentResult } from './api/promotionalHiring';
@@ -368,6 +368,10 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
       employeeId = employee?.employee_id || '';
     } catch (err: any) {
       console.error(`[hiringFlow] hire failed for ${row.id}:`, err);
+      if (err instanceof ExternalHireError) {
+        failures.push(`${row.fullName}: not hired. ${err.message}`);
+        continue;
+      }
       const failure = describeActionFailure('hire this applicant', err);
       failures.push(`${row.fullName}: not hired. ${failure.message} ${failure.nextStep}`);
       continue;

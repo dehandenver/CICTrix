@@ -31,7 +31,10 @@ vi.mock('./supabase', () => {
   return { supabase: { from: () => builder, rpc: mocks.rpc } };
 });
 
-vi.mock('./api/employeesApi', () => ({ hireApplicantWithOutcome: mocks.hireApplicant }));
+vi.mock('./api/employeesApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./api/employeesApi')>()),
+  hireApplicantWithOutcome: mocks.hireApplicant,
+}));
 vi.mock('./api/promotionalHiring', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api/promotionalHiring')>()),
   completePromotionalAppointment: mocks.completePromotionalAppointment,
@@ -52,6 +55,7 @@ vi.mock('./employeePortalData', () => ({
 }));
 vi.mock('./email', () => ({ sendEmail: mocks.sendEmail }));
 
+import { ExternalHireError } from './api/employeesApi';
 import { fetchReservedApplicants, generateEmployeeCredentials } from './hiringFlow';
 
 const externalRow = (overrides: Partial<ReservedApplicant> = {}): ReservedApplicant => ({
@@ -261,6 +265,18 @@ describe('generateEmployeeCredentials with promotions', () => {
       expect(failure).not.toMatch(/safe to try again/i);
       expect(failure).not.toMatch(/promote them twice/i);
     });
+  });
+
+  it('reports a refused external hire with its own message and no retry wording, then continues', async () => {
+    const message = 'Office "Budget Office" is not an active office. Change the job posting\'s office to an active one, then hire again.';
+    mocks.hireApplicant.mockRejectedValueOnce(new ExternalHireError(message));
+
+    const outcome = await generateEmployeeCredentials([externalRow(), externalRow({ id: 'app-ext-2', fullName: 'Ana Reyes' })]);
+
+    expect(outcome.failures).toEqual([`Maria Santos: not hired. ${message}`]);
+    expect(outcome.failures[0]).not.toMatch(/try again/i);
+    expect(outcome.credentials.map((c) => c.fullName)).toEqual(['Ana Reyes']);
+    expect(mocks.hireApplicant).toHaveBeenCalledTimes(2);
   });
 
   it('treats a row cached as external as a promotion when the hire reports one, keeping the existing account', async () => {
