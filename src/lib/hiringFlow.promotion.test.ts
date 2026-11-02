@@ -30,7 +30,7 @@ vi.mock('./supabase', () => {
   return { supabase: { from: () => builder } };
 });
 
-vi.mock('./api/employeesApi', () => ({ hireApplicant: mocks.hireApplicant }));
+vi.mock('./api/employeesApi', () => ({ hireApplicantWithOutcome: mocks.hireApplicant }));
 vi.mock('./api/promotionalHiring', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api/promotionalHiring')>()),
   completePromotionalAppointment: mocks.completePromotionalAppointment,
@@ -109,7 +109,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.applicantRows = [];
   mocks.getApplicants.mockReturnValue([]);
-  mocks.hireApplicant.mockResolvedValue({ employee_id: 'EMP-9001' });
+  mocks.hireApplicant.mockResolvedValue({ employee: { employee_id: 'EMP-9001' }, promotion: null });
   mocks.assignApplicantToSlot.mockResolvedValue({ ok: true });
   mocks.createPassword.mockReturnValue('Temp#1234');
   mocks.upsertEmployeePortalAccount.mockResolvedValue({ ok: true });
@@ -239,6 +239,27 @@ describe('generateEmployeeCredentials with promotions', () => {
     expect(outcome.promotions.map((p) => p.fullName)).toEqual(['Ana Reyes']);
     expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(2);
     expectNoExternalSideEffects();
+  });
+
+  it('treats a row cached as external as a promotion when the hire reports one, keeping the existing account', async () => {
+    mocks.hireApplicant.mockResolvedValue({
+      employee: { employee_id: 'EMP-0042' },
+      promotion: completed('app-ext-1'),
+    });
+
+    const outcome = await generateEmployeeCredentials([externalRow()]);
+
+    expect(mocks.hireApplicant).toHaveBeenCalledTimes(1);
+    expect(outcome.credentials).toEqual([]);
+    expect(outcome.failures).toEqual([]);
+    expect(outcome.promotions).toEqual([
+      expect.objectContaining({ applicantId: 'app-ext-1', employeeNumber: 'EMP-0042', fullName: 'Maria Santos' }),
+    ]);
+    expect(mocks.assignApplicantToSlot).not.toHaveBeenCalled();
+    expect(mocks.createPassword).not.toHaveBeenCalled();
+    expect(mocks.upsertEmployeePortalAccount).not.toHaveBeenCalled();
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    expect(mocks.saveNewlyHired).not.toHaveBeenCalled();
   });
 });
 

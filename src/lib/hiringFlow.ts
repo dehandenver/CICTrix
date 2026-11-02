@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { hireApplicant } from './api/employeesApi';
+import { hireApplicantWithOutcome } from './api/employeesApi';
 import { normalizeApplicationType } from './api/applicantScores';
 import { completePromotionalAppointment, PromotionalAppointmentError } from './api/promotionalHiring';
 import type { PromotionalAppointmentResult } from './api/promotionalHiring';
@@ -354,8 +354,15 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
 
     let employeeId = '';
     try {
-      const employeeRow = await hireApplicant(row.id);
-      employeeId = employeeRow?.employee_id || '';
+      const { employee, promotion } = await hireApplicantWithOutcome(row.id);
+      if (promotion) {
+        // The cached type said external, but the saved application is a
+        // promotion and the transaction already completed it. Stop here: the
+        // steps below would reset the employee's password and hire record.
+        promotions.push({ ...promotion, fullName: row.fullName, position: row.position, department: row.department, plantilla: row.plantilla });
+        continue;
+      }
+      employeeId = employee?.employee_id || '';
     } catch (err: any) {
       console.error(`[hiringFlow] hire failed for ${row.id}:`, err);
       const failure = describeActionFailure('hire this applicant', err);

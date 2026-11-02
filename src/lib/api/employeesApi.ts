@@ -4,6 +4,7 @@ import {
   PromotionalAppointmentError,
   completePromotionalAppointment,
 } from './promotionalHiring';
+import type { PromotionalAppointmentResult } from './promotionalHiring';
 
 // Ideally this comes from the generated types. 
 // We manually bridge it here according to the schema since we can't regenerate types yet.
@@ -118,10 +119,10 @@ async function isPromotionApplication(applicantId: string): Promise<boolean> {
  * already exists, so nothing here creates an employee, number, email, account
  * or password, and the backend endpoint is not called.
  */
-async function hirePromotion(applicantId: string): Promise<EmployeeRow> {
+async function hirePromotion(applicantId: string): Promise<HireOutcome> {
   const result = await completePromotionalAppointment(applicantId);
   try {
-    return await fetchEmployeeById(result.employeeUuid);
+    return { employee: await fetchEmployeeById(result.employeeUuid), promotion: result };
   } catch (err) {
     // The appointment is committed. Retrying replays the RPC, which answers
     // already_completed, and then reads the employee again.
@@ -132,16 +133,34 @@ async function hirePromotion(applicantId: string): Promise<EmployeeRow> {
   }
 }
 
+export type HireOutcome = {
+  employee: EmployeeRow;
+  /** Set when the saved application was a promotion. The employee kept their account, so callers must not issue credentials. */
+  promotion: PromotionalAppointmentResult | null;
+};
+
 /**
- * Hire Applicant Flow (writes via FastAPI).
+ * Hire and say which path ran. The type is read from the saved application,
+ * so a caller holding a stale cached type still learns it was a promotion.
+ */
+export async function hireApplicantWithOutcome(applicantId: string): Promise<HireOutcome> {
+  if (await isPromotionApplication(applicantId)) {
+    return hirePromotion(applicantId);
+  }
+  return { employee: await hireExternalApplicant(applicantId), promotion: null };
+}
+
+/**
+ * Hire Applicant Flow.
  * Promotions go through the appointment transaction; external applicants keep
  * the backend-then-client-fallback path below.
  */
 export async function hireApplicant(applicantId: string): Promise<EmployeeRow> {
-  if (await isPromotionApplication(applicantId)) {
-    return hirePromotion(applicantId);
-  }
+  return (await hireApplicantWithOutcome(applicantId)).employee;
+}
 
+/** External applicants: writes via FastAPI, with a client fallback. */
+async function hireExternalApplicant(applicantId: string): Promise<EmployeeRow> {
   const token = await getAuthToken();
   try {
     const res = await fetch(`${API_BASE_URL}/employees/from-applicant/${applicantId}`, {
