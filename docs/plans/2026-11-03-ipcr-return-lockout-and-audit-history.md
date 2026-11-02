@@ -1,7 +1,7 @@
 ---
 title: Fix the IPCR return-for-revision lockout and add an audit history tab
 date: 2026-11-03
-status: Approved
+status: Done
 summary: A returned Phase 1 IPCR stays locked for the employee and blocks Phase 2 because two status records disagree. Fix that, then give the Office Account console a History tab per phase that reads the existing audit log.
 ---
 
@@ -26,7 +26,7 @@ No saved mockup covers the History surface. It follows the table toolbar, table 
 
 **Part 2, audit history.**
 - The log table `ipcr_audit_log` already exists and is append-only. Nothing reads it.
-- The employee's submit and resubmit are logged (`submit` for Phase 1, `submit_phase2` for Phase 2). The phase is derived from the action name through one mapping constant, so there is no schema change and no migration.
+- The employee's Phase 1 submit and resubmit are logged as `submit`. The Phase 2 self-rating submit was already logged as `rate` with role `employee`, so it needs no new write. The phase is derived from the action name through one mapping constant, so there is no schema change and no migration.
 - A single audit-write helper returns success or failure. The action still succeeds when the write fails, and the banner adds "Saved, but the history entry could not be recorded." This includes the four inline inserts in [ipcrRatings.ts](../../src/lib/api/ipcrRatings.ts).
 - A new `src/lib/api/ipcrAudit.ts` exposes `listAuditHistory({ phase, scope })`. It joins entries to the target setting and employee, filters to the reviewer's office with `getAcceptedOfficeNames`, and resolves the actor's name.
 - One shared history component is used in both subtabs.
