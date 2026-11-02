@@ -1,7 +1,7 @@
 ---
 title: Promotional hiring implementation progress
 date: 2026-10-30
-summary: Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct). The defects it found that block the plan, F1–F3 and the pre-existing external-hire office failure F4, are fixed; F5–F8 are pre-existing and tracked separately.
+summary: Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct). The defects it found that block the plan, F1–F3 and the pre-existing external-hire office failure F4, are fixed; F5–F8 are pre-existing and tracked separately. The 2026-11-02 failure-path run and branch review fixed the shared modal focus gap (`4a947ed`) and found F9–F12 in score saving and the uncertain-promotion message; they are open.
 ---
 
 ## Scope and current state
@@ -127,3 +127,7 @@ A fresh `deepseek/deepseek-flash#max` builder authored and ran the user-requeste
 This is mocked jsdom evidence, not browser or database acceptance. The fake Supabase bypasses PostgREST projection and RLS; layout, focus, responsive behavior, print, real storage partitioning, migrations and concurrency remain unverified. Task 3A and Tasks 4–8 still require their own implementation and Task 8's isolated browser/database gate. Never run the legacy startup against production to satisfy this check.
 
 The detailed task states, child session IDs, correction counters and review evidence remain in this plan's ignored `.superpowers/sdd/2026-10-30-promotional-hiring-fixes/progress.md`. The branch/worktree is preserved. It was pushed to the `Jayyoo07` fork and [PR #83](https://github.com/dehandenver/CICTrix/pull/83) is open against `dehandenver/CICTrix:main`; no merge, deployment, live database write or email was performed. Vercel reports the expected fork authorization failure.
+
+## Failure-path run and branch review, 2026-11-02
+
+The shared modal now moves focus inside a non-dismissible modal with no fields (`4a947ed`; tsc, lint and 850 test files pass). On the local stack, a rejected category save and a lost promotion response both left the database correct with nothing duplicated, but the UI feedback failed: the written-exam save ignores database failures (F9) and a lost response is reported as "not promoted" (F11). The branch review added F10 (an exam save can erase categories when its pre-read fails) and F12 (a corrected exam score is reverted by the next category save). `npm run build` still fails on this machine with the esbuild temp-file lock, independent of the temp folder. See the plan for details.
