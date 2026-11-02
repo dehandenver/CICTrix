@@ -15,7 +15,10 @@ import { supabase } from '../supabase';
 // The RPC is not in the generated database types yet.
 const client = supabase as any;
 
-/** Long enough for lock waits on a busy plantilla, short enough to unstick a screen. */
+/**
+ * Backstop for a hung connection. The database's own statement timeout for
+ * signed-in users is shorter, so a slow lock wait comes back as "busy" first.
+ */
 export const PROMOTION_RPC_TIMEOUT_MS = 30_000;
 
 const RPC_NAME = 'complete_promotional_appointment';
@@ -37,6 +40,8 @@ export type PromotionalAppointmentErrorKind =
   | 'not_deployed'
   /** Another database error; the transaction rolled back. */
   | 'failed'
+  /** A lock wait timed out or conflicted; the transaction rolled back and a retry may succeed. */
+  | 'busy'
   /** No usable answer. The transaction may or may not have committed. */
   | 'uncertain'
   /** The appointment committed but the employee record could not be read back. */
@@ -82,6 +87,7 @@ const REJECTION_HINTS = new Set([
   'assessment_incomplete',
   'posting_missing',
   'office_inactive',
+  'office_ambiguous',
   'plantilla_ambiguous',
   'partial_completion',
   'concurrent_change',
@@ -89,6 +95,8 @@ const REJECTION_HINTS = new Set([
 
 const MISSING_FUNCTION_CODES = new Set(['PGRST202', '42883']);
 const NOT_AUTHORIZED_CODES = new Set(['42501', 'PGRST301', 'PGRST302']);
+// Statement timeout, deadlock, serialization failure, lock not available.
+const BUSY_CODES = new Set(['57014', '40P01', '40001', '55P03']);
 const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
 
 const NOT_AUTHORIZED_MESSAGE =
@@ -98,6 +106,9 @@ const NOT_DEPLOYED_MESSAGE =
 // Says neither "failed" nor "completed": the transaction may have committed.
 const UNCERTAIN_MESSAGE =
   "We couldn't confirm the result of this promotion. Check your connection and retry. Retrying is safe and will not appoint the employee twice.";
+
+const BUSY_MESSAGE =
+  'Someone else was updating this employee or plantilla at the same time, so nothing was saved. Try again in a moment. Retrying is safe and will not appoint the employee twice.';
 
 const uncertain = (code: string | null = null): PromotionalAppointmentError =>
   new PromotionalAppointmentError(UNCERTAIN_MESSAGE, { kind: 'uncertain', code, retryable: true });
@@ -123,6 +134,9 @@ const classifyRpcError = (error: any): PromotionalAppointmentError => {
       message || `The promotion could not be completed (${hint || 'rejected'}).`,
       { kind: 'rejected', code, hint: hint || null },
     );
+  }
+  if (BUSY_CODES.has(code)) {
+    return new PromotionalAppointmentError(BUSY_MESSAGE, { kind: 'busy', code, retryable: true });
   }
   // A SQLSTATE or PostgREST code means the database answered, so the
   // transaction rolled back. No code at all is a transport failure.

@@ -107,6 +107,7 @@ describe('completePromotionalAppointment', () => {
       'assessment_incomplete',
       'posting_missing',
       'office_inactive',
+      'office_ambiguous',
       'plantilla_ambiguous',
       'partial_completion',
       'concurrent_change',
@@ -178,6 +179,23 @@ describe('completePromotionalAppointment', () => {
       expect(error.kind).toBe('failed');
       expect(error.code).toBe('23505');
       expect(error.retryable).toBe(false);
+    });
+
+    it.each([
+      ['57014', 'canceling statement due to statement timeout'],
+      ['40P01', 'deadlock detected'],
+      ['40001', 'could not serialize access due to concurrent update'],
+      ['55P03', 'could not obtain lock on row in relation "employees"'],
+    ])('treats %s (lock wait or conflict) as busy and safe to retry, without raw database text', async (code, raw) => {
+      answerWith({ data: null, error: { code, message: raw } });
+
+      const error = await caught();
+
+      expect(error.kind).toBe('busy');
+      expect(error.code).toBe(code);
+      expect(error.retryable).toBe(true);
+      expect(error.message).not.toContain(raw);
+      expect(error.message).toMatch(/try again/i);
     });
   });
 

@@ -118,10 +118,14 @@ PROMOTION_STATUS_BY_HINT = {
     "assessment_incomplete": 422,
     "posting_missing": 422,
     "office_inactive": 422,
+    "office_ambiguous": 422,
     "plantilla_ambiguous": 422,
 }
 PROMOTION_MISSING_RPC_CODES = {"PGRST202", "42883"}
 PROMOTION_NOT_AUTHORIZED_CODES = {"42501"}
+# Statement timeout, deadlock, serialization failure, lock not available:
+# the transaction rolled back and a retry may succeed.
+PROMOTION_BUSY_CODES = {"57014", "40P01", "40001", "55P03"}
 
 
 def is_promotion_application(app_type) -> bool:
@@ -156,6 +160,15 @@ def _promotion_rpc_http_error(exc: Exception) -> HTTPException:
         return HTTPException(
             status_code=403,
             detail=message or "You are not authorized to complete promotional appointments.",
+        )
+    if code in PROMOTION_BUSY_CODES:
+        return HTTPException(
+            status_code=503,
+            detail=(
+                "Someone else was updating this employee or plantilla at the same time, "
+                "so nothing was saved. Try again in a moment. "
+                "Retrying is safe and will not appoint the employee twice."
+            ),
         )
     if hint in PROMOTION_STATUS_BY_HINT:
         return HTTPException(

@@ -190,6 +190,21 @@ BEGIN
       RAISE EXCEPTION 'TEST FAILED: replay after a later promotion rewound data';
     END IF;
   END;
+
+  -- ── 3b. Replay after the account changed is still a replay ──
+  UPDATE employee_portal_accounts SET deleted_at = now() WHERE id = fx->>'account';
+  DECLARE
+    snap   text := pg_temp.snapshot(fx);
+    replay jsonb;
+  BEGIN
+    replay := pg_temp.call_as('authenticated', (fx->>'actor')::uuid, (fx->>'app')::uuid);
+    IF (replay->>'already_completed')::boolean IS DISTINCT FROM true THEN
+      RAISE EXCEPTION 'TEST FAILED: replay after the account was removed was not reported as completed';
+    END IF;
+    IF pg_temp.snapshot(fx) <> snap THEN
+      RAISE EXCEPTION 'TEST FAILED: replay after the account was removed wrote data';
+    END IF;
+  END;
   RAISE NOTICE 'ok: completion, replay and replay after a later promotion';
 END $$;
 
@@ -338,6 +353,16 @@ BEGIN
   fx := pg_temp.fixture('rej18'); rsp := (fx->>'actor')::uuid;
   UPDATE applicants SET deleted_at = now() WHERE id = (fx->>'app')::uuid;
   PERFORM pg_temp.expect_reject(fx, 'deleted application', 'P0001', 'application_not_found', 'authenticated', rsp);
+
+  fx := pg_temp.fixture('rej19'); rsp := (fx->>'actor')::uuid;
+  UPDATE applicants SET status = NULL WHERE id = (fx->>'app')::uuid;
+  PERFORM pg_temp.expect_reject(fx, 'application with no status', 'P0001', 'not_reserved', 'authenticated', rsp);
+
+  fx := pg_temp.fixture('rej20'); rsp := (fx->>'actor')::uuid;
+  INSERT INTO departments (code, name, is_active)
+  VALUES ('TD' || left(md5('rej20'), 12), '  ' || upper(fx->>'new_office') || ' ', true);
+  PERFORM pg_temp.expect_reject(fx, 'office name matches two active offices', 'P0001', 'office_ambiguous',
+                                'authenticated', rsp);
 
   RAISE NOTICE 'ok: data rejections';
 END $$;

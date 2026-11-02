@@ -343,7 +343,12 @@ class TestPromotionErrorMapping(HireFromApplicantTestCase):
         ("P0001", "assessment_incomplete"): 422,
         ("P0001", "posting_missing"): 422,
         ("P0001", "office_inactive"): 422,
+        ("P0001", "office_ambiguous"): 422,
         ("P0001", "plantilla_ambiguous"): 422,
+        ("57014", None): 503,
+        ("40P01", None): 503,
+        ("40001", None): 503,
+        ("55P03", None): 503,
         ("PGRST202", None): 503,
         ("42883", None): 503,
         ("42501", None): 403,
@@ -379,6 +384,17 @@ class TestPromotionErrorMapping(HireFromApplicantTestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("not been deployed", response.json()["detail"])
+
+    def test_busy_database_is_a_503_that_says_retry_is_safe(self):
+        self.use_client(
+            FakeClient(promotion_applicant(), rpc_error=api_error("40P01", None, "deadlock detected"))
+        )
+
+        response = self.post()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("try again", response.json()["detail"].lower())
+        self.assertNotIn("deadlock detected", response.json()["detail"])
 
     def test_unknown_database_error_is_a_500(self):
         client = self.use_client(

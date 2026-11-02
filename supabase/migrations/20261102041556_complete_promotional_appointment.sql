@@ -67,6 +67,7 @@ DECLARE
   emp            public.employees%ROWTYPE;
   employee_ids   uuid[];
   account_count  integer;
+  office_count   integer;
   posting        public.job_postings%ROWTYPE;
   office_name    text;
   plantilla_no   text;
@@ -145,23 +146,9 @@ BEGIN
       USING ERRCODE = 'P0001', HINT = 'concurrent_change';
   END IF;
 
-  -- The account is only read, never changed; a share lock keeps it from being
-  -- deleted or relinked mid-promotion.
-  SELECT count(*) INTO account_count
-    FROM (SELECT 1 FROM public.employee_portal_accounts pa
-           WHERE pa.deleted_at IS NULL
-             AND lower(btrim(pa.employee_id)) = lower(btrim(emp.employee_number))
-             FOR SHARE) linked;
-  IF account_count = 0 THEN
-    RAISE EXCEPTION 'Employee % has no portal account. Set up their account before completing the promotion.', emp.employee_number
-      USING ERRCODE = 'P0001', HINT = 'account_missing';
-  END IF;
-  IF account_count > 1 THEN
-    RAISE EXCEPTION 'Employee % has more than one portal account. Resolve the duplicate first.', emp.employee_number
-      USING ERRCODE = 'P0001', HINT = 'account_ambiguous';
-  END IF;
-
   -- ── Already completed? ────────────────────────────────────────────────────
+  -- Checked before the account: a replay writes nothing, so a later change to
+  -- the account must not turn a safe retry into a rejection.
   is_hired       := public.is_hired_application_status(app.status);
   slot_is_mine   := slot.id IS NOT NULL AND slot.status = 'filled' AND slot.filled_by_applicant_id = app.id;
   history_exists := EXISTS (
@@ -178,6 +165,22 @@ BEGIN
       USING ERRCODE = 'P0001', HINT = 'partial_completion';
   END IF;
 
+  -- The account is only read, never changed; a share lock keeps it from being
+  -- deleted or relinked mid-promotion.
+  SELECT count(*) INTO account_count
+    FROM (SELECT 1 FROM public.employee_portal_accounts pa
+           WHERE pa.deleted_at IS NULL
+             AND lower(btrim(pa.employee_id)) = lower(btrim(emp.employee_number))
+             FOR SHARE) linked;
+  IF account_count = 0 THEN
+    RAISE EXCEPTION 'Employee % has no portal account. Set up their account before completing the promotion.', emp.employee_number
+      USING ERRCODE = 'P0001', HINT = 'account_missing';
+  END IF;
+  IF account_count > 1 THEN
+    RAISE EXCEPTION 'Employee % has more than one portal account. Resolve the duplicate first.', emp.employee_number
+      USING ERRCODE = 'P0001', HINT = 'account_ambiguous';
+  END IF;
+
   -- ── Plantilla and reservation ─────────────────────────────────────────────
   IF slot.id IS NULL THEN
     RAISE EXCEPTION 'This application is not linked to a plantilla.'
@@ -191,7 +194,7 @@ BEGIN
     RAISE EXCEPTION 'This plantilla is reserved for another applicant.'
       USING ERRCODE = 'P0001', HINT = 'slot_reserved_elsewhere';
   END IF;
-  IF slot.status <> 'open' OR slot.reserved_by_applicant_id IS NULL OR app.status <> 'For Contract Signing' THEN
+  IF slot.status <> 'open' OR slot.reserved_by_applicant_id IS NULL OR app.status IS DISTINCT FROM 'For Contract Signing' THEN
     RAISE EXCEPTION 'This applicant is not currently selected for this plantilla. Select them again before completing.'
       USING ERRCODE = 'P0001', HINT = 'not_reserved';
   END IF;
@@ -224,9 +227,13 @@ BEGIN
       USING ERRCODE = 'P0001', HINT = 'posting_missing';
   END IF;
 
-  SELECT d.name INTO office_name FROM public.departments d
+  SELECT count(*), min(d.name) INTO office_count, office_name FROM public.departments d
    WHERE d.is_active AND lower(btrim(d.name)) = lower(btrim(posting.department));
-  IF office_name IS NULL THEN
+  IF office_count > 1 THEN
+    RAISE EXCEPTION 'The posting''s office "%" matches more than one active office. Resolve the duplicate first.', posting.department
+      USING ERRCODE = 'P0001', HINT = 'office_ambiguous';
+  END IF;
+  IF office_count = 0 THEN
     RAISE EXCEPTION 'The posting''s office "%" is not an active office.', coalesce(posting.department, '')
       USING ERRCODE = 'P0001', HINT = 'office_inactive';
   END IF;
