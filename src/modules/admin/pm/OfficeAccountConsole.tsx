@@ -39,6 +39,7 @@ import {
   type PendingApproval,
 } from '../../../lib/api/ipcrApproval';
 import { listNotifications, type IpcrNotification } from '../../../lib/api/ipcrSubmissions';
+import { withAuditNote } from '../../../lib/api/ipcrAudit';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import {
   listOfficeTrainingRequests,
@@ -306,7 +307,7 @@ export const OfficeAccountConsole: React.FC = () => {
     });
     setSavingEdits(false);
     if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
-    setApprovalNotice({ tone: 'ok', text: `Saved your edits to ${p.employeeName}'s targets.` });
+    setApprovalNotice({ tone: 'ok', text: withAuditNote(`Saved your edits to ${p.employeeName}'s targets.`, res) });
     setEditingId(null);
     void refreshPendingApprovals();
   };
@@ -331,7 +332,7 @@ export const OfficeAccountConsole: React.FC = () => {
     });
     setApprovalBusyId(null);
     if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
-    setApprovalNotice({ tone: 'ok', text: `Approved and frozen: ${p.employeeName}'s targets.` });
+    setApprovalNotice({ tone: 'ok', text: withAuditNote(`Approved and frozen: ${p.employeeName}'s targets.`, res) });
     void refreshPendingApprovals();
   };
 
@@ -346,7 +347,7 @@ export const OfficeAccountConsole: React.FC = () => {
     });
     setApprovalBusyId(null);
     if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
-    setApprovalNotice({ tone: 'ok', text: `Returned to ${p.employeeName} for revision.` });
+    setApprovalNotice({ tone: 'ok', text: withAuditNote(`Returned to ${p.employeeName} for revision.`, res) });
     setReturnDraftId(null);
     setReturnComment('');
     void refreshPendingApprovals();

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { returnForRevision } from './ipcrApproval';
+import { approveTargets, returnForRevision } from './ipcrApproval';
 
 type Call = { table: string; op: string; payload?: any; eq: Record<string, unknown> };
 const { calls, failTables } = vi.hoisted(() => ({ calls: [] as any[], failTables: new Set<string>() }));
@@ -65,5 +65,34 @@ describe('returnForRevision', () => {
     failTables.add('target_settings');
     expect((await returnIt()).ok).toBe(false);
     expect(callsTo('ipcr_workspace', 'update')).toHaveLength(0);
+  });
+});
+
+describe('audit trail', () => {
+  const approveIt = () =>
+    approveTargets({ targetSettingId: 'ts-1', approverEmployeeId: 'head-1', submitterEmployeeId: 'emp-1' });
+
+  it('records a return and an approval in the audit log', async () => {
+    await returnIt();
+    await approveIt();
+    const actions = callsTo('ipcr_audit_log', 'insert').map((c) => c.payload);
+    expect(actions).toEqual([
+      expect.objectContaining({ action: 'return', performed_by: 'head-1', reason: 'Fix the indicators' }),
+      expect.objectContaining({ action: 'approve', performed_by: 'head-1', performed_by_role: 'office_account' }),
+    ]);
+  });
+
+  it('reports nothing wrong when the audit row saved', async () => {
+    expect(await returnIt()).toEqual({ ok: true, data: null });
+    expect(await approveIt()).toEqual({ ok: true, data: null });
+  });
+
+  it.each([
+    ['return', returnIt],
+    ['approval', approveIt],
+  ])('still completes a %s and flags it when the audit row is lost', async (_name, act) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    failTables.add('ipcr_audit_log');
+    expect(await act()).toEqual({ ok: true, data: null, auditFailed: true });
   });
 });

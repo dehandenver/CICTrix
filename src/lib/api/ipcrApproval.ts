@@ -15,6 +15,7 @@ import { supabase } from '../supabase';
 import { createNotifications } from './employeeNotifications';
 import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
 import { type OfficeScope, getAcceptedOfficeNames, norm } from './officeScope';
+import { writeAuditEntry } from './ipcrAudit';
 
 export interface PendingIndicator {
   id: string;
@@ -36,28 +37,8 @@ export interface PendingApproval {
   mfos: PendingMfo[];
 }
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string };
-
-async function writeAudit(entry: {
-  target_setting_id: string;
-  action: string;
-  performed_by: string | null;
-  performed_by_role: string;
-  reason?: string | null;
-}): Promise<void> {
-  try {
-    await (supabase as any).from('ipcr_audit_log').insert({
-      target_setting_id: entry.target_setting_id,
-      action: entry.action,
-      performed_by: entry.performed_by,
-      performed_by_role: entry.performed_by_role,
-      reason: entry.reason ?? null,
-    });
-  } catch (err) {
-    // Audit is best-effort; never block the primary action on it.
-    console.warn('[ipcrApproval] audit write failed:', err);
-  }
-}
+// auditFailed: the action saved but its ipcr_audit_log row did not (see ipcrAudit.ts).
+type Result<T> = { ok: true; data: T; auditFailed?: boolean } | { ok: false; error: string };
 
 /**
  * A return leaves the employee's workspace row saying "Targets Submitted", which
@@ -165,7 +146,7 @@ export async function approveTargets(p: {
       .eq('id', p.targetSettingId)
       .eq('status', 'submitted_for_approval'); // only a pending record can be approved
     if (error) return { ok: false, error: error.message };
-    await writeAudit({
+    const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
       action: 'approve',
       performed_by: p.approverEmployeeId,
@@ -198,7 +179,7 @@ export async function approveTargets(p: {
         link: '/employee/ipcr-workspace',
       },
     ]);
-    return { ok: true, data: null };
+    return { ok: true, data: null, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Approve failed.' };
   }
@@ -246,14 +227,14 @@ export async function adminEditTargets(p: {
       .update({ updated_at: new Date().toISOString() })
       .eq('id', p.targetSettingId);
 
-    await writeAudit({
+    const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
       action: 'admin_edit',
       performed_by: p.approverEmployeeId,
       performed_by_role: 'office_account',
       reason: 'Office Account edited targets before approval',
     });
-    return { ok: true, data: null };
+    return { ok: true, data: null, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Edit failed.' };
   }
@@ -282,7 +263,7 @@ export async function returnForRevision(p: {
       .eq('status', 'submitted_for_approval');
     if (error) return { ok: false, error: error.message };
 
-    await writeAudit({
+    const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
       action: 'return',
       performed_by: p.approverEmployeeId,
@@ -316,7 +297,7 @@ export async function returnForRevision(p: {
         link: '/employee/ipcr-workspace',
       },
     ]);
-    return { ok: true, data: null };
+    return { ok: true, data: null, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Return failed.' };
   }

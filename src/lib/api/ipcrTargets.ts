@@ -10,6 +10,7 @@
  */
 import { supabase } from '../supabase';
 import { loadEffectiveSchedules, effectiveState } from './phaseSchedules';
+import { writeAuditEntry } from './ipcrAudit';
 
 export type FunctionType = 'core' | 'strategic' | 'support';
 // Matches the target_settings.status check in 20260715_ipcr_phase1_workflow_phase2.sql.
@@ -400,7 +401,8 @@ export async function saveTargetSetting(params: {
     if (existing.ok === false) return existing;
 
     const current = existing.data.setting;
-    if (current && (current.status === 'submitted_for_approval' || current.status === 'approved')) {
+    const wasReturned = current?.status === 'returned_for_revision';
+    if (current &&(current.status === 'submitted_for_approval' || current.status === 'approved')) {
       return { ok: false, error: 'Targets are locked and can no longer be edited.' };
     }
 
@@ -511,6 +513,14 @@ export async function saveTargetSetting(params: {
         .select('*')
         .single();
       if (submitErr) return { ok: false, error: submitErr.message };
+      // The employee is not the reader of the audit trail; writeAuditEntry logs a failure.
+      await writeAuditEntry({
+        target_setting_id: settingId,
+        action: 'submit',
+        performed_by: employeeId,
+        performed_by_role: 'employee',
+        reason: wasReturned ? 'Resubmitted after revision' : null,
+      });
       return { ok: true, data: submitted as TargetSettingRow };
     }
 
