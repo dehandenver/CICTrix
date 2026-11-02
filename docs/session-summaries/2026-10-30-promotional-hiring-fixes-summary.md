@@ -1,7 +1,7 @@
 ---
 title: Promotional hiring implementation progress
 date: 2026-10-30
-summary: Tasks 1–5 (including the reported Task 3A defect) and Task 7 are committed and verified. Tasks 4–5 add a retry-safe promotion transaction and route every promotion hire path to it. Tasks 6 and 8 remain pending.
+summary: Tasks 1–6 (including the reported Task 3A defect) and Task 7 are committed and verified. Tasks 4–6 add a retry-safe promotion transaction, route every promotion hire path to it, and keep existing accounts untouched on the credentials page. Task 8 remains pending.
 ---
 
 ## Scope and current state
@@ -51,6 +51,12 @@ Open: `npx supabase init` added `supabase/config.toml` and `supabase/.gitignore`
 Shipped on `fix/promotional-appointment-transaction`. Not pushed. A Sonnet (high) builder wrote it test-first; Opus reviewed the diff and reran every check. Planned vs. shipped matches the plan, with one addition: a 30-second timeout on the browser RPC call so a hung request reports an uncertain, retryable result instead of sticking the screen. Details and the out-of-scope problems the builder found are in the plan's Task 5 checkpoint.
 
 Checks (rerun by the reviewer): `npx vitest run src/lib/api/promotionalHiring.test.ts src/lib/api/employeesApi.promotion.test.ts` 50 passed; `python -m unittest test_promotional_hiring` from `backend` 19 passed; `npx tsc --noEmit` and `npm run lint` pass; full `npx vitest run src` with local placeholder Supabase settings 148 files / 1,333 tests passed, with no failures. Red evidence: against the old `employeesApi.ts`, 13 of the 17 new hire tests failed (every promotion case); the backend tests failed before the new branch. A real-API check through the local PostgREST confirmed the error codes and hints the classifier depends on.
+
+## Task 6: account-preserving results (2026-11-02)
+
+Shipped on `fix/promotional-appointment-transaction`. Not pushed. Two Sonnet (high) builders worked test-first in parallel lanes (`hiringFlow` and the Generate Credentials page); Opus reviewed both diffs and reran every check. Promotions now complete through the Task 4 transaction only, with no new account, password, credential email or Newly Hired record, and the result modal reports them separately from credentials. Deviation: `promotions` carries name, position, office and plantilla alongside the RPC result. Details are in the plan's Task 6 checkpoint.
+
+Checks (rerun by the reviewer): `npx vitest run src/lib/hiringFlow src/components/GenerateCredentialsPage` 4 files / 28 passed; `npx tsc --noEmit` and `npm run lint` pass; full `npx vitest run src` with placeholder Supabase settings 149 files / 1,347 tests passed, with one unhandled teardown error from the untouched `CompetencyFrameworkPage.test.tsx`. Red evidence: 8 of 9 new hiringFlow tests and 5 of the new page tests failed against the old code.
 
 ## Checks observed before implementation
 
