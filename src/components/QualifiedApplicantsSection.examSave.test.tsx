@@ -61,4 +61,15 @@ describe('Written exam score save (F9)', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Written Examination Scores' })).toBeNull(), { timeout: 3000 });
     expect(saveExam).toHaveBeenCalledWith('Planning Officer II', { 1: 88, 2: 77 });
   });
+
+  it('shows each saved exam score in the applicants table', async () => {
+    saveExam.mockResolvedValue({ ok: true });
+    await enterScoresAndSave();
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Written Examination Scores' })).toBeNull(), { timeout: 3000 });
+
+    fireEvent.click(screen.getByText('Planning Officer II', { selector: 'span' }));
+    const row = (name: string) => screen.getByText(name).closest('tr') as HTMLElement;
+    expect(row('Teodoro Mendoza').textContent).toMatch(/88 \/ \d+/);
+    expect(row('Corazon Panganiban').textContent).toMatch(/77 \/ \d+/);
+  });
 });

@@ -292,6 +292,33 @@ describe('generateEmployeeCredentials with promotions', () => {
       expect(outcome.failures[0]).toMatch(/will not promote them twice/i);
     });
 
+    it('reports an unconfirmed result when the check fails as busy after a first call with no answer', async () => {
+      mocks.completePromotionalAppointment
+        .mockRejectedValueOnce(uncertainError())
+        .mockRejectedValueOnce(new PromotionalAppointmentError('Busy.', { kind: 'busy', code: '57014', retryable: true }));
+
+      const outcome = await generateEmployeeCredentials([promotionRow()]);
+
+      expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(2);
+      expect(outcome.unconfirmed).toBe(1);
+      expect(outcome.failures).toHaveLength(1);
+      expect(outcome.failures[0]).toContain('Juan Dela Cruz: result not confirmed.');
+      expect(outcome.failures[0]).not.toMatch(/not promoted/i);
+    });
+
+    it('keeps a definite rejection on the check as "not promoted"', async () => {
+      mocks.completePromotionalAppointment
+        .mockRejectedValueOnce(uncertainError())
+        .mockRejectedValueOnce(new PromotionalAppointmentError('Position is already filled.', { kind: 'rejected', retryable: false }));
+
+      const outcome = await generateEmployeeCredentials([promotionRow()]);
+
+      expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(2);
+      expect(outcome.unconfirmed).toBe(0);
+      expect(outcome.failures).toHaveLength(1);
+      expect(outcome.failures[0]).toContain('Juan Dela Cruz: not promoted. Position is already filled.');
+    });
+
     it('does not check again after a definite rejection', async () => {
       mocks.completePromotionalAppointment.mockRejectedValueOnce(
         new PromotionalAppointmentError('Busy.', { kind: 'busy', code: '57014', retryable: true }),

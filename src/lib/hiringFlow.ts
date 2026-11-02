@@ -302,6 +302,9 @@ export interface GenerateOutcome {
 const isUncertain = (err: unknown): boolean =>
   err instanceof PromotionalAppointmentError && err.kind === 'uncertain';
 
+/** Failures that prove nothing was saved, even after a first call with no answer. */
+const DEFINITE_KINDS: readonly string[] = ['rejected', 'not_authorized', 'not_deployed'];
+
 /**
  * Complete a promotion, checking once more when the first call got no answer.
  * A replay of a committed promotion returns `already_completed` and writes
@@ -312,7 +315,16 @@ const completeOrConfirmPromotion = async (applicantId: string): Promise<Promotio
     return await completePromotionalAppointment(applicantId);
   } catch (err) {
     if (!isUncertain(err)) throw err;
-    return completePromotionalAppointment(applicantId);
+    try {
+      return await completePromotionalAppointment(applicantId);
+    } catch (checkErr) {
+      // The first call may still commit, so only a definite answer settles it.
+      // Anything else (busy while waiting on its locks, a failed read) is
+      // reported as not confirmed.
+      if (checkErr instanceof PromotionalAppointmentError && DEFINITE_KINDS.includes(checkErr.kind)) throw checkErr;
+      console.error(`[hiringFlow] promotion check failed for ${applicantId}:`, checkErr);
+      throw err;
+    }
   }
 };
 

@@ -1751,22 +1751,25 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
     if (!result.ok) return result;
 
     setExamScores((prev) => ({ ...prev, [position]: scores }));
-    const updatedCat = { ...catScores };
     const posApplicants = folders.find(f => f.position === position)?.applicants ?? [];
-    Object.entries(scores).forEach(([id, val]) => {
-      const num = parseFloat(val);
-      if (!isNaN(num)) {
-        const applicant = posApplicants.find(a => a.id === id);
-        if (applicant) {
-          const existing = deriveInitial(applicant, updatedCat);
-          // A new exam score replaces the old one outright (F12).
-          updatedCat[id] = { ...existing, writtenExam: { ...existing.writtenExam, initialScore: num, finalScore: num } };
+    // Built from the latest state, not a copy taken before the save was awaited.
+    setCatScores((prev) => {
+      const updatedCat = { ...prev };
+      Object.entries(scores).forEach(([id, val]) => {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+          const applicant = posApplicants.find(a => a.id === id);
+          if (applicant) {
+            const existing = deriveInitial(applicant, updatedCat);
+            // A new exam score replaces the old one outright (F12).
+            updatedCat[id] = { ...existing, writtenExam: { ...existing.writtenExam, initialScore: num, finalScore: num } };
+          }
         }
-      }
+      });
+      return updatedCat;
     });
-    setCatScores(updatedCat);
     return result;
-  }, [catScores, folders]);
+  }, [folders]);
 
   const handleSaveCatScores = useCallback(async (applicantId: string, scores: ApplicantCategoryScores) => {
     const result = await saveApplicantCategoryScores(applicantId, scores);
