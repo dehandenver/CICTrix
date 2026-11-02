@@ -180,6 +180,25 @@ export async function getActiveCycle(): Promise<Result<PerformanceCycle | null>>
   }
 }
 
+/**
+ * The status a save writes ahead of the final submit update. A returned record
+ * stays returned, so Save Draft cannot drop it back to draft and lock the
+ * employee out once the Phase 1 window has closed.
+ */
+export const statusForSave = (current: TargetStatus | undefined, submit: boolean): TargetStatus =>
+  current === 'returned_for_revision' ? current : submit ? current ?? 'draft' : 'draft';
+
+/** True when the supervisor has sent this employee's targets back for a fix. */
+async function isReturnedForRevision(employeeId: string, cycleId: number): Promise<boolean> {
+  const { data, error } = await (supabase as any)
+    .from('target_settings')
+    .select('status')
+    .eq('employee_id', employeeId)
+    .eq('cycle_id', cycleId)
+    .maybeSingle();
+  return !error && data?.status === 'returned_for_revision';
+}
+
 /** Load an employee's target setting for a cycle, with its MFOs and indicators. */
 export async function loadTargetSetting(
   employeeId: string,
@@ -333,8 +352,9 @@ export async function saveTargetSetting(params: {
     return { ok: false, error: 'Add at least one MFO with a success indicator before submitting.' };
   }
 
-  // Submit guard: Check if Phase 1 is open or if employee has probationary window
-  if (submit) {
+  // Submit guard: Check if Phase 1 is open or if employee has probationary window.
+  // A record the supervisor returned is fixed on their schedule, not the window's.
+  if (submit && !(await isReturnedForRevision(employeeId, cycleId))) {
     try {
       const { data: emp } = await (supabase as any)
         .from('employees')
@@ -388,7 +408,7 @@ export async function saveTargetSetting(params: {
     const settingPayload: Record<string, unknown> = {
       employee_id: employeeId,
       cycle_id: cycleId,
-      status: submit ? current?.status ?? 'draft' : 'draft',
+      status: statusForSave(current?.status, submit),
       updated_at: nowIso,
     };
 

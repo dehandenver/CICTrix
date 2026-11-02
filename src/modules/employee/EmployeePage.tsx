@@ -275,9 +275,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const [workspaceRow, setWorkspaceRow] = useState<IpcrWorkspaceRow | null>(null);
 
   const isTargetApproved = targetStatus === 'approved' || ipcrApproved;
-  const isPendingApproval = targetStatus === 'submitted_for_approval' || workspaceRow?.status === 'Targets Submitted';
+  // A returned record is the supervisor's request for a fix: the workspace row can
+  // still say "Targets Submitted" from the earlier submit, and the Phase 1 window
+  // may have closed since. Neither may keep the employee out of the form.
+  const isReturned = targetStatus === 'returned_for_revision' && !isTargetApproved;
+  const isPendingApproval =
+    targetStatus === 'submitted_for_approval' || (!isReturned && workspaceRow?.status === 'Targets Submitted');
   const targetsLocked = isPendingApproval || isTargetApproved;
-  const readOnly = !ipcrHydrated || ipcrLoading || targetsLocked || !isTargetSettingActive;
+  const isTargetWindowOpen = isTargetSettingActive || isReturned;
+  const readOnly = !ipcrHydrated || ipcrLoading || targetsLocked || !isTargetWindowOpen;
 
   // Auto-switch to Phase 2 on first load ONLY when accomplishment rating is active
   // AND the employee's Phase 1 targets have already been approved for this cycle.
@@ -1858,12 +1864,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             {/* Subtab content */}
             {ipcrSubtab === 'phase1' && (
               <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
-                {!isTargetSettingActive && probationarySchedule && (
+                {!isTargetWindowOpen && probationarySchedule && (
                   <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs font-semibold mb-4">
                     ⚠️ Target setting is currently closed. The scheduled period was from {new Date(probationarySchedule.target_start).toLocaleDateString()} to {new Date(probationarySchedule.target_end).toLocaleDateString()}.
                   </div>
                 )}
-                {!isTargetSettingActive && !probationarySchedule && (
+                {!isTargetWindowOpen && !probationarySchedule && (
                   <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs font-semibold mb-4">
                     ⚠️ Phase 1 (Target Setting) is not yet open. The PM Division will notify you when it opens.
                   </div>
@@ -2038,12 +2044,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     top of the workspace are far above the fold once the three
                     function tables are filled in, so a failed submit down here
                     looked like the button simply doing nothing. */}
-                {!targetsLocked && isTargetSettingActive && ipcrError && (
+                {!targetsLocked && isTargetWindowOpen && ipcrError && (
                   <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
                     {ipcrError}
                   </div>
                 )}
-                {!targetsLocked && isTargetSettingActive && saveSuccess && (
+                {!targetsLocked && isTargetWindowOpen && saveSuccess && (
                   <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
                     {saveSuccess}
                   </div>

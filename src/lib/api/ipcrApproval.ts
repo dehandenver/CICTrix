@@ -59,6 +59,20 @@ async function writeAudit(entry: {
   }
 }
 
+/**
+ * A return leaves the employee's workspace row saying "Targets Submitted", which
+ * the employee page reads as still pending. Put it back to a draft, best-effort:
+ * the return itself has already succeeded.
+ */
+async function resetWorkspaceToDraft(employeeId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('ipcr_workspace')
+    .update({ status: 'Draft Targets', updated_at: new Date().toISOString() })
+    .eq('employee_id', employeeId)
+    .eq('status', 'Targets Submitted');
+  if (error) console.warn('[ipcrApproval] workspace reset failed:', error.message);
+}
+
 /** Every IPCR awaiting approval, with its submitter and frozen-candidate targets. */
 export async function listPendingApprovals(scope?: OfficeScope | null): Promise<Result<PendingApproval[]>> {
   try {
@@ -275,6 +289,7 @@ export async function returnForRevision(p: {
       performed_by_role: 'office_account',
       reason: p.comment?.trim() || null,
     });
+    await resetWorkspaceToDraft(p.submitterEmployeeId);
     try {
       const meta = await resolveTargetSettingMeta(p.targetSettingId);
       if (meta) {

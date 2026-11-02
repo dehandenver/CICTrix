@@ -5,7 +5,7 @@ import type { Employee } from '../../types/employee.types';
 import { EmployeePage } from './EmployeePage';
 import { clearEmployeeSession } from '../../lib/employeeSession';
 
-const mocks = vi.hoisted(() => ({ raw: vi.fn(), targets: vi.fn() }));
+const mocks = vi.hoisted(() => ({ raw: vi.fn(), targets: vi.fn(), workspace: vi.fn(), phaseOpen: vi.fn() }));
 vi.mock('../../lib/supabase', async () => {
   const { supabaseStub } = await import('../../test/supabaseStub');
   return { supabase: supabaseStub() };
@@ -25,10 +25,10 @@ vi.mock('../../lib/api/ipcrTargets', async (original) => ({
   getActiveCycle: async () => ({ ok: true, data: { id: 2 } }), loadTargetSetting: mocks.targets,
 }));
 vi.mock('../../lib/api/ipcrWorkspace', async (original) => ({
-  ...(await original<typeof import('../../lib/api/ipcrWorkspace')>()), getWorkspace: async () => null,
+  ...(await original<typeof import('../../lib/api/ipcrWorkspace')>()), getWorkspace: () => mocks.workspace(),
 }));
 vi.mock('../../lib/api/employeePhaseGate', () => ({
-  EMPTY_PHASE_GATE: {}, fetchPhaseGate: async () => ({}), isPhaseOpen: () => true,
+  EMPTY_PHASE_GATE: {}, fetchPhaseGate: async () => ({}), isPhaseOpen: () => mocks.phaseOpen(),
 }));
 vi.mock('../../lib/api/phaseSchedules', async (original) => ({
   ...(await original<typeof import('../../lib/api/phaseSchedules')>()), loadEffectiveSchedules: async () => ({}),
@@ -43,6 +43,8 @@ const employee = {
 
 beforeEach(() => {
   vi.clearAllMocks(); sessionStorage.clear();
+  mocks.workspace.mockResolvedValue(null);
+  mocks.phaseOpen.mockReturnValue(true);
   mocks.raw.mockImplementation(async () => {
     if (mocks.raw.mock.calls.length > 3) throw new Error('Repeated workspace hydration');
     return { success: true, data: { employee_number: 'EMP-1' } };
@@ -65,6 +67,50 @@ describe('workspace hydration', () => {
     expect(screen.getByDisplayValue('Payroll')).toBeDisabled();
     expect(screen.getByDisplayValue('Process payroll')).toBeDisabled();
     expect(mocks.targets).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('returned for revision', () => {
+  const TARGETS = { core: [{ title: 'Payroll', indicators: [{ description: 'Process payroll' }] }], strategic: [], support: [] };
+  const setStatus = (status: string) => mocks.targets.mockResolvedValue({ ok: true, data: {
+    setting: { id: 'ts-1', cycle_id: 2, status, review_comment: 'Fix the indicators' }, targets: TARGETS,
+  } });
+  // The employee's earlier submit left the workspace row at "Targets Submitted".
+  const staleWorkspace = () => mocks.workspace.mockResolvedValue({
+    status: 'Targets Submitted', core_target: 'Payroll\n  - Process payroll', strategic_target: null, support_target: null,
+  });
+  const mount = () => render(
+    <MemoryRouter initialEntries={['/employee/ipcr-workspace']}><EmployeePage currentUser={employee} onLogout={() => {}} /></MemoryRouter>,
+  );
+
+  it('is editable and shows Needs Revision even though the workspace still says Targets Submitted', async () => {
+    setStatus('returned_for_revision'); staleWorkspace();
+    mount();
+    expect(await screen.findByText('Needs Revision')).toBeInTheDocument();
+    expect(screen.queryByText('Pending Approval')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Payroll')).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Submit Targets for Approval/ })).toBeInTheDocument();
+  });
+
+  it('stays editable after the Phase 1 window has closed', async () => {
+    setStatus('returned_for_revision'); staleWorkspace(); mocks.phaseOpen.mockReturnValue(false);
+    mount();
+    expect(await screen.findByText('Needs Revision')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Payroll')).toBeEnabled();
+    expect(screen.queryByText(/not yet open/)).not.toBeInTheDocument();
+  });
+
+  it('still locks a plain draft once the window has closed', async () => {
+    setStatus('draft'); mocks.phaseOpen.mockReturnValue(false);
+    mount();
+    expect(await screen.findByDisplayValue('Payroll')).toBeDisabled();
+  });
+
+  it('still shows Pending Approval for a record that was resubmitted', async () => {
+    setStatus('submitted_for_approval'); staleWorkspace();
+    mount();
+    expect(await screen.findByText('Pending Approval')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Payroll')).toBeDisabled();
   });
 });
 
