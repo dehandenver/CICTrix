@@ -69,6 +69,7 @@ export const GenerateCredentialsPage = () => {
   const [credentials, setCredentials] = useState<CredentialResult[]>([]);
   const [promotions, setPromotions] = useState<PromotionOutcome[]>([]);
   const [failures, setFailures] = useState<string[]>([]);
+  const [unconfirmed, setUnconfirmed] = useState(0);
   // A failed read is reported, not shown as "nobody is awaiting credentials".
   const [loadError, setLoadError] = useState<unknown>(null);
   const feedback = useFeedback();
@@ -137,6 +138,7 @@ export const GenerateCredentialsPage = () => {
       setCredentials(outcome.credentials);
       setPromotions(outcome.promotions);
       setFailures(outcome.failures);
+      setUnconfirmed(outcome.unconfirmed ?? 0);
       // When every row failed, the result modal lists each reason, so no banner blames the connection.
       if (outcome.credentials.length === 0 && outcome.promotions.length === 0 && outcome.failures.length === 0) {
         setError("We couldn't generate any credentials. Check your connection and try again.");
@@ -152,17 +154,22 @@ export const GenerateCredentialsPage = () => {
     }
   };
 
-  const closeResults = () => { setCredentials([]); setPromotions([]); setFailures([]); };
+  const closeResults = () => { setCredentials([]); setPromotions([]); setFailures([]); setUnconfirmed(0); };
   // Every selected row failed: the modal only lists reasons and claims nothing was created or emailed.
   const nothingCompleted = credentials.length === 0 && promotions.length === 0;
-  const resultTitle = nothingCompleted
+  // A promotion with no answer may have committed, so "nothing" could be false.
+  const resultTitle = nothingCompleted && unconfirmed > 0
+    ? 'Result Not Confirmed'
+    : nothingCompleted
     ? 'Nothing Was Completed'
     : credentials.length > 0 && promotions.length > 0
       ? 'Appointments Completed'
       : credentials.length === 0
         ? 'Promotions Completed'
         : 'Employee Records Created';
-  const resultSubtitle = nothingCompleted
+  const resultSubtitle = nothingCompleted && unconfirmed > 0
+    ? "We couldn't confirm every result. Check the reasons below."
+    : nothingCompleted
     ? 'None of the selected applicants were completed. Check the reasons below.'
     : [
       credentials.length > 0
@@ -439,7 +446,7 @@ export const GenerateCredentialsPage = () => {
         {failures.length > 0 && (
           <div role="alert" className="mb-4 rounded-xl border-l-4 border-[var(--warning-500)] bg-[var(--warning-100)] p-3 text-sm text-[var(--neutral-800)]">
             <p className="font-semibold">Some steps need attention:</p>
-            <ul className="mt-1 list-disc pl-5">{failures.map((f) => <li key={f}>{f}</li>)}</ul>
+            <ul className="mt-1 list-disc pl-5">{failures.map((f, i) => <li key={i}>{f}</li>)}</ul>
           </div>
         )}
         {credentials.length > 0 && promotions.length > 0 && (

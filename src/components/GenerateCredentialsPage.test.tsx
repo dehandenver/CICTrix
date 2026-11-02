@@ -175,6 +175,16 @@ describe('Generate Employee Credentials', () => {
     expect(within(dialog).getByRole('button', { name: 'Done' })).toBeInTheDocument();
   });
 
+  it('says the result is unconfirmed, not that nothing was completed, when a promotion got no answer', async () => {
+    const reason = "Corazon Panganiban: result not confirmed. We couldn't confirm whether this promotion finished.";
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [], promotions: [], failures: [reason], unconfirmed: 1 });
+    await generateSelected('Ligaya Bautista');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Result Not Confirmed' });
+    expect(dialog.textContent).not.toMatch(/Nothing Was Completed|None of the selected applicants were completed/);
+    expect(within(dialog).getByText(reason)).toBeInTheDocument();
+  });
+
   it('keeps the credential title and failure list when some credentials were issued', async () => {
     const credential = { fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' };
     generateEmployeeCredentials.mockResolvedValue({ credentials: [credential], promotions: [], failures: ['Ana Reyes: could not be hired.'] });

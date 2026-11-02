@@ -295,7 +295,26 @@ export interface GenerateOutcome {
   promotions: PromotionOutcome[];
   /** "<name>: <reason>" for each applicant that could not be fully processed. */
   failures: string[];
+  /** Promotions in `failures` whose result is unknown: they may have completed. */
+  unconfirmed: number;
 }
+
+const isUncertain = (err: unknown): boolean =>
+  err instanceof PromotionalAppointmentError && err.kind === 'uncertain';
+
+/**
+ * Complete a promotion, checking once more when the first call got no answer.
+ * A replay of a committed promotion returns `already_completed` and writes
+ * nothing, so the second call only settles what happened.
+ */
+const completeOrConfirmPromotion = async (applicantId: string): Promise<PromotionalAppointmentResult> => {
+  try {
+    return await completePromotionalAppointment(applicantId);
+  } catch (err) {
+    if (!isUncertain(err)) throw err;
+    return completePromotionalAppointment(applicantId);
+  }
+};
 
 /**
  * Plain next step for a promotion that did not complete. A retryable
@@ -303,6 +322,11 @@ export interface GenerateOutcome {
  * safe, so it is not repeated here.
  */
 const promotionFailureMessage = (fullName: string, err: unknown): string => {
+  if (isUncertain(err)) {
+    // The transaction may have committed and taken the row off this page, so
+    // "not promoted" could be false and "retry" impossible.
+    return `${fullName}: result not confirmed. We couldn't confirm whether this promotion finished, even after checking again. Reload this page: if they are no longer listed, the promotion is complete; if they are, select them and generate again. Repeating it will not promote them twice.`;
+  }
   if (err instanceof PromotionalAppointmentError) {
     return `${fullName}: not promoted. ${err.message}`;
   }
@@ -320,19 +344,20 @@ const promotionFailureMessage = (fullName: string, err: unknown): string => {
  * that moves the employee into the plantilla and fills it. They get no new
  * account, password, email or Newly Hired row, so the employee's original hire
  * information and sign-in stay as they were. A promotion failure is reported
- * per row and never retried here.
+ * per row; only a call that got no answer is checked once more.
  */
 export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Promise<GenerateOutcome> => {
   const credentials: CredentialResult[] = [];
   const promotions: PromotionOutcome[] = [];
   const failures: string[] = [];
+  let unconfirmed = 0;
   const newlyHiredRecords: NewlyHired[] = [];
   const hiredAt = new Date().toISOString();
 
   for (const row of rows) {
     if (row.applicationType === 'promotion') {
       try {
-        const result = await completePromotionalAppointment(row.id);
+        const result = await completeOrConfirmPromotion(row.id);
         promotions.push({
           ...result,
           fullName: row.fullName,
@@ -342,6 +367,7 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
         });
       } catch (err) {
         console.error(`[hiringFlow] promotion failed for ${row.id}:`, err);
+        if (isUncertain(err)) unconfirmed += 1;
         failures.push(promotionFailureMessage(row.fullName, err));
         continue;
       }
@@ -490,7 +516,7 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
   }
 
   window.dispatchEvent(new Event('cictrix:applicants-updated'));
-  return { credentials, promotions, failures };
+  return { credentials, promotions, failures, unconfirmed };
 };
 
 // ─── Printout: cut-out cards (option A, docs/mockups/2026-10-21-hire-reservation-flow.html) ───

@@ -256,14 +256,52 @@ describe('generateEmployeeCredentials with promotions', () => {
       expect(failure).not.toMatch(/promote them twice/i);
     });
 
-    it('states retry safety exactly once for an uncertain result', async () => {
-      const failure = await failThroughRealApi({ reject: new TypeError('Failed to fetch') });
+  });
 
-      expect(failure).toContain('Juan Dela Cruz: not promoted.');
-      expect(countOf(failure, /retrying is safe/gi)).toBe(1);
-      expect(failure).toMatch(/will not appoint the employee twice/i);
-      expect(failure).not.toMatch(/safe to try again/i);
-      expect(failure).not.toMatch(/promote them twice/i);
+  describe('a promotion with no answer (F11)', () => {
+    const uncertainError = () => new PromotionalAppointmentError('No answer.', { kind: 'uncertain', retryable: true });
+
+    it('checks once more and counts the promotion when the replay confirms it', async () => {
+      mocks.completePromotionalAppointment
+        .mockRejectedValueOnce(uncertainError())
+        .mockResolvedValueOnce(completed('app-promo-1', true));
+
+      const outcome = await generateEmployeeCredentials([promotionRow()]);
+
+      expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(2);
+      expect(mocks.completePromotionalAppointment).toHaveBeenNthCalledWith(2, 'app-promo-1');
+      expect(outcome.failures).toEqual([]);
+      expect(outcome.unconfirmed).toBe(0);
+      expect(outcome.promotions.map((p) => p.fullName)).toEqual(['Juan Dela Cruz']);
+      expectNoExternalSideEffects();
+    });
+
+    it('reports an unconfirmed result, never "not promoted", when the check also gets no answer', async () => {
+      mocks.completePromotionalAppointment
+        .mockRejectedValueOnce(uncertainError())
+        .mockRejectedValueOnce(uncertainError());
+
+      const outcome = await generateEmployeeCredentials([promotionRow()]);
+
+      expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(2);
+      expect(outcome.unconfirmed).toBe(1);
+      expect(outcome.failures).toHaveLength(1);
+      expect(outcome.failures[0]).toContain('Juan Dela Cruz: result not confirmed.');
+      expect(outcome.failures[0]).not.toMatch(/not promoted/i);
+      expect(outcome.failures[0]).toMatch(/no longer listed, the promotion is complete/i);
+      expect(outcome.failures[0]).toMatch(/will not promote them twice/i);
+    });
+
+    it('does not check again after a definite rejection', async () => {
+      mocks.completePromotionalAppointment.mockRejectedValueOnce(
+        new PromotionalAppointmentError('Busy.', { kind: 'busy', code: '57014', retryable: true }),
+      );
+
+      const outcome = await generateEmployeeCredentials([promotionRow()]);
+
+      expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(1);
+      expect(outcome.unconfirmed).toBe(0);
+      expect(outcome.failures[0]).toContain('Juan Dela Cruz: not promoted.');
     });
   });
 
