@@ -1,7 +1,7 @@
 ---
 title: Promotional hiring implementation progress
 date: 2026-10-30
-summary: Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct). The defects it found that block the plan, F1–F3 and the pre-existing external-hire office failure F4, are fixed; F5–F8 are pre-existing and tracked separately. The 2026-11-02 failure-path run and branch review fixed the shared modal focus gap (`4a947ed`) and found F9–F12 in score saving and the uncertain-promotion message; they are open.
+summary: Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct). The defects it found that block the plan, F1–F3 and the pre-existing external-hire office failure F4, are fixed; F5–F8 are pre-existing and tracked separately. The 2026-11-02 failure-path run and branch review fixed the shared modal focus gap (`4a947ed`) and found F9–F12 in score saving and the uncertain-promotion message; all four are fixed (`3d60c60`, `0deca4a`) and rechecked on the local stack. Only `npm run build` remains, blocked by this machine.
 ---
 
 ## Scope and current state
@@ -131,3 +131,5 @@ The detailed task states, child session IDs, correction counters and review evid
 ## Failure-path run and branch review, 2026-11-02
 
 The shared modal now moves focus inside a non-dismissible modal with no fields (`4a947ed`; tsc, lint and 850 test files pass). On the local stack, a rejected category save and a lost promotion response both left the database correct with nothing duplicated, but the UI feedback failed: the written-exam save ignores database failures (F9) and a lost response is reported as "not promoted" (F11). The branch review added F10 (an exam save can erase categories when its pre-read fails) and F12 (a corrected exam score is reverted by the next category save). `npm run build` still fails on this machine with the esbuild temp-file lock, independent of the temp folder. See the plan for details.
+
+F9–F12 were then fixed the same day (`3d60c60`, `0deca4a`), test-first, with the full suite passing (851 files / 7,394 tests). A second local-stack run confirmed a refused exam save is reported and not cached, an exam correction survives a category save, and a lost promotion response is either confirmed by one safe replay or reported as “Result Not Confirmed”. The F11 change reverses the earlier rule that Generate never retries a promotion: it now checks once after a call with no answer. The plan stays In Progress only on `npm run build`.
