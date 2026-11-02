@@ -1,7 +1,7 @@
 ---
 title: Promotional hiring implementation progress
 date: 2026-10-30
-summary: Tasks 1–3, the reported Task 3A defect, Task 7 legacy-sync guards and the Task 4 appointment transaction are committed and verified. Task 4 passes its database and two-session tests on a local copy of the production schema. Tasks 5–6 and 8 remain pending.
+summary: Tasks 1–5 (including the reported Task 3A defect) and Task 7 are committed and verified. Tasks 4–5 add a retry-safe promotion transaction and route every promotion hire path to it. Tasks 6 and 8 remain pending.
 ---
 
 ## Scope and current state
@@ -45,6 +45,12 @@ Checks:
 - No TypeScript or Python changed, so `tsc`, lint and Vitest were not rerun. `src/types/database.types.ts` was not regenerated.
 
 Open: `npx supabase init` added `supabase/config.toml` and `supabase/.gitignore`, which are left uncommitted pending a team decision. The repo's inability to build a database from its migrations is a separate gap.
+
+## Task 5: shared appointment entry points (2026-11-02)
+
+Shipped on `fix/promotional-appointment-transaction`. Not pushed. A Sonnet (high) builder wrote it test-first; Opus reviewed the diff and reran every check. Planned vs. shipped matches the plan, with one addition: a 30-second timeout on the browser RPC call so a hung request reports an uncertain, retryable result instead of sticking the screen. Details and the out-of-scope problems the builder found are in the plan's Task 5 checkpoint.
+
+Checks (rerun by the reviewer): `npx vitest run src/lib/api/promotionalHiring.test.ts src/lib/api/employeesApi.promotion.test.ts` 50 passed; `python -m unittest test_promotional_hiring` from `backend` 19 passed; `npx tsc --noEmit` and `npm run lint` pass; full `npx vitest run src` with local placeholder Supabase settings 148 files / 1,333 tests passed, with no failures. Red evidence: against the old `employeesApi.ts`, 13 of the 17 new hire tests failed (every promotion case); the backend tests failed before the new branch. A real-API check through the local PostgREST confirmed the error codes and hints the classifier depends on.
 
 ## Checks observed before implementation
 
