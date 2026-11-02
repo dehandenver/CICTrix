@@ -2,8 +2,10 @@
 title: Security remediation (credentials, document encryption, authorization and public applicant flows)
 date: 2026-10-16
 status: Draft
-summary: Expanded by the October 27 evidence-based review and succession scoring dependency. Contain leaked keys, replace browser-only credentials, enforce role and office authorization, and protect applicant flows, qualification evidence, review decisions and audit history.
+summary: Expanded by the October 27 review and succession scoring dependency; re-verified 2026-11-02 against upstream main e110977 with Phase 1 containment planned in detail (F22–F23 added). Contain leaked keys, replace browser-only credentials, enforce role and office authorization, and protect applicant flows, qualification evidence, review decisions and audit history.
 ---
+
+> **Last updated 2026-11-02.** Re-verified against upstream `dehandenver/CICTrix` main (`e110977`, public) and the live project: every Critical/High finding from October 27 is still open (see [November 2 re-verification](#november-2-re-verification)). Phase 1 is now planned step by step below and awaits approval; nothing in it has been executed.
 
 ## Goal
 
@@ -61,13 +63,105 @@ The chosen identity architecture is **Supabase Auth for every person who signs i
 
 ### Phase 1: Contain (same day)
 
-1. **Rotate keys** (Supabase dashboard, done by you): create new publishable and secret API keys (`sb_publishable_…` / `sb_secret_…`), switch the app to them, then disable the legacy JWT-based `anon` and `service_role` keys. Disabling the legacy keys is what kills the leaked one.
-2. Update the keys in Vercel env vars (`VITE_SUPABASE_ANON_KEY`, backend `SUPABASE_SERVICE_ROLE_KEY`), local `.env`, and any teammate's machine. Redeploy.
-3. Inventory exact function signatures and revoke unsafe effective `EXECUTE` grants from **PUBLIC as well as `anon` and `authenticated`** on demo account functions and unauthorized mutation RPCs, including `undo_document_validation` and `finalize_ipcr_surfaces`. Regrant only intended callers after authorization exists. The live demo functions and undo RPC inherit PUBLIC execution, so revoking only the named roles is insufficient. `sync_salaries_for_grade` returns `trigger`, not an ordinary callable RPC; protect writes to its source table and audit its body rather than treating it as a directly exploitable HTTP endpoint.
-4. Turn on leaked-password protection in Auth settings.
-5. Review Supabase logs (API and Auth) since the first leak commit for service-role traffic you don't recognise, and save what you find.
-6. Contain F11–F12 immediately: restrict anonymous document access and rater writes; stop distributing the shared private key; remove the browser fallback; generate a replacement key outside source control. Inventory affected ciphertext before retiring the old key. Re-encrypt or rewrap existing files under a versioned key scheme; keep the old key only in a controlled migration/recovery process until verified. Rotation cannot make already copied ciphertext and a leaked key confidential again.
-7. Restrict public reads/writes on sensitive tables and disable unnecessary public backend operations while the portal cutover is prepared. Taking the Vercel website offline alone does not close direct Supabase REST, RPC or Storage access.
+*Planned in detail 2026-11-02 from the live catalog and upstream `e110977`. Not approved for execution yet.*
+
+**Goal.** Kill the leaked service-role key, close the account-takeover and key-theft paths that need no login, and stop the backend's unauthenticated side effects. Phase 1 is deliberately limited to changes that do not break a working portal. Anonymous reads of `employees` PII and the open Storage writes stay open until Phase 3/4, because the employee and office portals still run as `anon` (they don't sign in through Supabase Auth). That gap is why Phase 0.2's offline decision matters.
+
+**Who does what.** Steps marked *(owner)* are dashboard actions by whoever controls the Supabase project and the Vercel deployment; Claude cannot do them. Steps marked *(PR)* are repo changes merged by PR to `main`, so the Supabase GitHub integration applies the migration. Never hand-apply SQL. *(owner)* steps run in the order listed; the PR can be prepared in parallel and merged right after 1.2.
+
+**Portal sign-in facts this plan depends on** (checked 2026-11-02):
+
+| Caller | Sign-in | Runs as | Calls |
+|---|---|---|---|
+| RSP / PM / L&D admin (`LoginPage.tsx:92`) | Supabase Auth | `authenticated` | `undo_document_validation`, `finalize_ipcr_surfaces` (`Phase2RatingPanel` → `saveRatings`), `/api/email/send`, rater writes (`RaterManagementPage.tsx`) |
+| Interviewer (`InterviewerLogin.tsx:146`) | Supabase Auth | `authenticated` | `get_document_decryption_key`, `/api/email/send` |
+| Employee portal, office accounts | Browser password compare | `anon` | Reads `employee_portal_accounts.password` and `employees` directly |
+| `/pm-demo` route (`App.tsx:608`, `DemoRoot`) | `demo_login` RPC | `anon` | `demo_login`, `demo_set_password`, `demo_create_account` |
+| Interviewer login pre-check (`interviewerAccess.ts:49`) | none yet | `anon` | `raters` SELECT |
+
+#### 1.1 Preconditions *(owner)*
+
+- Phase 0.1–0.3 answered: real vs demo data and DPO assessment started; offline decision; who controls upstream, the Supabase project and Vercel.
+- Snapshot before changing anything: export current function ACLs, table grants, policies and Auth settings to a private location (not the repo). Note the current Vercel production revision so it can be rolled back.
+
+#### 1.2 Rotate the Supabase API keys *(owner)*
+
+1. Supabase dashboard → Project Settings → API Keys: create a new publishable key (`sb_publishable_…`) and a new secret key (`sb_secret_…`).
+2. Vercel → Project → Environment Variables (Production and Preview): set `VITE_SUPABASE_ANON_KEY` to the publishable key; set `SUPABASE_SERVICE_ROLE_KEY` to the secret key; set `SUPABASE_KEY` to the publishable key if the backend still reads it. Redeploy, then confirm every portal loads and signs in.
+3. Update every local `.env` / `backend/.env` (each collaborator). Delete local copies of the old keys.
+4. Disable the legacy JWT-based `anon` and `service_role` keys. This is the step that kills the leaked key; deleting files does not.
+5. Verify: a REST request with the old service-role JWT returns 401; the app works on the new keys. Do this with a harmless `HEAD … limit=0` request, never a read of row data.
+
+Rollback: re-enable the legacy keys only if production is broken and no fix is available within the incident window; record that the leaked key was live again for that period.
+
+#### 1.3 Revoke public execution on account and mutation RPCs *(PR)*
+
+Create the migration with `npx supabase migration new phase1_revoke_public_rpcs`. Live grants on 2026-11-02:
+
+| Function | `PUBLIC` | `anon` | `authenticated` | Phase 1 action |
+|---|---|---|---|---|
+| `demo_create_account(text,text,text,text,text,text,text,date,uuid)` | yes | yes | yes | Revoke from `PUBLIC`, `anon`, `authenticated` |
+| `demo_set_password(uuid,text)` | yes | yes | yes | Revoke from all three |
+| `demo_login(text,text)` | yes | yes | yes | Revoke from all three |
+| `undo_document_validation(uuid,text)` | yes | yes | yes | Revoke from `PUBLIC`, `anon`; keep `authenticated` (RSP signs in via Auth) |
+| `finalize_ipcr_surfaces(uuid)` | no | yes | yes | Revoke from `anon`; keep `authenticated` (PM signs in via Auth) |
+
+- In the same PR, remove the `/pm-demo` route and `DemoRoot` import from `App.tsx`; it cannot work once the demo RPCs are closed, and it is an unauthenticated account-management surface.
+- Inventory the remaining anon-executable `SECURITY DEFINER` functions (18 in the October 26 advisor snapshot) and decide each in this PR: revoke, or record why anon must keep it until Phase 4. Do not regrant to `PUBLIC`. `sync_salaries_for_grade` returns `trigger` and is not a callable RPC; protect writes to its source table instead.
+- Residual: an authenticated user of any role can still call `undo_document_validation` with a forged actor and `finalize_ipcr_surfaces`. The role checks are Phase 4.10.
+- Verify after merge: `has_function_privilege('anon', …)` and the `PUBLIC` ACL entry are false for each row above; RSP undo and PM rating finalization still work.
+
+#### 1.4 Document key containment, F11–F12 *(PR, then owner)*
+
+1. *(PR)* `src/lib/crypto/_internal/keys.ts`: remove the connected-mode fallback to `DEFAULT_PRIVATE_KEY_BASE64`. A failed or empty `get_document_decryption_key` result throws. Keep the development key out of the production bundle: load it only when mock mode is on and the build is a dev build, or move it into a test fixture. Verify with a production `npm run build` that the private key string is absent from `dist/`.
+2. *(PR)* `raters`: revoke `anon` INSERT/UPDATE/DELETE and drop the anon write policies such as `raters_anon_all`. Keep `anon` SELECT for the interviewer login pre-check until Phase 3. Rater management already runs as `authenticated`. This stops anyone from enrolling their own email as an interviewer to obtain the key.
+3. *(owner)* Generate a replacement RSA key pair offline. Do **not** swap the stored key yet: existing ciphertext is wrapped with the leaked pair and there is no key-version field to tell old and new files apart. First inventory how many encrypted files exist, then write a separate key-version and re-wrap plan (Phase 1.4b) before rotating. Until then, the leaked key still decrypts existing files that anyone can download (F8), so this is the strongest argument for the Phase 0.2 offline decision.
+
+#### 1.5 Stop bulk password reads, F4 *(PR)*
+
+The employee portal reads the `password` column as `anon` to compare in the browser, so revoking the column alone breaks employee login. Phase 1 stopgap:
+
+1. Add `verify_employee_login(p_username text, p_password text)`, `SECURITY DEFINER`, fixed `search_path`, returning the account row **without** the password column, or nothing. Grant to `anon` only.
+2. Switch `src/lib/employeePortalData.ts` login to the RPC and stop caching account rows with passwords.
+3. Revoke `anon` and `authenticated` SELECT on `employee_portal_accounts.password` (column privilege) and on `supervisors.password` if the same pattern applies there.
+
+Residual, stated plainly: this stops downloading every password; it does not authenticate later requests, and the 211 plaintext passwords stay exposed until Phase 3 replaces them. Treat all of them as compromised.
+
+#### 1.6 Backend containment, F9/F20/F22 *(PR, then owner)*
+
+1. `competency_assessment.py:601`: remove the `"cictrix-queue-drain-secret"` default. If `QUEUE_DRAIN_SECRET` is empty, return 503 and do nothing. Use a constant-time comparison. *(owner)* Set a long random `QUEUE_DRAIN_SECRET` in Vercel.
+2. `email.py` `/send`: require an authenticated RSP, interviewer or super-admin caller; cap recipients and body size. Update `src/lib/email.ts` to send the Supabase access token in `Authorization`. Both callers already sign in through Auth.
+3. `applicants.py` `GET /`: require an authenticated RSP or super-admin caller. It currently returns up to 10,000 applicants with no login.
+4. `competency_matching.py` `/analyze` and `competency_assessment.py` `/assess`: require authentication and send the token from `src/lib/api/competencyMatching.ts`.
+5. `backend/main.py`: replace `allow_origins=["*"]` with the production and preview origins from an env var. Low severity on its own, since the API uses bearer tokens rather than cookies.
+6. Stop printing applicant payloads in `applicants.py` (F21); it's a two-line change in a file already being touched.
+
+#### 1.7 Auth and dependency settings
+
+- *(owner)* Supabase Auth → enable leaked-password protection.
+- *(PR)* `npm audit fix` for F23 (`dompurify` critical, `react-router`/`react-router-dom` high, `ws` high), then run the full test suite. Use a separate commit so it can be reverted alone.
+
+#### 1.8 Log review *(owner)*
+
+Export Supabase API and Auth logs as far back as retention allows, plus Vercel function logs. Look for service-role requests from unknown IPs or user agents, `demo_set_password`/`demo_create_account` calls, `raters` inserts, and bulk reads of `employees` or `employee_portal_accounts`. Save the export privately for the DPO. This is evidence collection, not a full forensic investigation.
+
+#### 1.9 Explicitly deferred out of Phase 1
+
+| Exposure | Why it waits | Phase |
+|---|---|---|
+| Anon read of `employees` PII and 80+ RLS-off tables | Employee and office portals run as `anon`; locking them out breaks those portals | 3, then 4 |
+| Public `employee-documents` bucket and open Storage writes | Stored `getPublicUrl` links (`employeeDocuments.ts:247`, `trainingEvaluations.ts:319`) and employee uploads run as `anon` | 4.7 |
+| 10 `user_metadata` policies | Needs `app_role()` and the role table as source of truth | 3.5 |
+| Secrets in git history | Needs the upstream owner's force-push | 2 |
+
+#### 1.10 Phase 1 exit checks
+
+- Old service-role JWT returns 401; the app runs on the new keys in every portal.
+- `anon` cannot execute any function in 1.3, and `PUBLIC` holds no `EXECUTE` on them.
+- `anon` cannot write `raters` or read any password column; employee login still works through the RPC.
+- A failed decryption-key RPC fails closed; the production bundle contains no private key.
+- Unauthenticated `POST /api/email/send`, `GET /api/applicants/`, `POST /api/competency-matching/analyze` and `POST /api/competency-assessment/assess` return 401; `POST /api/competency-assessment/queue/drain` without the configured secret returns 401 or 503.
+- `npx tsc --noEmit`, `npm run lint`, `npm test`, and a click-through of each portal pass.
 
 ### Phase 2: Purge history
 
@@ -139,7 +233,7 @@ The approved succession workflow has **no additional HR approval queue**. This s
 
 ## Checks to run
 
-- After Phase 1: a request with the old service-role key returns 401; the app works with the new keys.
+- After Phase 1: the exit checks in Phase 1.10.
 - After Phase 2: secret scanning passes on a fresh clone and built assets; assert the leaked service-role and private-key material is absent, including bare Base64 keys. Public JWT-shaped values alone are not proof of a secret leak.
 - After Phase 3: no plaintext password column/cache exists; anonymous password-column access fails; every portal signs in, changes its password durably and signs out of the underlying Auth session. Old passwords fail in a clean second browser; inactive users and stale role metadata cannot restore privileges.
 - After Phase 4: Supabase security advisors show 0 `ERROR` lints; pgTAP/API tests prove role, owner, office, interviewer assignment and workflow boundaries for SELECT/INSERT/UPDATE/DELETE and RPCs. Anonymous protected API calls fail before side effects; authenticated wrong-role calls fail too. Explicit public endpoints have separate scoped tests.
@@ -257,5 +351,40 @@ Refreshed baseline:
 - Read-only catalog/advisor checks and anonymous HEAD responses established the live permissions described above. Aggregate logs were inspected only for available sources; this was **not** a forensic investigation of past access.
 - The apparently unsafe credential print template in `QualifiedApplicantsPage.tsx` was not counted as a confirmed deployed XSS finding: the current router uses `QualifiedApplicantsRSPPage`, and the active ranking/shared credential printers escape text. Likewise, missing frontend guards, broad CORS or a function appearing in an advisor were not treated as proof of an independent exploit without tracing the enforcement path.
 - Remaining deployment checks: identify the current Vercel production URL/revision, verify the deployed bundle and API authentication behavior, confirm leaked-key retirement through the approved rotation process, inventory encrypted/legacy files, inspect provider/gateway limits and perform an isolated adversarial role matrix. Dependency advisories and historical log/backup exposure were not comprehensively audited in this review.
+
+## November 2 re-verification
+
+**Date:** 2026-11-02. **Source:** upstream `dehandenver/CICTrix` main at `e110977` (pushed 2026-10-30), visibility **public** per `gh repo view`. **Live:** read-only catalog queries on `fyzdfgxaaowjzbjpwrii` returning counts and privilege booleans only; no row values, passwords or keys were read, and the leaked key was not exercised.
+
+| Ref | Status 2026-11-02 | Evidence |
+|---|---|---|
+| F1 | Open | 26 tracked files hold JWTs: 24 decode to `"role":"service_role"` (`VERCEL_DEPLOYMENT.md` and 23 under `scratch/`), plus `.claude/settings.local.json`. Whether the legacy key is still enabled was not tested. |
+| F2 | Open, slightly worse | 81 public tables with RLS off (80 on Oct 27); `anon` holds UPDATE or DELETE on 123 public tables or views. |
+| F3 | Open | 56 public-schema policies with a `true` condition for `anon`/`PUBLIC`; `anon` can SELECT `employees`, which has `tin_number`, `sss_number`, `gsis_number`, `philhealth_number`, `pagibig_number`, `date_of_birth`. |
+| F4 | Open | `anon` has SELECT on `employee_portal_accounts.password`; 0 of 211 values match a bcrypt prefix (aggregate count only). |
+| F6 | Open | `demo_create_account`, `demo_login`, `demo_set_password` executable by `PUBLIC`, `anon`, `authenticated`. Still called from the public `/pm-demo` route. |
+| F7 | Open | 10 policies reference `user_metadata`. |
+| F8 | Open | `employee-documents` public; `applicant-attachments` private with permissive object policies. |
+| F11 | Open | `src/lib/crypto/_internal/keys.ts` still embeds the private key and falls back to it when the key RPC fails. |
+| F15 | Open | `undo_document_validation` executable by `PUBLIC`/`anon`; `finalize_ipcr_surfaces` by `anon`. |
+| F9/F20 | Open | Business routes with no auth dependency: `GET /api/applicants/`, `POST /api/email/send`, `POST /api/competency-matching/analyze`, `POST /api/competency-assessment/assess`. |
+
+F5, F10, F12–F14 and F16–F21 were not re-tested; nothing merged since October 27 touches their code paths in a way that would close them.
+
+### F22 — High: queue drain endpoint falls back to a secret published in the repo
+
+**Evidence:** `backend/app/routes/competency_assessment.py:601` uses `settings.QUEUE_DRAIN_SECRET or "cictrix-queue-drain-secret"`; `backend/app/core/config.py:36` defaults the setting to `""`. The route has no other auth and drains up to 50 jobs per call with the service-role client.
+
+**Impact/limits:** If the deployment never set `QUEUE_DRAIN_SECRET`, anyone who reads this public repo can trigger service-role processing and paid AI work on demand. Whether production sets the variable was not checked. The comparison is also not constant-time.
+
+**Remediation/check:** Phase 1.6. Fail closed when the secret is unset; compare in constant time; set a random secret in Vercel. Verify an unset secret returns 503 and a wrong one 401, with no queue rows changed.
+
+### F23 — High: known-vulnerable runtime dependencies
+
+**Evidence:** `npm audit --omit=dev` on the upstream lockfile: `dompurify <=3.4.16` (critical, XSS bypasses), `react-router 6.0.0–7.18.1` and `react-router-dom` (high), `ws 8.0.0–8.20.1` (high, memory disclosure and DoS).
+
+**Impact/limits:** Advisory-level. Exploitability depends on how each package is used. The DOMPurify issues need specific hook or custom-element configurations, and no `dangerouslySetInnerHTML` was found in `src`. Not traced call by call.
+
+**Remediation/check:** Phase 1.7. `npm audit fix`, then the full test suite and a portal click-through.
 
 Useful references: [Supabase API key rotation](https://supabase.com/docs/guides/api/api-keys), [RLS-disabled advisor remediation](https://supabase.com/docs/guides/database/database-linter?lint=0013_rls_disabled_in_public), [mutable-search-path remediation](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), [metadata-policy remediation](https://supabase.com/docs/guides/database/database-linter?lint=0015_rls_references_user_metadata), [PostgreSQL function privileges](https://www.postgresql.org/docs/current/sql-grant.html).

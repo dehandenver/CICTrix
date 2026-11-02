@@ -62,43 +62,13 @@
   <main>
     <h1>Plans</h1>
     <p class="lede">Feature plans and their session summaries. Newest first.</p>
-    <p class="counts">131 plans &middot; 107 done</p>
+    <p class="counts">125 plans &middot; 101 done</p>
 
     <section>
       <h2>Plans</h2>
       <table>
         <thead><tr><th>Date</th><th>Plan</th><th>Status</th></tr></thead>
         <tbody>
-      <tr>
-        <td class="date">2026-11-05</td>
-        <td><a href="2026-11-05-remove-leaked-key-files.md">Remove leaked Supabase keys from tracked files</a><p class="summary">Untrack scratch/ and .claude/settings.local.json and scrub VERCEL_DEPLOYMENT.md so no tracked file holds a Supabase JWT. Does not stop the key working; rotation is Phase 1.2 of the security remediation plan.</p></td>
-        <td class="status"><span class="badge badge-success">Done</span></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-05</td>
-        <td><a href="2026-11-05-competency-position-list-limits.md">Remove the position list limits in the competency framework</a><p class="summary">The PM position dropdown stops at 50 of 197 positions, and whole-table reads of position_competency_requirements would silently truncate at the API's 1,000-row limit. Show every position and page those reads without changing what any caller receives.</p></td>
-        <td class="status"><span class="badge badge-success">Done</span></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-03</td>
-        <td><a href="2026-11-03-ipcr-return-lockout-and-audit-history.md">Fix the IPCR return-for-revision lockout and add an audit history tab</a><p class="summary">A returned Phase 1 IPCR stays locked for the employee and blocks Phase 2 because two status records disagree. Fix that, then give the Office Account console a History tab per phase that reads the existing audit log.</p></td>
-        <td class="status"><span class="badge badge-success">Done</span></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-03</td>
-        <td><a href="2026-11-03-ipcr-phase2-return-lockout.md">Keep a returned Phase 2 rating sheet editable</a><p class="summary">A Phase 2 sheet returned for revision stays editable and submittable after the rating window closes, and closing the period no longer locks it. Adds a phase2_returned_at marker and a pending-only guard on the return.</p></td>
-        <td class="status"><span class="badge badge-success">Done</span></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-03</td>
-        <td><a href="2026-11-03-design-identity-alignment.md">Align the non-RSP portals with the design identity (UI only)</a><p class="summary">Bring the Super Admin, PM, Office, L&amp;D, Interviewer, Employee and Public pages onto the DESIGN_IDENTITY.md colors, font and pill buttons by reusing the RSP utility remap and swapping inline literals for tokens, with no change to behavior, data or routing.</p></td>
-        <td class="status"><span class="badge badge-success">Done</span></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-02</td>
-        <td><a href="2026-11-02-ipcr-target-row-alignment.md">Top-align MFO and Success Indicator inputs in the employee IPCR targets form</a><p class="summary">The MFO input sits lower than the first Success Indicator input because the shared table rule centers cells vertically. Top-align the cells so the first MFO and first indicator share a baseline.</p></td>
-        <td class="status"><span class="badge badge-success">Done</span></td>
-      </tr>
       <tr>
         <td class="date">2026-10-30</td>
         <td><a href="2026-10-30-promotional-hiring-fixes.md">Repair the promotional hiring pipeline</a><p class="summary">Repair the active employee application and RSP promotion flow, including scheduled interviewer visibility, durable scores, selection visibility, appointment completion, and existing-account preservation. Security remediation and the unused PM promotion module are excluded.</p></td>
@@ -116,8 +86,8 @@
       </tr>
       <tr>
         <td class="date">2026-10-30</td>
-        <td><a href="2026-10-30-applicant-status-and-score-writes.md">Fix applicant score and status writes, and the live-data seed test</a><p class="summary">Remove the unreachable RSP score path that writes a missing `applicants.total_score` column, move evaluated applicants to For Evaluation without overwriting a newer status, guard the interviewer Qualify and Disqualify writer, keep applications that share an email independent, and stop the training-attendance seed test from depending on live data.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td><a href="2026-10-30-applicant-status-and-score-writes.md">Fix applicant score and status writes, and the live-data seed test</a><p class="summary">Remove the unreachable RSP score path that writes a missing `applicants.total_score` column, make interviewer evaluations move applicants to For Evaluation instead of the legacy Reviewed, and stop the training-attendance seed test from asserting a live employee snapshot.</p></td>
+        <td class="status"><span class="badge badge-neutral">Draft</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-29</td>
@@ -591,7 +561,7 @@
       </tr>
       <tr>
         <td class="date">2026-10-16</td>
-        <td><a href="2026-10-16-security-remediation.md">Security remediation (credentials, document encryption, authorization and public applicant flows)</a><p class="summary">Expanded by the October 27 evidence-based review and succession scoring dependency. Contain leaked keys, replace browser-only credentials, enforce role and office authorization, and protect applicant flows, qualification evidence, review decisions and audit history.</p></td>
+        <td><a href="2026-10-16-security-remediation.md">Security remediation (credentials, document encryption, authorization and public applicant flows)</a><p class="summary">Expanded by the October 27 review and succession scoring dependency; re-verified 2026-11-02 against upstream main e110977 with Phase 1 containment planned in detail (F22–F23 added). Contain leaked keys, replace browser-only credentials, enforce role and office authorization, and protect applicant flows, qualification evidence, review decisions and audit history.</p></td>
         <td class="status"><span class="badge badge-neutral">Draft</span></td>
       </tr>
       <tr>
@@ -734,32 +704,12 @@
         <thead><tr><th>Date</th><th>Summary</th></tr></thead>
         <tbody>
       <tr>
-        <td class="date">2026-11-05</td>
-        <td><a href="../session-summaries/2026-11-05-remove-leaked-key-files-summary.md">Remove leaked Supabase keys from tracked files</a><p class="summary">Merged in PR 98 and deployed to production. No tracked file holds a Supabase JWT any more. The key is not revoked and stays in Git history until rotated.</p></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-05</td>
-        <td><a href="../session-summaries/2026-11-05-competency-position-list-limits-summary.md">Competency position list limits: summary</a></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-03</td>
-        <td><a href="../session-summaries/2026-11-03-ipcr-return-lockout-and-audit-history-summary.md">IPCR return lockout fix and audit history tab</a><p class="summary">A returned Phase 1 IPCR is now editable and resubmittable, and each phase of the Office Account console has a History tab over the existing audit log. Type-check, lint and 1,340 src tests pass. The new screen was not checked in a browser.</p></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-03</td>
-        <td><a href="../session-summaries/2026-11-03-ipcr-phase2-return-lockout-summary.md">Keep a returned Phase 2 rating sheet editable</a><p class="summary">A Phase 2 sheet returned for revision now stays editable and submittable after the rating window closes, and closing the period skips it. Type-check, lint, the migration check and 1,483 src tests pass, and a network-stubbed browser run confirmed both screens.</p></td>
-      </tr>
-      <tr>
-        <td class="date">2026-11-03</td>
-        <td><a href="../session-summaries/2026-11-03-design-identity-alignment-summary.md">Design identity alignment of the non-RSP portals</a><p class="summary">Steps 1 to 7 of the alignment plan are done and merged in #11 and #12. The Super Admin, PM, L&amp;D, Interviewer, Employee and Public pages now use design tokens and the shared remap scope. Type-check, lint, build and tests pass apart from 2 failures that were already there. Before/after screenshots show only the intended colour changes.</p></td>
-      </tr>
-      <tr>
         <td class="date">2026-11-02</td>
-        <td><a href="../session-summaries/2026-11-02-ipcr-target-row-alignment-summary.md">IPCR target row alignment: summary</a></td>
+        <td><a href="../session-summaries/2026-11-02-security-phase1-planning-summary.md">Security re-verification and Phase 1 containment plan</a><p class="summary">Re-verified the security remediation plan against upstream main e110977 and the live project; every Critical/High finding is still open. Added F22 (default queue-drain secret) and F23 (vulnerable dependencies) and planned Phase 1 step by step. Remediation remains Draft.</p></td>
       </tr>
       <tr>
         <td class="date">2026-10-30</td>
-        <td><a href="../session-summaries/2026-10-30-promotional-hiring-fixes-summary.md">Promotional hiring implementation progress</a><p class="summary">Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct). The defects it found that block the plan, F1–F3 and the pre-existing external-hire office failure F4, are fixed; F5–F8 are pre-existing and tracked separately. The 2026-11-02 failure-path run and branch review fixed the shared modal focus gap (`4a947ed`) and found F9–F12 in score saving and the uncertain-promotion message; all four are fixed (`3d60c60`, `0deca4a`) and rechecked on the local stack. A review of those fixes found two more gaps, I1 and M1, fixed in `40e0dc1`. Only `npm run build` remains, blocked by this machine.</p></td>
+        <td><a href="../session-summaries/2026-10-30-promotional-hiring-fixes-summary.md">Promotional hiring implementation progress</a><p class="summary">Tasks 1–3, the reported Task 3A defect, and Task 7 legacy-sync guards are committed and verified. Task 7 has 19 focused regressions and clean Sol review; 1,283 src tests, TypeScript and lint pass. Tasks 4–6 and 8 remain pending; Task 4 requires an isolated database.</p></td>
       </tr>
       <tr>
         <td class="date">2026-10-30</td>
@@ -776,10 +726,6 @@
       <tr>
         <td class="date">2026-10-30</td>
         <td><a href="../session-summaries/2026-10-30-interviewer-promotional-tag-summary.md">Mark promotional applicants in interviewer candidate tables — summary</a><p class="meta">Plan: <a href="2026-10-30-interviewer-promotional-tag.md">2026-10-30-interviewer-promotional-tag.md</a></p></td>
-      </tr>
-      <tr>
-        <td class="date">2026-10-30</td>
-        <td><a href="../session-summaries/2026-10-30-applicant-status-and-score-writes-summary.md">Applicant status and score writes: session summary</a></td>
       </tr>
       <tr>
         <td class="date">2026-10-29</td>
