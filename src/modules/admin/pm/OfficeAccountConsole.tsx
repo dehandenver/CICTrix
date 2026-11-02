@@ -49,6 +49,7 @@ import {
 } from '../../../lib/api/trainingRequests';
 import { listPipeline, type PipelineRec } from '../../../lib/api/trainingRecommendations';
 import { Phase2RatingPanel } from './Phase2RatingPanel';
+import { IpcrHistory } from './IpcrHistory';
 import { OfficeTrainingCourses } from './OfficeTrainingCourses';
 import { CriticalPositionPage } from '../../../components/CriticalPositionPage';
 import { CriticalPositionGapAnalysisPage } from '../../../components/CriticalPositionGapAnalysisPage';
@@ -357,10 +358,10 @@ export const OfficeAccountConsole: React.FC = () => {
   const [ipcrSubtab, setIpcrSubtab] = useState<'targets' | 'ratings'>('targets');
 
   // Subtabs
-  const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal'>('verify');
+  const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal' | 'history'>('verify');
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   useBackClosesView(selectedTargetId !== null, () => setSelectedTargetId(null), 'office-console-target');
-  const [ratingsSubtab, setRatingsSubtab] = useState<'review' | 'dpcr' | 'opcr'>('review');
+  const [ratingsSubtab, setRatingsSubtab] = useState<'review' | 'dpcr' | 'opcr' | 'history'>('review');
 
   // State arrays
   const [ratings, setRatings] = useState<EmployeeRating[]>(INITIAL_RATINGS);
@@ -860,6 +861,13 @@ export const OfficeAccountConsole: React.FC = () => {
                   >
                     PM Transmittal Log
                   </button>
+                  <button
+                    onClick={() => setTargetsSubtab('history')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${targetsSubtab === 'history' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                  >
+                    History
+                  </button>
                 </div>
 
                 <div className="p-6">
@@ -1077,6 +1085,10 @@ export const OfficeAccountConsole: React.FC = () => {
                     </div>
                   )}
 
+                  {targetsSubtab === 'history' && (
+                    <IpcrHistory phase="target" scope={officeRole ? { officeId: officeRole.officeId, officeName: officeRole.officeName } : null} />
+                  )}
+
                   {targetsSubtab === 'transmittal' && (
                     <div className="space-y-4">
                       <div>
@@ -1143,6 +1155,13 @@ export const OfficeAccountConsole: React.FC = () => {
                   >
                     OPCR Master Generation
                   </button>
+                  <button
+                    onClick={() => setRatingsSubtab('history')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${ratingsSubtab === 'history' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                  >
+                    History
+                  </button>
                 </div>
 
                 <div className="p-6">
@@ -1155,6 +1174,10 @@ export const OfficeAccountConsole: React.FC = () => {
                           : null
                       }
                     />
+                  )}
+
+                  {ratingsSubtab === 'history' && (
+                    <IpcrHistory phase="rating" scope={officeRole ? { officeId: officeRole.officeId, officeName: officeRole.officeName } : null} />
                   )}
 
                   {/* Legacy mock override table — superseded by Phase2RatingPanel above. */}
