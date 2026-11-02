@@ -29,6 +29,7 @@ import {
 import { Modal } from './modal';
 import { TableStateRows, TopScorerBadge, topScorerIds, topScorerRowClass } from './data-table';
 import { getAdminRole } from '../lib/adminSession';
+import { describeActionFailure } from '../lib/friendlyErrors';
 import { fetchWrittenExamTotals, saveWrittenExamTotal, type SaveExamTotalResult } from '../lib/api/examTotalPoints';
 import {
   CATEGORY_SCORES_UPDATED_EVENT,
@@ -365,6 +366,12 @@ const isUpcoming = (iso?: string | null): boolean => {
 
 // ─── ExamScoresModal ─────────────────────────────────────────────────────────
 
+/** "<what> were not saved. Your entries are still here." plus the cause and next step. */
+const scoreSaveFailure = (what: string, error: unknown): string => {
+  const failure = describeActionFailure(`save the ${what.toLowerCase()}`, error);
+  return `${what} were not saved. Your entries are still here. ${failure.message} ${failure.nextStep}`;
+};
+
 interface ExamScoresModalProps {
   folder:         PositionFolder;
   existingScores: Record<string, string>;
@@ -374,7 +381,7 @@ interface ExamScoresModalProps {
   canEditTotal:   boolean;
   onSaveTotal:    (total: number) => Promise<SaveExamTotalResult>;
   onClose:        () => void;
-  onSave:         (scores: Record<string, string>) => void;
+  onSave:         (scores: Record<string, string>) => Promise<{ ok: boolean; error?: unknown }>;
 }
 
 const ExamScoresModal = ({ folder, existingScores, knownScores, total, canEditTotal, onSaveTotal, onClose, onSave }: ExamScoresModalProps) => {
@@ -384,6 +391,7 @@ const ExamScoresModal = ({ folder, existingScores, knownScores, total, canEditTo
   }));
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [totalInput,  setTotalInput]  = useState(String(total));
   const [totalError,  setTotalError]  = useState<string | null>(null);
   const [savingTotal, setSavingTotal] = useState(false);
@@ -431,15 +439,23 @@ const ExamScoresModal = ({ folder, existingScores, knownScores, total, canEditTo
     [folder.applicants],
   );
 
-  const handleSave = () => {
-    if (!allFilled) return;
+  const handleSave = async () => {
+    if (!allFilled || saving) return;
     setSaving(true);
-    setTimeout(() => {
-      onSave(scores);
-      setSaving(false);
-      setSaved(true);
-      setTimeout(onClose, 800);
-    }, 300);
+    setSaveError('');
+    let result: { ok: boolean; error?: unknown };
+    try {
+      result = await onSave(scores);
+    } catch (error) {
+      result = { ok: false, error };
+    }
+    setSaving(false);
+    if (!result.ok) {
+      setSaveError(scoreSaveFailure('Exam scores', result.error));
+      return;
+    }
+    setSaved(true);
+    setTimeout(onClose, 800);
   };
 
   return (
@@ -491,6 +507,11 @@ const ExamScoresModal = ({ folder, existingScores, knownScores, total, canEditTo
               ? `Enter the written examination score (0–${total}) for each applicant.`
               : `Total points are set by RSP. Scores run from 0 to ${total}.`}
           </p>
+          {saveError && (
+            <p role="alert" style={{ margin: 0, fontSize: '0.875rem', color: 'var(--status-error)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" /> {saveError}
+            </p>
+          )}
           {totalError && (
             <p role="alert" style={{ margin: 0, fontSize: '0.875rem', color: 'var(--status-error)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
               <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" /> {totalError}
@@ -755,10 +776,10 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
       if (result?.ok) {
         setSavedThisSession(true);
       } else {
-        setSaveError('Scores were not saved. Your entries are still here; check your connection and try again.');
+        setSaveError(scoreSaveFailure('Scores', result?.error));
       }
-    } catch {
-      setSaveError('Scores were not saved. Your entries are still here; check your connection and try again.');
+    } catch (error) {
+      setSaveError(scoreSaveFailure('Scores', error));
     } finally {
       setSaving(false);
     }
@@ -1717,10 +1738,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
     [folders, posFilter, offFilter, examFilter, search],
   );
 
-  const handleSaveExam = useCallback((position: string, scores: Record<string, string>) => {
-    const updated = { ...examScores, [position]: scores };
-    setExamScores(updated);
-
+  const handleSaveExam = useCallback(async (position: string, scores: Record<string, string>) => {
     const scoresNumeric: Record<string, number> = {};
     Object.entries(scores).forEach(([id, val]) => {
       const num = parseFloat(val);
@@ -1729,6 +1747,10 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
       }
     });
 
+    const result = await savePositionWrittenExamScores(position, scoresNumeric);
+    if (!result.ok) return result;
+
+    setExamScores((prev) => ({ ...prev, [position]: scores }));
     const updatedCat = { ...catScores };
     const posApplicants = folders.find(f => f.position === position)?.applicants ?? [];
     Object.entries(scores).forEach(([id, val]) => {
@@ -1737,14 +1759,14 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
         const applicant = posApplicants.find(a => a.id === id);
         if (applicant) {
           const existing = deriveInitial(applicant, updatedCat);
-          updatedCat[id] = { ...existing, writtenExam: { ...existing.writtenExam, initialScore: num } };
+          // A new exam score replaces the old one outright (F12).
+          updatedCat[id] = { ...existing, writtenExam: { ...existing.writtenExam, initialScore: num, finalScore: num } };
         }
       }
     });
     setCatScores(updatedCat);
-
-    void savePositionWrittenExamScores(position, scoresNumeric);
-  }, [examScores, catScores, folders]);
+    return result;
+  }, [catScores, folders]);
 
   const handleSaveCatScores = useCallback(async (applicantId: string, scores: ApplicantCategoryScores) => {
     const result = await saveApplicantCategoryScores(applicantId, scores);
@@ -1937,7 +1959,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
           canEditTotal={canEditTotal}
           onSaveTotal={(total) => handleSaveExamTotal(examModal.position, total)}
           onClose={() => setExamModal(null)}
-          onSave={scores => { handleSaveExam(examModal.position, scores); }}
+          onSave={scores => handleSaveExam(examModal.position, scores)}
         />
       )}
 

@@ -514,28 +514,29 @@ export async function saveApplicantCategoryScores(
     return { ok: true };
   }
 
-  // The scoring modal does not edit the written exam, so a save without one
-  // must not erase an exam score already on the row. If the row cannot be read,
-  // fail rather than risk overwriting it.
-  if (finiteNumberOrNull(scores.writtenExam?.finalScore) === null) {
-    try {
-      const { data: existingRows, error: fetchErr } = await supabase
-        .from('applicant_category_scores')
-        .select('*')
-        .in('applicant_id', [applicantId]);
+  // The scoring modal does not edit the written exam, so the exam already on
+  // the row wins over the caller's copy, which may be empty or stale (a later
+  // correction). If the row cannot be read, fail rather than risk overwriting it.
+  try {
+    const { data: existingRows, error: fetchErr } = await supabase
+      .from('applicant_category_scores')
+      .select('*')
+      .in('applicant_id', [applicantId]);
 
-      if (fetchErr) throw fetchErr;
+    if (fetchErr) throw fetchErr;
 
-      const existingRow = Array.isArray(existingRows) ? existingRows[0] : undefined;
-      const existingWrittenExam = existingRow ? rowToCategoryScores(existingRow).writtenExam : undefined;
-      if (existingWrittenExam && finiteNumberOrNull(existingWrittenExam.finalScore) !== null) {
-        mergedScores = { ...scores, writtenExam: existingWrittenExam };
-        persistedWrittenRaw = writtenExamRawScoreFromRow(existingRow);
-      }
-    } catch (error) {
-      console.error('[applicantScores] failed to read existing row before save:', error);
-      return { ok: false, error };
+    const existingRow = Array.isArray(existingRows) ? existingRows[0] : undefined;
+    const existingWrittenExam = existingRow ? rowToCategoryScores(existingRow).writtenExam : undefined;
+    // written_exam_raw_score is the exam of record; an older row may still
+    // carry a stale finalScore beside it.
+    const savedRaw = existingRow ? writtenExamRawScoreFromRow(existingRow) : null;
+    if (existingWrittenExam && savedRaw !== null) {
+      mergedScores = { ...scores, writtenExam: { ...existingWrittenExam, finalScore: savedRaw } };
+      persistedWrittenRaw = savedRaw;
     }
+  } catch (error) {
+    console.error('[applicantScores] failed to read existing row before save:', error);
+    return { ok: false, error };
   }
 
   // Rollups
@@ -632,67 +633,77 @@ export async function savePositionWrittenExamScores(
   _jobPostingId?: string,
 ): Promise<{ ok: boolean; error?: unknown }> {
   let localCatScores: Record<string, ApplicantCategoryScores> = {};
+  try {
+    const rawCat = typeof localStorage !== 'undefined' ? localStorage.getItem(CAT_SCORES_KEY) : null;
+    localCatScores = rawCat ? JSON.parse(rawCat) : {};
+  } catch {
+    localCatScores = {};
+  }
   const appointmentTypes = await fetchAppointmentTypes(Object.keys(scoresByApplicantId));
 
-  try {
-    if (typeof localStorage !== 'undefined') {
-      // 1. Update cictrix_exam_scores
-      const rawExam = localStorage.getItem(EXAM_SCORES_KEY);
-      const examCache = rawExam ? JSON.parse(rawExam) : {};
-      const stringScores: Record<string, string> = {};
-      for (const [id, val] of Object.entries(scoresByApplicantId)) {
-        if (val != null && !isNaN(Number(val))) {
-          stringScores[id] = String(val);
+  // Runs only once the database has the scores (or there is no database row
+  // to write), so the cache never shows an exam the database refused.
+  const publishLocalCache = () => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        // 1. Update cictrix_exam_scores
+        const rawExam = localStorage.getItem(EXAM_SCORES_KEY);
+        const examCache = rawExam ? JSON.parse(rawExam) : {};
+        const stringScores: Record<string, string> = {};
+        for (const [id, val] of Object.entries(scoresByApplicantId)) {
+          if (val != null && !isNaN(Number(val))) {
+            stringScores[id] = String(val);
+          }
         }
-      }
-      examCache[position] = { ...(examCache[position] ?? {}), ...stringScores };
-      localStorage.setItem(EXAM_SCORES_KEY, JSON.stringify(examCache));
+        examCache[position] = { ...(examCache[position] ?? {}), ...stringScores };
+        localStorage.setItem(EXAM_SCORES_KEY, JSON.stringify(examCache));
 
-      // 2. Update cictrix_category_scores
-      const rawCat = localStorage.getItem(CAT_SCORES_KEY);
-      localCatScores = rawCat ? JSON.parse(rawCat) : {};
-      for (const [id, val] of Object.entries(scoresByApplicantId)) {
-        const num = Number(val);
-        if (isNaN(num)) continue;
-        const existing = localCatScores[id];
-        if (existing) {
-          localCatScores[id] = {
-            ...existing,
-            writtenExam: {
-              initialScore: num,
-              finalScore: existing.writtenExam?.finalScore ?? num,
-              remarks: existing.writtenExam?.remarks ?? '',
-            },
-          };
-        } else {
-          localCatScores[id] = {
-            education: { initialScore: 0, finalScore: null, remarks: '' },
-            experience: { initialScore: 0, finalScore: null, remarks: '' },
-            performance: { initialScore: 0, finalScore: null, remarks: '' },
-            pcpt: { initialScore: 0, finalScore: null, remarks: '' },
-            potential: { initialScore: 0, finalScore: null, remarks: '' },
-            writtenExam: { initialScore: num, finalScore: num, remarks: '' },
-            oralExam: { initialScore: 0, finalScore: null, remarks: '' },
-            appointmentType: appointmentTypes.get(id) ?? 'original',
-            positionType: 'rank-and-file',
-          };
+        // 2. Update cictrix_category_scores
+        for (const [id, val] of Object.entries(scoresByApplicantId)) {
+          const num = Number(val);
+          if (isNaN(num)) continue;
+          const existing = localCatScores[id];
+          if (existing) {
+            localCatScores[id] = {
+              ...existing,
+              // A new exam score replaces the old one outright (F12).
+              writtenExam: {
+                initialScore: num,
+                finalScore: num,
+                remarks: existing.writtenExam?.remarks ?? '',
+              },
+            };
+          } else {
+            localCatScores[id] = {
+              education: { initialScore: 0, finalScore: null, remarks: '' },
+              experience: { initialScore: 0, finalScore: null, remarks: '' },
+              performance: { initialScore: 0, finalScore: null, remarks: '' },
+              pcpt: { initialScore: 0, finalScore: null, remarks: '' },
+              potential: { initialScore: 0, finalScore: null, remarks: '' },
+              writtenExam: { initialScore: num, finalScore: num, remarks: '' },
+              oralExam: { initialScore: 0, finalScore: null, remarks: '' },
+              appointmentType: appointmentTypes.get(id) ?? 'original',
+              positionType: 'rank-and-file',
+            };
+          }
         }
+        localStorage.setItem(CAT_SCORES_KEY, JSON.stringify(localCatScores));
       }
-      localStorage.setItem(CAT_SCORES_KEY, JSON.stringify(localCatScores));
-    }
 
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      window.dispatchEvent(new CustomEvent(CATEGORY_SCORES_UPDATED_EVENT));
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent(CATEGORY_SCORES_UPDATED_EVENT));
+      }
+    } catch (err) {
+      console.warn('[applicantScores] localStorage update in savePositionWrittenExamScores failed:', err);
     }
-  } catch (err) {
-    console.warn('[applicantScores] localStorage update in savePositionWrittenExamScores failed:', err);
-  }
+  };
 
   const validEntries = Object.entries(scoresByApplicantId)
     .filter(([id, val]) => isUuid(id) && val != null && !isNaN(Number(val)))
     .map(([id, val]) => [id, Number(val)] as const);
 
   if (validEntries.length === 0) {
+    publishLocalCache();
     return { ok: true };
   }
 
@@ -703,8 +714,11 @@ export async function savePositionWrittenExamScores(
       .select('*')
       .in('applicant_id', ids);
 
+    // Without the existing rows the upsert would overwrite their categories
+    // with blanks, so a failed read fails the save (F10).
     if (fetchErr) {
-      console.warn('[applicantScores] failed to query existing rows for batch update:', fetchErr);
+      console.error('[applicantScores] failed to query existing rows for batch update:', fetchErr);
+      return { ok: false, error: fetchErr };
     }
 
     const existingMap = new Map<string, any>();
@@ -724,7 +738,7 @@ export async function savePositionWrittenExamScores(
             ...existingCat,
             writtenExam: {
               initialScore: scoreNum,
-              finalScore: existingCat.writtenExam?.finalScore ?? scoreNum,
+              finalScore: scoreNum,
               remarks: existingCat.writtenExam?.remarks ?? '',
             },
           }
@@ -781,6 +795,7 @@ export async function savePositionWrittenExamScores(
       return { ok: false, error: upsertErr };
     }
 
+    publishLocalCache();
     return { ok: true };
   } catch (error) {
     console.error('[applicantScores] batch upsert exception:', error);

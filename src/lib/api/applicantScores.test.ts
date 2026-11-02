@@ -616,9 +616,8 @@ describe('applicantScores service layer', () => {
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
 
       const savePromise = saveApplicantCategoryScores(VALID_UUID_1, makeScores());
-      await Promise.resolve();
-
-      expect(upsertMock).toHaveBeenCalled();
+      // The save reads the existing row before it upserts.
+      await vi.waitFor(() => expect(upsertMock).toHaveBeenCalled());
       expect(localStorage.getItem(CAT_SCORES_KEY)).toBeNull();
       const whilePending = dispatchSpy.mock.calls.find(
         ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
@@ -711,18 +710,31 @@ describe('applicantScores service layer', () => {
         expect(cached[VALID_UUID_1].writtenExam.finalScore).toBe(82);
       });
 
-      it('lets an explicit written exam from the caller win', async () => {
+      it('keeps the saved written exam over a stale one from the caller', async () => {
+        // F12: the exam was corrected to 82 after this browser cached 70.
         mockQueryResult.data = [persistedRow()];
+
+        await saveApplicantCategoryScores(
+          VALID_UUID_1,
+          modalScores({ writtenExam: { initialScore: 70, finalScore: 70, remarks: '' } }),
+        );
+
+        expect(inMock).toHaveBeenCalledWith('applicant_id', [VALID_UUID_1]);
+        expect(upsertMock.mock.calls[0][0]).toMatchObject({
+          written_exam: { initialScore: 82, finalScore: 82, remarks: '' },
+          written_exam_raw_score: 82,
+        });
+      });
+
+      it('uses the caller written exam when no row exists yet', async () => {
+        mockQueryResult.data = [];
 
         await saveApplicantCategoryScores(
           VALID_UUID_1,
           modalScores({ writtenExam: { initialScore: 90, finalScore: 90, remarks: '' } }),
         );
 
-        expect(upsertMock.mock.calls[0][0]).toMatchObject({
-          written_exam: { initialScore: 90, finalScore: 90, remarks: '' },
-          written_exam_raw_score: 90,
-        });
+        expect(upsertMock.mock.calls[0][0]).toMatchObject({ written_exam_raw_score: 90 });
       });
 
       it('fails the save without upserting when the existing row cannot be read', async () => {
@@ -875,6 +887,57 @@ describe('applicantScores service layer', () => {
           written_exam_raw_score: 88,
         }),
       ]);
+    });
+
+    it('replaces the exam final score too, so a correction is not reverted later', async () => {
+      // F12: 70 corrected to 88 must leave no 70 behind.
+      mockQueryResult.data = [{
+        applicant_id: VALID_UUID_1,
+        written_exam: { initialScore: 70, finalScore: 70, remarks: '' },
+        written_exam_raw_score: 70,
+        appointment_type: 'promotional',
+        is_finalized: false,
+      }];
+      localStorage.setItem(CAT_SCORES_KEY, JSON.stringify({
+        [VALID_UUID_1]: makeScores({ writtenExam: { initialScore: 70, finalScore: 70, remarks: '' } }),
+      }));
+
+      const res = await savePositionWrittenExamScores('Planning Officer II', { [VALID_UUID_1]: 88 });
+
+      expect(res.ok).toBe(true);
+      expect(upsertMock.mock.calls[0][0][0]).toMatchObject({
+        written_exam: { initialScore: 88, finalScore: 88 },
+        written_exam_raw_score: 88,
+      });
+      const catCache = JSON.parse(localStorage.getItem(CAT_SCORES_KEY) ?? '{}');
+      expect(catCache[VALID_UUID_1].writtenExam).toMatchObject({ initialScore: 88, finalScore: 88 });
+    });
+
+    it('fails without writing when existing rows cannot be read', async () => {
+      // F10: a blind upsert would wipe finalized categories.
+      mockQueryResult.error = new Error('read failed');
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      const res = await savePositionWrittenExamScores('Planning Officer II', { [VALID_UUID_1]: 88 });
+
+      expect(res.ok).toBe(false);
+      expect(upsertMock).not.toHaveBeenCalled();
+      expect(localStorage.getItem(EXAM_SCORES_KEY)).toBeNull();
+      expect(localStorage.getItem(CAT_SCORES_KEY)).toBeNull();
+      expect(dispatchSpy.mock.calls.find(
+        ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
+      )).toBeUndefined();
+    });
+
+    it('leaves the browser cache alone when the database rejects the save', async () => {
+      // F9: the cache must not claim scores the database refused.
+      mockUpsertResult.error = { code: 'P0001', message: 'rejected' };
+
+      const res = await savePositionWrittenExamScores('Planning Officer II', { [VALID_UUID_1]: 88 });
+
+      expect(res.ok).toBe(false);
+      expect(localStorage.getItem(EXAM_SCORES_KEY)).toBeNull();
+      expect(localStorage.getItem(CAT_SCORES_KEY)).toBeNull();
     });
 
     it('handles non-UUID entries by storing in localStorage and bypassing Supabase', async () => {
