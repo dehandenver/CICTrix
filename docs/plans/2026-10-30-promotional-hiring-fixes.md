@@ -413,7 +413,7 @@ Decisions approved in chat (all as recommended); Opus builds in this session, te
 - Tests: 7 new or changed tests failed first (4 service, 1 component, 3 Generate flow; one F1 test that encoded the F12 behaviour was rewritten, and one timing assumption updated because the category save now reads first). Then `npx tsc --noEmit`, `npm run lint` and `vitest run src` (851 files / 7,394 tests) pass.
 - Local stack recheck (Sonnet, medium), synthetic Rolando Cabatuan, Estrella Magbanua and Napoleon Tubungbanua: a refused exam save keeps the modal open with “Exam scores were not saved. Your entries are still here. …”, the folder stays Pending, nothing is cached, and the row is unchanged; after the fault is removed the save persists exam 88 in both fields. An exam corrected 70 → 88 stays 88 after a category save. With the first promotion response lost, Generate checks again, the replay returns `already_completed` and the modal reads “Promotions Completed”; with every response lost it reads “Result Not Confirmed … result not confirmed …”, never “not promoted”. Each promotion committed once (one employee row, one history row, one account, no email). Results modals open with focus on Done inside the dialog. Injected faults were removed; traffic stayed on the local host.
 
-### I1 and M1 from the F9–F12 review — proposed 2026-11-03, awaiting approval
+### I1 and M1 from the F9–F12 review — approved 2026-11-03
 
 A Sonnet (high) review of `ead20c2..2d0183f` found no critical issues. Two findings are fixed here; M2–M8 are left as tracked minors (small, transient, or out of scope).
 
@@ -431,8 +431,10 @@ A Sonnet (high) review of `ead20c2..2d0183f` found no critical issues. Two findi
 
 **Checks:** the two test files above, `npx tsc --noEmit`, `npm run lint`, then `vitest run src`. No browser rerun: the I1 path needs a lock-wait timeout the local stack can't produce on demand, and the unit tests cover the classification.
 
-- [ ] I1 fixed with tests
-- [ ] M1 fixed with test
+- [x] I1 fixed with tests (`40e0dc1`)
+- [x] M1 fixed with test (`40e0dc1`)
+
+Done 2026-11-03 by one Sonnet (medium) builder. The uncertain-then-busy test failed first and passes now; the uncertain-then-rejected test and the new exam-table test guard the success paths and passed before and after, since M1 is a race the unit test cannot trigger. `npx tsc --noEmit`, `npm run lint` and `vitest run src` (851 files) pass.
 
 ## Risks
 
