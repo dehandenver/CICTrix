@@ -58,6 +58,8 @@ Shipped on `fix/promotional-appointment-transaction`. Not pushed. Two Sonnet (hi
 
 Checks (rerun by the reviewer): `npx vitest run src/lib/hiringFlow src/components/GenerateCredentialsPage` 4 files / 28 passed; `npx tsc --noEmit` and `npm run lint` pass; full `npx vitest run src` with placeholder Supabase settings 149 files / 1,347 tests passed, with one unhandled teardown error from the untouched `CompetencyFrameworkPage.test.tsx`. Red evidence: 8 of 9 new hiringFlow tests and 5 of the new page tests failed against the old code.
 
+Branch review (Opus, Tasks 4–6): ready with fixes, no critical issues. The one important finding is fixed: a stale cached type could let the external steps reset a promoted employee's password, so `hireApplicantWithOutcome` now reports promotions and the batch stops before any account step. Seven minor findings are listed in the plan's Task 6 checkpoint, unfixed. After the fix: 6 related files / 79 tests, full suite 149 files / 1,348 tests (same unrelated teardown error), tsc and lint pass.
+
 ## Checks observed before implementation
 
 - `npm ci --ignore-scripts --no-audit --no-fund`: passed, installed 431 existing lockfile packages.
