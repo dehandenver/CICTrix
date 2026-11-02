@@ -10,21 +10,30 @@ vi.mock('./Sidebar', () => ({ Sidebar: () => null }));
 const reserved = (id: string, fullName: string, department: string, position: string, plantilla: string, deadline: string): ReservedApplicant => ({
   id, fullName, email: `${id}@x.ph`, referenceNo: `REF-${id}`, position, department,
   slotId: `slot-${id}`, plantilla, signingDeadline: deadline, interviewScore: null,
+  applicationType: 'job', employeeNumber: null,
 });
+
+const promotionRow: ReservedApplicant = {
+  ...reserved('p', 'Ligaya Bautista', 'City Planning Office', 'Planning Officer III', 'Plantilla 7', '2099-10-30'),
+  applicationType: 'promotion',
+  employeeNumber: 'EMP-2018-0042',
+};
 
 const rows = [
   reserved('a', 'Juan Dela Cruz', "City Engineer's Office", 'Engineer II', 'Plantilla 1', '2099-10-28'),
   reserved('b', 'Maria Santos', "City Treasurer's Office", 'Clerk III', 'Plantilla 1', '2099-10-25'),
   reserved('c', 'Ana Reyes', 'City Health Office', 'Nurse I', 'Plantilla 3', '2000-01-01'),
+  promotionRow,
 ];
 
 const generateEmployeeCredentials = vi.fn();
 const revokeSlotReservation = vi.fn();
+const printCredentialCards = vi.fn();
 vi.mock('../lib/hiringFlow', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/hiringFlow')>()),
   fetchReservedApplicants: () => Promise.resolve(rows),
   generateEmployeeCredentials: (...a: unknown[]) => generateEmployeeCredentials(...a),
-  printCredentialCards: vi.fn(),
+  printCredentialCards: (...a: unknown[]) => printCredentialCards(...a),
 }));
 vi.mock('../lib/plantillaSlots', () => ({
   revokeSlotReservation: (...a: unknown[]) => revokeSlotReservation(...a),
@@ -39,6 +48,8 @@ describe('Generate Employee Credentials', () => {
   beforeEach(() => {
     generateEmployeeCredentials.mockReset();
     revokeSlotReservation.mockReset();
+    printCredentialCards.mockReset();
+    printCredentialCards.mockReturnValue(true);
   });
 
   it('groups applicants by department and plantilla', async () => {
@@ -69,6 +80,7 @@ describe('Generate Employee Credentials', () => {
   it('generates only the ticked applicants and shows their credentials', async () => {
     generateEmployeeCredentials.mockResolvedValue({
       credentials: [{ fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' }],
+      promotions: [],
       failures: [],
     });
     await renderPage();
@@ -80,6 +92,82 @@ describe('Generate Employee Credentials', () => {
     expect(generateEmployeeCredentials).toHaveBeenCalledWith([expect.objectContaining({ id: 'a' })]);
     expect(screen.getByText('EMP-1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Print Credentials/ })).toBeEnabled();
+  });
+
+  it('marks promotion rows with a chip and their employee number', async () => {
+    await renderPage();
+    const planning = screen.getByRole('region', { name: 'City Planning Office' });
+    expect(within(planning).getByText('Promotion')).toBeInTheDocument();
+    expect(within(planning).getByText(/EMP-2018-0042/)).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: "City Engineer's Office" })).queryByText('Promotion')).toBeNull();
+  });
+
+  it('summarises a mixed selection in the confirmation', async () => {
+    await renderPage();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Juan Dela Cruz' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Ligaya Bautista' }));
+    fireEvent.click(screen.getByRole('button', { name: /Generate \(2\)/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/1 credential, 1 promotion/)).toBeInTheDocument();
+  });
+
+  const generateSelected = async (...names: string[]) => {
+    await renderPage();
+    names.forEach((n) => fireEvent.click(screen.getByRole('checkbox', { name: `Select ${n}` })));
+    fireEvent.click(screen.getByRole('button', { name: `Generate (${names.length})` }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Generate' }));
+  };
+
+  const promotionOutcome = {
+    applicantId: 'p', employeeUuid: 'uuid-p', employeeNumber: 'EMP-2018-0042', slotId: 'slot-p',
+    completedAt: '2026-11-02T00:00:00Z', alreadyCompleted: false,
+    fullName: 'Ligaya Bautista', position: 'Planning Officer III', department: 'City Planning Office', plantilla: 'Plantilla 7',
+  };
+
+  it('shows a promotion-only result without a password, an error or printing', async () => {
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [], promotions: [promotionOutcome], failures: [] });
+    await generateSelected('Ligaya Bautista');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Promotions Completed' });
+    expect(within(dialog).getByText('Promotion completed. Your existing employee account is unchanged.')).toBeInTheDocument();
+    expect(within(dialog).getByText('EMP-2018-0042')).toBeInTheDocument();
+    expect(within(dialog).getByText(/Planning Officer III/)).toBeInTheDocument();
+    expect(within(dialog).getByText('City Planning Office')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Temporary Password')).toBeNull();
+    expect(screen.queryByText(/couldn't generate/i)).toBeNull();
+    expect(within(dialog).getByRole('button', { name: /Print Credentials/ })).toBeDisabled();
+  });
+
+  it('shows both kinds in a mixed result and prints only the credentials', async () => {
+    const credential = { fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' };
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [credential], promotions: [promotionOutcome], failures: [] });
+    await generateSelected('Juan Dela Cruz', 'Ligaya Bautista');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Appointments Completed' });
+    expect(within(dialog).getByText('pw-1')).toBeInTheDocument();
+    expect(within(dialog).getByText('Promotion completed. Your existing employee account is unchanged.')).toBeInTheDocument();
+    const print = within(dialog).getByRole('button', { name: /Print Credentials/ });
+    expect(print).toBeEnabled();
+    fireEvent.click(print);
+    expect(printCredentialCards).toHaveBeenCalledWith([credential]);
+  });
+
+  it('shows the error only when nothing was generated or completed', async () => {
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [], promotions: [], failures: [] });
+    await generateSelected('Juan Dela Cruz');
+    expect(await screen.findByText(/couldn't generate any credentials/i)).toBeInTheDocument();
+  });
+
+  it('recovers from a thrown batch error and keeps the selection', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    generateEmployeeCredentials.mockRejectedValue(new Error('permission denied for table employees'));
+    await generateSelected('Juan Dela Cruz');
+
+    const alert = await screen.findByText(/We couldn't generate the credentials/);
+    expect(alert.textContent).not.toContain('employees');
+    expect(screen.getByRole('checkbox', { name: 'Select Juan Dela Cruz' })).toBeChecked();
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate \(1\)/ })).toBeEnabled();
   });
 
   it('revokes a selection after a confirmation', async () => {
