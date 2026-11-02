@@ -1,4 +1,9 @@
 import { supabase } from '../supabase';
+import { normalizeApplicationType } from './applicantScores';
+import {
+  PromotionalAppointmentError,
+  completePromotionalAppointment,
+} from './promotionalHiring';
 
 // Ideally this comes from the generated types. 
 // We manually bridge it here according to the schema since we can't regenerate types yet.
@@ -88,9 +93,55 @@ async function getAuthToken() {
 }
 
 /**
+ * Read the saved application's type remotely. Cached UI state is never trusted
+ * for this, and a failed read throws instead of guessing "external": guessing
+ * wrong would insert a second employee for someone who already works here.
+ */
+async function isPromotionApplication(applicantId: string): Promise<boolean> {
+  const { data, error } = await (supabase as any)
+    .from('applicants')
+    .select('application_type')
+    .eq('id', applicantId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || 'Could not read the application to decide how to hire it');
+  }
+  if (!data) {
+    throw new Error('Applicant not found');
+  }
+  return normalizeApplicationType(data.application_type) === 'promotional';
+}
+
+/**
+ * Promotion path: the database transaction is the only writer. The employee
+ * already exists, so nothing here creates an employee, number, email, account
+ * or password, and the backend endpoint is not called.
+ */
+async function hirePromotion(applicantId: string): Promise<EmployeeRow> {
+  const result = await completePromotionalAppointment(applicantId);
+  try {
+    return await fetchEmployeeById(result.employeeUuid);
+  } catch (err) {
+    // The appointment is committed. Retrying replays the RPC, which answers
+    // already_completed, and then reads the employee again.
+    throw new PromotionalAppointmentError(
+      'The promotion was completed, but the employee record could not be loaded. Retry to load it. Retrying will not appoint the employee again.',
+      { kind: 'employee_read_failed', retryable: true, code: String((err as any)?.code ?? '') || null },
+    );
+  }
+}
+
+/**
  * Hire Applicant Flow (writes via FastAPI).
+ * Promotions go through the appointment transaction; external applicants keep
+ * the backend-then-client-fallback path below.
  */
 export async function hireApplicant(applicantId: string): Promise<EmployeeRow> {
+  if (await isPromotionApplication(applicantId)) {
+    return hirePromotion(applicantId);
+  }
+
   const token = await getAuthToken();
   try {
     const res = await fetch(`${API_BASE_URL}/employees/from-applicant/${applicantId}`, {
