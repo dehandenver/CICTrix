@@ -10,8 +10,10 @@ export const getApplicantType = (applicant: {
   employee_id?: unknown;
 }): ApplicantEvalType => {
   const appType = String(applicant.application_type ?? '').trim().toLowerCase();
-  const hasEmployeeId = Boolean(applicant.employee_id);
-  return appType === 'promotion' || appType === 'promotional' || hasEmployeeId ? 'Promotional' : 'Original';
+  // The application's own type decides. Hiring writes employee_id onto external
+  // applicants too, so the employee link only counts for rows saved without a type.
+  if (appType) return appType === 'promotion' || appType === 'promotional' ? 'Promotional' : 'Original';
+  return applicant.employee_id ? 'Promotional' : 'Original';
 };
 
 export const storeApplicantTypeForEval = (applicantId: string, type: ApplicantEvalType) => {

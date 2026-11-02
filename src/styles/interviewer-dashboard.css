@@ -315,6 +315,7 @@
 
 .ivd-job-title { display: block; font: 600 15px/20px var(--font-sans); color: var(--color-primary-900); }
 .ivd-job-meta { display: block; margin-top: 2px; color: var(--neutral-600); }
+.ivd-type-tag { margin-top: 4px; }
 
 .ivd-count {
   display: inline-flex; align-items: center; justify-content: center;

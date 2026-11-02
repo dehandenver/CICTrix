@@ -36,6 +36,7 @@ import { DocumentCollectionModal } from '../../components/DocumentCollectionModa
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { normalizeStatus } from '../../lib/api/applicantStatus';
 import { getAdminEmail } from '../../lib/adminSession';
+import { getApplicantType } from '../../lib/interviewerEvalNavigation';
 import {
   buildDocumentHistory,
   listDocumentEvents,
@@ -645,16 +646,15 @@ const saveStoredExperienceYears = (applicantId: string, years: string) => {
   } catch { /* localStorage unavailable (private mode or quota); persisting here is best-effort. */ }
 };
 
+// The database row comes first; the local recruitment store fills gaps.
 const isPromotionalSource = (
   recruitmentApplicant?: Applicant | null,
   applicantRow?: ApplicantRecord | null
-) => {
-  const recruitmentType = String(recruitmentApplicant?.applicationType ?? '').trim().toLowerCase();
-  const dbType = String(applicantRow?.application_type ?? '').trim().toLowerCase();
-  const hasInternalLink = Boolean(recruitmentApplicant?.internalApplication?.employeeId || applicantRow?.employee_id);
-
-  return recruitmentType === 'promotion' || dbType === 'promotion' || hasInternalLink;
-};
+) =>
+  getApplicantType({
+    application_type: applicantRow?.application_type || recruitmentApplicant?.applicationType,
+    employee_id: applicantRow?.employee_id || recruitmentApplicant?.internalApplication?.employeeId,
+  }) === 'Promotional';
 
 const getStoredWrittenScore = (applicantId: string): string => {
   try {

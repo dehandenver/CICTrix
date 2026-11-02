@@ -1,14 +1,16 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ApplicantScoreSummary } from '../lib/api/applicantScores';
 import { ForHiringPage } from './ForHiringPage';
 
-const { ROWS } = vi.hoisted(() => ({
+const { ROWS, mockFetchScoreSummaries } = vi.hoisted(() => ({
   ROWS: [
-    { id: 'a1', first_name: 'Ana', last_name: 'Cruz', email: 'ana@x.ph', position: 'Engineer II', office: 'Engineering Office', status: 'Qualified' },
-    { id: 'a2', first_name: 'Ben', last_name: 'Reyes', email: 'ben@x.ph', position: 'Engineer II', office: 'Engineering Office', status: 'Qualified' },
-    { id: 'a3', first_name: 'Cy', last_name: 'Lim', email: 'cy@x.ph', position: 'Engineer II', office: 'Engineering Office', status: 'For Contract Signing' },
+    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', first_name: 'Ana', last_name: 'Cruz', email: 'ana@x.ph', position: 'Engineer II', office: 'Engineering Office', status: 'Qualified', application_type: 'job' },
+    { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', first_name: 'Ben', last_name: 'Reyes', email: 'ben@x.ph', position: 'Engineer II', office: 'Engineering Office', status: 'Qualified', application_type: 'job' },
+    { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', first_name: 'Cy', last_name: 'Lim', email: 'cy@x.ph', position: 'Engineer II', office: 'Engineering Office', status: 'For Contract Signing', application_type: 'job' },
   ],
+  mockFetchScoreSummaries: vi.fn(),
 }));
 
 vi.mock('../lib/supabase', async () => {
@@ -19,19 +21,40 @@ vi.mock('./AdminHeader', () => ({ AdminHeader: () => null }));
 vi.mock('./Sidebar', () => ({ Sidebar: () => null }));
 vi.mock('./ApplicantsTabBar', () => ({ ApplicantsTabBar: () => null }));
 
+vi.mock('../lib/api/applicantScores', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/api/applicantScores')>();
+  return { ...actual, fetchApplicantScoreSummaries: mockFetchScoreSummaries };
+});
+
+const summary = (
+  applicantId: string,
+  overrides: Partial<ApplicantScoreSummary> = {},
+): ApplicantScoreSummary => ({
+  applicantId,
+  appointmentType: 'original',
+  assessmentTotal: 48,
+  writtenExamRawScore: 89,
+  isFinalized: true,
+  ...overrides,
+});
+
 beforeEach(() => {
   localStorage.clear();
+  mockFetchScoreSummaries.mockReset();
+  mockFetchScoreSummaries.mockResolvedValue({ ok: true, data: new Map() });
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => [] }));
 });
 
 describe('ForHiringPage visibility', () => {
-  it('lists only applicants carrying both an interview and an exam score', async () => {
-    // Ana sat both assessments. Ben is Qualified but unscored, so he has
-    // nothing to rank and must not appear. Cy is unscored too, but already
-    // holds the plantilla — hiding him would lose the selection.
-    localStorage.setItem('cictrix_category_scores', JSON.stringify({
-      a1: { writtenExam: { finalScore: 89 }, oralExam: { finalScore: 19.33 } },
-    }));
+  it('lists only applicants carrying a finalized assessment and written exam', async () => {
+    // Ana has a durable original assessment and written exam. Ben is
+    // Qualified but unscored, so he has nothing to rank and must not appear.
+    // Cy is unscored too, but already holds the plantilla — hiding him would
+    // lose the selection.
+    mockFetchScoreSummaries.mockResolvedValue({
+      ok: true,
+      data: new Map([[ROWS[0].id, summary(ROWS[0].id)]]),
+    });
 
     render(<MemoryRouter><ForHiringPage /></MemoryRouter>);
 

@@ -1,43 +1,28 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ApplicantScoreSummary } from '../lib/api/applicantScores';
 import { ForHiringPage } from './ForHiringPage';
 import type { PlantillaSlot } from '../types/recruitment.types';
 
-const { ROWS, SCORE_ROWS, mockFetchHiringContext, mockGetApplicants } = vi.hoisted(() => ({
-  ROWS: [
-    {
-      id: 'a1',
-      first_name: 'Ana',
-      last_name: 'Cruz',
-      email: 'ana@x.ph',
-      position: 'Engineer II',
-      office: 'Engineering Office',
-      status: 'Qualified',
-    },
-  ],
-  SCORE_ROWS: [
-    {
-      applicant_id: 'a1',
-      written_exam: { initialScore: 89, finalScore: 89, remarks: '' },
-      oral_exam: { initialScore: 19.33, finalScore: 19.33, remarks: '' },
-      appointment_type: 'original',
-      position_type: 'rank-and-file',
-      is_finalized: true,
-    },
-  ],
+const {
+  APPLICANT_ID,
+  state,
+  mockFetchHiringContext,
+  mockGetApplicants,
+  mockFetchScoreSummaries,
+} = vi.hoisted(() => ({
+  APPLICANT_ID: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  state: { rows: [] as any[] },
   mockFetchHiringContext: vi.fn(),
   mockGetApplicants: vi.fn(),
+  mockFetchScoreSummaries: vi.fn(),
 }));
 
 vi.mock('../lib/supabase', async () => {
   const { supabaseStub } = await import('../test/supabaseStub');
   return {
-    supabase: supabaseStub((table) => {
-      if (table === 'applicants') return ROWS;
-      if (table === 'applicant_category_scores') return SCORE_ROWS;
-      return [];
-    }),
+    supabase: supabaseStub((table) => (table === 'applicants' ? state.rows : [])),
   };
 });
 vi.mock('./AdminHeader', () => ({ AdminHeader: () => null }));
@@ -61,8 +46,13 @@ vi.mock('../lib/hiringFlow', async (importOriginal) => {
   };
 });
 
+vi.mock('../lib/api/applicantScores', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/api/applicantScores')>();
+  return { ...actual, fetchApplicantScoreSummaries: mockFetchScoreSummaries };
+});
+
 const defaultApplicant = {
-  id: 'a1',
+  id: APPLICANT_ID,
   jobPostingId: 'jp-1',
   personalInfo: {
     firstName: 'Ana',
@@ -74,16 +64,36 @@ const defaultApplicant = {
   status: 'Qualified',
 };
 
+const summary = (
+  overrides: Partial<ApplicantScoreSummary> = {},
+): ApplicantScoreSummary => ({
+  applicantId: APPLICANT_ID,
+  appointmentType: 'original',
+  assessmentTotal: 48,
+  writtenExamRawScore: 89,
+  isFinalized: true,
+  ...overrides,
+});
+
 beforeEach(() => {
   localStorage.clear();
-  localStorage.setItem(
-    'cictrix_category_scores',
-    JSON.stringify({
-      a1: { writtenExam: { finalScore: 89 }, oralExam: { finalScore: 19.33 } },
-    })
-  );
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => [] }));
+  state.rows = [{
+    id: APPLICANT_ID,
+    first_name: 'Ana',
+    last_name: 'Cruz',
+    email: 'ana@x.ph',
+    position: 'Engineer II',
+    office: 'Engineering Office',
+    status: 'Qualified',
+    application_type: 'job',
+  }];
   mockGetApplicants.mockReturnValue([defaultApplicant]);
+  mockFetchScoreSummaries.mockReset();
+  mockFetchScoreSummaries.mockResolvedValue({
+    ok: true,
+    data: new Map([[APPLICANT_ID, summary()]]),
+  });
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => [] }));
 });
 
 describe('ForHiringPage plantilla context & selection handling', () => {
@@ -98,7 +108,7 @@ describe('ForHiringPage plantilla context & selection handling', () => {
 
     mockFetchHiringContext.mockResolvedValue({
       ok: true,
-      slotByApplicant: new Map([['a1', closedSlot]]),
+      slotByApplicant: new Map([[APPLICANT_ID, closedSlot]]),
       revokedAt: new Map(),
     });
 
@@ -136,7 +146,7 @@ describe('ForHiringPage plantilla context & selection handling', () => {
 
     mockFetchHiringContext.mockResolvedValue({
       ok: true,
-      slotByApplicant: new Map([['a1', openSlot]]),
+      slotByApplicant: new Map([[APPLICANT_ID, openSlot]]),
       revokedAt: new Map(),
     });
 
@@ -177,7 +187,7 @@ describe('ForHiringPage plantilla context & selection handling', () => {
     expect(screen.getByText(/couldn't load the applicants for hiring/i)).toBeInTheDocument();
   });
 
-  it('loads applicant category scores remotely from Supabase even without localStorage cache', async () => {
+  it('loads durable score summaries without a localStorage cache', async () => {
     localStorage.clear();
 
     mockFetchHiringContext.mockResolvedValue({
@@ -194,5 +204,46 @@ describe('ForHiringPage plantilla context & selection handling', () => {
 
     expect(await screen.findByText('Engineering Office')).toBeInTheDocument();
     expect(screen.getByText('1 applicant')).toBeInTheDocument();
+  });
+
+  it('reports a failed score-summary read instead of showing an empty ranking', async () => {
+    mockFetchScoreSummaries.mockResolvedValue({
+      ok: false,
+      data: new Map(),
+      error: new Error('score summary read failed'),
+    });
+    mockFetchHiringContext.mockResolvedValue({
+      ok: true,
+      slotByApplicant: new Map(),
+      revokedAt: new Map(),
+    });
+
+    render(
+      <MemoryRouter>
+        <ForHiringPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/couldn't load the applicants for hiring/i)).toBeInTheDocument();
+  });
+
+  it('shows when a prior selection was revoked', async () => {
+    mockFetchHiringContext.mockResolvedValue({
+      ok: true,
+      slotByApplicant: new Map(),
+      revokedAt: new Map([[APPLICANT_ID, '2026-10-29T00:00:00Z']]),
+    });
+
+    render(
+      <MemoryRouter>
+        <ForHiringPage />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(await screen.findByText('Engineering Office'));
+    fireEvent.click(await screen.findByText(/Engineer II/));
+
+    expect(await screen.findByText(/selection revoked/i)).toBeInTheDocument();
   });
 });

@@ -12,6 +12,7 @@ import { getApplicants as getRecruitmentApplicants, saveApplicants as saveRecrui
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import { describeActionFailure } from '../../lib/friendlyErrors';
 import { usePlantillaNames } from '../../hooks/usePlantillaNames';
+import { getApplicantType } from '../../lib/interviewerEvalNavigation';
 
 interface Applicant {
   id: string;
@@ -121,12 +122,11 @@ const getStoredAppointmentType = (applicantId?: string): AppointmentType => {
   }
 };
 
-const isPromotionalSource = (applicantRow: Record<string, any> | null | undefined) => {
-  const camelType = String(applicantRow?.applicationType ?? '').trim().toLowerCase();
-  const snakeType = String(applicantRow?.application_type ?? '').trim().toLowerCase();
-  const hasInternalLink = Boolean(applicantRow?.internalApplication?.employeeId || applicantRow?.employee_id);
-  return camelType === 'promotion' || snakeType === 'promotion' || hasInternalLink;
-};
+const isPromotionalSource = (applicantRow: Record<string, any> | null | undefined) =>
+  getApplicantType({
+    application_type: applicantRow?.application_type || applicantRow?.applicationType,
+    employee_id: applicantRow?.employee_id || applicantRow?.internalApplication?.employeeId,
+  }) === 'Promotional';
 
 const resolveInterviewerIdentity = (): { name: string; locked: boolean } => {
   try {
@@ -318,13 +318,16 @@ export function EvaluationForm() {
       });
 
       setApplicant(applicantData);
-      if (id && isPromotionalSource(applicantData)) {
-        setAppointmentType('promotional');
-        setActiveTab('pcpt');
+      if (id) {
+        // The record's type wins over the cache, which an older build could
+        // have set to promotional for a hired external applicant.
+        const recordType: AppointmentType = isPromotionalSource(applicantData) ? 'promotional' : 'original';
+        setAppointmentType(recordType);
+        setActiveTab(recordType === 'promotional' ? 'pcpt' : 'oral');
         try {
           const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
           const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
-          parsed[id] = 'promotional';
+          parsed[id] = recordType;
           localStorage.setItem(SCORE_SETUP_STORAGE_KEY, JSON.stringify(parsed));
         } catch {
           // Best effort persistence only.

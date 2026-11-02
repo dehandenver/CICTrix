@@ -16,8 +16,7 @@ import {
 import type { PlantillaSlot } from '../types/recruitment.types';
 import { reserveSlotForApplicant } from '../lib/plantillaSlots';
 import { plantillaLabel } from '../lib/plantillaRules';
-import { getEmployeePortalAccounts } from '../lib/employeePortalData';
-import { signingForfeitWarning } from '../lib/api/applicantStatus';
+import { isTerminal, normalizeStatus, signingForfeitWarning } from '../lib/api/applicantStatus';
 import {
   DEFAULT_SIGNING_INSTRUCTIONS,
   RESERVED_STATUS,
@@ -29,8 +28,12 @@ import {
 import { formatDisplayDate, localIsoDate } from '../lib/scheduleSelection';
 import { supabase } from '../lib/supabase';
 import { TableRefreshBar, TableSkeletonRows, tableBodyClass, useTableLoading } from './table-loading';
-import { buildEvaluationSnapshotMap, type EvaluationSnapshot } from '../lib/evaluationScores';
-import { fetchApplicantCategoryScores, type ApplicantCategoryScores } from '../lib/api/applicantScores';
+import {
+  buildEvaluationSnapshotMap,
+  deriveEvaluationSnapshot,
+  type EvaluationSnapshot,
+} from '../lib/evaluationScores';
+import { fetchApplicantScoreSummaries, isUuid } from '../lib/api/applicantScores';
 import { fetchWrittenExamTotals } from '../lib/api/examTotalPoints';
 import { TopScorerBadge, topScorerIds, topScorerRowClass } from './data-table';
 import { convertExamScore, totalForPosition } from '../lib/examTotalPoints';
@@ -46,21 +49,52 @@ import {
 import { Modal } from './modal';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
+type ApplicationTrack = 'original' | 'promotional';
+
 interface HiringRow {
   id: string;
   fullName: string;
   email: string;
   position: string;
   department: string;
+  /** Oral interview rating, kept for original applicants only. */
   interviewScore: number | null;
+  /** Written exam raw score, separate from the assessment total. */
   examScore: number | null;
+  /** Saved assessment total: five categories for promotions, three for originals. */
+  assessmentScore: number | null;
+  /** The score this applicant's rank is based on. */
+  rankingScore: number | null;
+  applicationType: ApplicationTrack;
   status: string;
   /** The one plantilla this application is for; null for legacy unlinked rows. */
   slot: PlantillaSlot | null;
   selectionRevokedAt: string | null;
 }
 
-const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring', 'hired', 'for contract signing'];
+interface LoadedApplicant {
+  id: string;
+  fullName: string;
+  email: string;
+  position: string;
+  department: string;
+  status: string;
+  applicationType: ApplicationTrack;
+  /** Non-UUID test/demo rows keep the older local-cache scoring path. */
+  legacyId: boolean;
+}
+
+/** Statuses that close an application for good; they never return to this list. */
+const isClosedApplicationStatus = (status: string): boolean => {
+  if (isRejected(status)) return true;
+  const normalized = normalizeStatus(status);
+  return normalized !== null && isTerminal(normalized);
+};
+
+const applicationTrackOf = (value: unknown): ApplicationTrack => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized.includes('promot') ? 'promotional' : 'original';
+};
 
 // Disqualified, rejected and archived (Not Selected) applicants never surface
 // here, regardless of scores.
@@ -83,12 +117,6 @@ const addDays = (days: number) => {
 
 type SelectStep = 'loading' | 'notice' | 'confirm';
 
-const isForHiring = (status: string) => {
-  const s = status.toLowerCase().trim();
-  if (isRejected(status)) return false;
-  return QUALIFY_STATUSES.some(q => s.includes(q));
-};
-
 // Already chosen for the plantilla, or past it. These stay on the list even
 // without a readable score: hiding somebody mid-flow would lose the selection
 // the page exists to show. Plain "qualified" is not one of these — it only
@@ -103,30 +131,6 @@ const CAT_SCORES_KEY = 'cictrix_category_scores';
 const EXAM_SCORES_KEY = 'cictrix_exam_scores';
 
 const oralRawToConvertedScore = (raw: number) => +Math.min(20, Math.max(0, (raw / 5) * 20)).toFixed(2);
-
-// Mirrors the "Finalized" flag on the Applicant Score tab: an applicant is
-// considered completed once RSP has saved their category scores (remote or cache)
-// or an interviewer evaluation is marked completed. Every completed applicant
-// should appear in the For Hiring list even before being manually marked.
-const buildCompletedSet = async (categoryScoresMap?: Map<string, ApplicantCategoryScores>): Promise<Set<string>> => {
-  const completed = new Set<string>();
-  if (categoryScoresMap && categoryScoresMap.size > 0) {
-    categoryScoresMap.forEach((_, id) => completed.add(String(id)));
-  }
-  try {
-    const catScores = JSON.parse(localStorage.getItem(CAT_SCORES_KEY) ?? '{}');
-    Object.keys(catScores).forEach(id => completed.add(String(id)));
-  } catch { /* ignore malformed cache */ }
-  try {
-    const { data } = await (supabase as any).from('evaluations').select('*');
-    if (Array.isArray(data)) {
-      buildEvaluationSnapshotMap(data).forEach(snap => {
-        if (snap.completed) completed.add(String(snap.applicantId));
-      });
-    }
-  } catch { /* evaluations unavailable — fall back to saved scores only */ }
-  return completed;
-};
 
 const fmtScore = (v: number | null) => (v != null ? v.toFixed(2) : '—');
 
@@ -207,12 +211,25 @@ export const ForHiringPage = () => {
           return resolveDepartmentForPosition(pos) || 'Operations';
         };
 
-        // Load evaluation snapshots from DB & local storage
+        // Load evaluation snapshots. The merged map keeps browser-local
+        // evaluations for non-UUID demos; real applicants use only rows read
+        // from the evaluations table, keyed by their exact applicant UUID.
         let evalSnapshotMap = new Map<string, EvaluationSnapshot>();
+        const persistedEvalSnapshots = new Map<string, EvaluationSnapshot>();
         try {
           const { data: evalData } = await (supabase as any).from('evaluations').select('*');
           if (Array.isArray(evalData)) {
             evalSnapshotMap = buildEvaluationSnapshotMap(evalData);
+            evalData.forEach((row: any) => {
+              const applicantId = String(row?.applicant_id ?? '').trim();
+              if (!isUuid(applicantId)) return;
+              const snapshot = deriveEvaluationSnapshot(row);
+              if (!snapshot) return;
+              const current = persistedEvalSnapshots.get(applicantId);
+              if (!current || new Date(snapshot.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
+                persistedEvalSnapshots.set(applicantId, snapshot);
+              }
+            });
           } else {
             evalSnapshotMap = buildEvaluationSnapshotMap([]);
           }
@@ -220,11 +237,7 @@ export const ForHiringPage = () => {
           evalSnapshotMap = buildEvaluationSnapshotMap([]);
         }
 
-        // Fetch remote category scores alongside hiring context
-        const remoteScoresRes = await fetchApplicantCategoryScores();
-        const categoryScoresMap = remoteScoresRes.data ?? new Map<string, ApplicantCategoryScores>();
-
-        // Load local category and exam scores
+        // Local caches remain available only for non-UUID test/demo rows.
         let catScores: Record<string, any> = {};
         try {
           catScores = JSON.parse(localStorage.getItem(CAT_SCORES_KEY) ?? '{}');
@@ -235,45 +248,21 @@ export const ForHiringPage = () => {
           examScores = JSON.parse(localStorage.getItem(EXAM_SCORES_KEY) ?? '{}');
         } catch { /* ignore */ }
 
-        const resolveApplicantScores = (
-          id: string,
-          email?: string,
-          name?: string,
-          position?: string,
-          dbTotalScore?: number | null,
-          dbQualScore?: number | null
-        ) => {
-          const sid = String(id);
-          const semail = (email || '').toLowerCase().trim();
-          const sname = (name || '').toLowerCase().trim();
+        const resolveLegacyScores = (id: string, position: string) => {
+          const savedCat = catScores[id];
+          const snap = evalSnapshotMap.get(id);
 
-          const snap = evalSnapshotMap.get(sid)
-            || (semail ? evalSnapshotMap.get(`email:${semail}`) : null)
-            || (sname ? evalSnapshotMap.get(`name:${sname}`) : null);
-
-          const savedCat = categoryScoresMap.get(sid)
-            || (semail ? categoryScoresMap.get(`email:${semail}`) : null)
-            || catScores[sid]
-            || (semail ? catScores[`email:${semail}`] : null);
-
-          const posExamScoreStr = position && examScores[position]?.[sid] ? examScores[position][sid] : null;
-          const posExamScore = posExamScoreStr && !isNaN(Number(posExamScoreStr)) ? Number(posExamScoreStr) : null;
-
-          // 1. Exam score (Written Exam)
           let examScore: number | null = null;
           if (savedCat?.writtenExam?.finalScore != null) {
             examScore = Number(savedCat.writtenExam.finalScore);
           } else if (savedCat?.writtenExam?.initialScore != null && savedCat.writtenExam.initialScore > 0) {
             examScore = Number(savedCat.writtenExam.initialScore);
-          } else if (posExamScore != null) {
-            examScore = posExamScore;
+          } else if (position && examScores[position]?.[id]) {
+            examScore = Number(examScores[position][id]);
           } else if (typeof snap?.writtenExamRawScore === 'number') {
             examScore = snap.writtenExamRawScore;
-          } else if (dbQualScore != null && dbQualScore > 0) {
-            examScore = dbQualScore;
           }
 
-          // 2. Interview Score (Oral Examination / Interviewer Rating)
           let interviewScore: number | null = null;
           if (savedCat?.oralExam?.finalScore != null) {
             interviewScore = Number(savedCat.oralExam.finalScore);
@@ -283,53 +272,23 @@ export const ForHiringPage = () => {
             interviewScore = snap.oralRawScore <= 5 ? oralRawToConvertedScore(snap.oralRawScore) : snap.oralRawScore;
           } else if (typeof snap?.score === 'number' && snap.score > 0) {
             interviewScore = snap.score;
-          } else if (dbTotalScore != null && dbTotalScore > 0) {
-            interviewScore = dbTotalScore;
           }
 
           return { interviewScore, examScore };
         };
 
-        // Applicant qualifies for this list if it is already flagged for hiring
-        // OR it is "completed" (Finalized) on the Applicant Score tab — but never
-        // if it has been disqualified/rejected or if credentials have already been generated.
-        const completedIds = await buildCompletedSet(categoryScoresMap);
+        // A generated record closes only its own application UUID. Email is
+        // shared by every application a person ever files, so it cannot decide
+        // that a new promotion is already complete.
         const generatedApplicantIds = new Set<string>();
-        const generatedEmails = new Set<string>();
-
         try {
           const newlyHired = await getNewlyHiredFromSupabase();
           if (Array.isArray(newlyHired)) {
             newlyHired.forEach(nh => {
               if (nh.applicantId) generatedApplicantIds.add(String(nh.applicantId));
-              if (nh.employeeInfo?.email) generatedEmails.add(String(nh.employeeInfo.email).toLowerCase().trim());
             });
           }
-        } catch { /* fallback to portal accounts */ }
-
-        try {
-          const portalAccounts = getEmployeePortalAccounts();
-          if (Array.isArray(portalAccounts)) {
-            portalAccounts.forEach(acc => {
-              if (acc.employee?.email) generatedEmails.add(String(acc.employee.email).toLowerCase().trim());
-            });
-          }
-        } catch { /* ignore */ }
-
-        const includeApplicant = (id: string, status: string, email?: string) => {
-          const sid = String(id);
-          const normalizedEmail = (email || '').toLowerCase().trim();
-          if (isRejected(status)) return false;
-
-          // Exclude ONLY if account/credentials have actually been generated for this applicant
-          if (generatedApplicantIds.has(sid) || (normalizedEmail && generatedEmails.has(normalizedEmail))) {
-            return false;
-          }
-
-          return isForHiring(status) || completedIds.has(sid);
-        };
-
-        const local = getApplicants().filter(a => includeApplicant(a.id, a.status, a.personalInfo?.email));
+        } catch { /* the list still loads from the remaining sources */ }
 
         const remoteData: any[] = [];
         let applicantsError: unknown = null;
@@ -338,8 +297,8 @@ export const ForHiringPage = () => {
             .from('applicants')
             // Only columns public.applicants has: naming a missing one makes
             // PostgREST reject the whole query. The row mapping below already
-            // treats full_name, department and the scores as optional.
-            .select('id,first_name,last_name,middle_name,email,position,office,status');
+            // treats the scores as optional.
+            .select('id,first_name,last_name,middle_name,email,position,office,status,application_type,deleted_at');
           if (error) throw error;
           if (Array.isArray(data)) remoteData.push(...data);
         } catch (error) {
@@ -348,107 +307,134 @@ export const ForHiringPage = () => {
           applicantsError = error;
         }
 
-        // Build remote map — API data is authoritative
-        const remoteMap = new Map<string, HiringRow>();
-        const newLocalEntries: any[] = [];
+        // Local rows are only a fallback for legacy/demo ids. Remote rows are
+        // authoritative and can remove a stale local row by the same UUID.
+        const candidates = new Map<string, LoadedApplicant>();
+
+        getApplicants().forEach((a) => {
+          const id = String(a.id);
+          const status = String(a.status ?? '');
+          if (isClosedApplicationStatus(status) || generatedApplicantIds.has(id)) return;
+
+          const position = String((a as any).position ?? '');
+          candidates.set(id, {
+            id,
+            fullName: [a.personalInfo.firstName, a.personalInfo.lastName].filter(Boolean).join(' ')
+              || a.personalInfo.email?.split('@')[0] || '—',
+            email: String(a.personalInfo.email ?? ''),
+            position,
+            department: resolveOffice(position, (a as any).office, (a as any).department),
+            status,
+            applicationType: applicationTrackOf((a as any).applicationType),
+            legacyId: !isUuid(id),
+          });
+        });
 
         remoteData.forEach((r: any) => {
+          const id = String(r.id);
           const status = String(r.status ?? '');
-          const email = String(r.email ?? '');
-          if (!includeApplicant(String(r.id), status, email)) return;
+          if (r.deleted_at || isClosedApplicationStatus(status) || generatedApplicantIds.has(id)) {
+            candidates.delete(id);
+            return;
+          }
 
           const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
             || r.full_name || '';
-          const position = r.position || '';
-          const department = resolveOffice(position, r.office, r.department);
-          const { interviewScore, examScore } = resolveApplicantScores(
-            String(r.id),
-            email,
-            fullName,
+          const position = String(r.position ?? '');
+          candidates.set(id, {
+            id,
+            fullName: fullName || (r.email ? String(r.email).split('@')[0] : '—'),
+            email: String(r.email ?? ''),
             position,
-            r.total_score != null ? Number(r.total_score) : null,
-            r.qualification_score != null ? Number(r.qualification_score) : null
-          );
-
-          const row: HiringRow = {
-            id:            String(r.id),
-            fullName:      fullName || (r.email ? String(r.email).split('@')[0] : '—'),
-            email:         r.email ?? '',
-            position,
-            department,
-            interviewScore,
-            examScore,
+            department: resolveOffice(position, r.office, r.department),
             status,
-            slot: null,
-            selectionRevokedAt: null,
-          };
-          remoteMap.set(row.id, row);
-
-          const existsLocally = local.some(a => a.id === row.id);
-          if (!existsLocally) {
-            const nameParts = (row.fullName || '').split(/\s+/);
-            newLocalEntries.push({
-              id: row.id,
-              jobPostingId: 'supabase-sync',
-              personalInfo: {
-                firstName: nameParts[0] || '',
-                lastName:  nameParts.slice(1).join(' ') || '',
-                email:     row.email,
-                phone: '', address: '', dateOfBirth: '',
-              },
-              position:         row.position,
-              department:       row.department,
-              office:           row.department,
-              qualificationScore: row.examScore ?? 0,
-              status:           row.status as any,
-              education: [], experience: [], skills: [],
-              certifications: [], documents: [],
-              applicationDate: new Date().toISOString(),
-            });
-          }
+            applicationType: applicationTrackOf(r.application_type),
+            legacyId: !isUuid(id),
+          });
         });
 
-        if (newLocalEntries.length > 0) {
-          saveApplicants([...getApplicants(), ...newLocalEntries]);
-        }
+        // Durable summaries are keyed by the application UUID. A failed read
+        // is reported below, never treated as an empty successful ranking.
+        const summaryRes = await fetchApplicantScoreSummaries(
+          Array.from(candidates.keys()).filter(isUuid),
+        );
+        const scoreSummaries = summaryRes.data;
 
-        // Merge: local baseline, then remote overwrites
         const mergedMap = new Map<string, HiringRow>();
-        local.forEach(a => {
-          const fullName = [a.personalInfo.firstName, a.personalInfo.lastName].filter(Boolean).join(' ')
-            || a.personalInfo.email?.split('@')[0] || '—';
-          const position = (a as any).position ?? '';
-          const department = resolveOffice(position, (a as any).office, (a as any).department);
-          const { interviewScore, examScore } = resolveApplicantScores(
-            a.id,
-            a.personalInfo.email,
-            fullName,
-            position,
-            null,
-            Number(a.qualificationScore ?? 0) || null
-          );
 
-          mergedMap.set(a.id, {
-            id:            a.id,
-            fullName,
-            email:         a.personalInfo.email ?? '',
-            position,
-            department,
+        candidates.forEach((candidate) => {
+          const summary = scoreSummaries.get(candidate.id);
+          // A score row's appointment type is also evidence; it prevents a
+          // promotion from falling back to an oral score.
+          const applicationType = candidate.applicationType === 'promotional' || summary?.appointmentType === 'promotional'
+            ? 'promotional'
+            : 'original';
+
+          let interviewScore: number | null = null;
+          let examScore: number | null = null;
+          let assessmentScore: number | null = null;
+
+          if (candidate.legacyId) {
+            const legacy = resolveLegacyScores(candidate.id, candidate.position);
+            interviewScore = legacy.interviewScore;
+            examScore = legacy.examScore;
+          } else {
+            examScore = summary?.writtenExamRawScore ?? null;
+            // The total is only usable when the score row was saved for this
+            // application's track: a three-category original total is not a
+            // five-category promotional assessment.
+            assessmentScore = summary?.appointmentType === applicationType
+              ? summary.assessmentTotal
+              : null;
+
+            if (applicationType === 'original') {
+              // Browser caches (cictrix_evaluations and the interviewer score
+              // snapshot) are not durable for a real application UUID.
+              const snap = persistedEvalSnapshots.get(candidate.id);
+              if (typeof snap?.oralRawScore === 'number') {
+                interviewScore = snap.oralRawScore <= 5
+                  ? oralRawToConvertedScore(snap.oralRawScore)
+                  : snap.oralRawScore;
+              } else if (typeof snap?.score === 'number' && snap.score > 0) {
+                interviewScore = snap.score;
+              }
+            }
+          }
+
+          // Promotions rank on the saved five-category total. Originals keep
+          // their interview rating, falling back to the saved total.
+          const rankingScore = applicationType === 'promotional'
+            ? assessmentScore
+            : interviewScore ?? assessmentScore;
+
+          const hasCompleteScores = candidate.legacyId
+            ? interviewScore != null && examScore != null
+            : summary?.isFinalized === true && assessmentScore != null && examScore != null;
+
+          // A reservation stays visible even when its scores are missing or
+          // unreadable. Qualifying for the list alone is not enough to rank.
+          if (!hasCompleteScores && !isPastSelection(candidate.status)) return;
+
+          mergedMap.set(candidate.id, {
+            id: candidate.id,
+            fullName: candidate.fullName,
+            email: candidate.email,
+            position: candidate.position,
+            department: candidate.department,
             interviewScore,
             examScore,
-            status:         a.status,
-            slot:           null,
+            assessmentScore,
+            rankingScore,
+            applicationType,
+            status: candidate.status,
+            slot: null,
             selectionRevokedAt: null,
           });
         });
-        remoteMap.forEach((row, id) => mergedMap.set(id, row));
 
         // Which plantilla each application is for, its reservation, and any
         // revoked selection.
         const context = await fetchHiringContext(Array.from(mergedMap.keys()));
-        if (!context.ok) {
-          setLoadError(context.error ?? new Error('Failed to load plantilla slots for applicants'));
-        }
         mergedMap.forEach((row, id) => {
           row.slot = context.slotByApplicant.get(id) ?? null;
           row.selectionRevokedAt = context.revokedAt.get(id) ?? null;
@@ -458,17 +444,17 @@ export const ForHiringPage = () => {
           // A filled plantilla's hire happens on the Generate Employee
           // Credentials tab; nobody else can be selected for it.
           .filter(r => !r.slot || r.slot.status !== 'filled')
-          // Ranked by interview score, so an applicant with no interview and
-          // no exam score has nothing to rank and cannot be compared with the
-          // rest. Qualifying for the list is not the same as having sat the
-          // assessments.
-          .filter(r => (r.interviewScore != null && r.examScore != null) || isPastSelection(r.status))
           .sort((a, b) =>
           (a.department || 'zzz').localeCompare(b.department || 'zzz') ||
           (a.position   || 'zzz').localeCompare(b.position   || 'zzz')
         );
         setRows(all);
-        if (context.ok) {
+
+        if (!context.ok) {
+          setLoadError(context.error ?? new Error('Failed to load plantilla slots for applicants'));
+        } else if (!summaryRes.ok) {
+          setLoadError(summaryRes.error ?? new Error('Failed to load saved assessment scores'));
+        } else {
           setLoadError(applicantsError);
         }
       } catch (error) {
@@ -533,12 +519,12 @@ export const ForHiringPage = () => {
     if (!selectedDept || !selectedPosition) return [];
     return rows
       .filter(r => (r.department || 'No Department') === selectedDept && positionKeyOf(r) === selectedPosition)
-      .sort((a, b) => (b.interviewScore ?? b.examScore ?? -1) - (a.interviewScore ?? a.examScore ?? -1));
+      .sort((a, b) => (b.rankingScore ?? -1) - (a.rankingScore ?? -1));
   }, [rows, selectedDept, selectedPosition]);
 
   // Top scorer for this plantilla, on the same basis the list is ranked by (Task 5).
   const topIds = useMemo(
-    () => topScorerIds(deptApplicants, { idOf: (r) => r.id, scoreOf: (r) => r.interviewScore ?? r.examScore }),
+    () => topScorerIds(deptApplicants, { idOf: (r) => r.id, scoreOf: (r) => r.rankingScore }),
     [deptApplicants],
   );
 
@@ -763,7 +749,7 @@ export const ForHiringPage = () => {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{selectedDept}</p>
             <h1 className="text-xl font-bold text-slate-900">{selectedPosition}</h1>
             <p className="text-sm text-slate-500">
-              {deptApplicants.length} qualified applicant{deptApplicants.length !== 1 ? 's' : ''}, ranked by interview score. One is hired.
+              {deptApplicants.length} qualified applicant{deptApplicants.length !== 1 ? 's' : ''}, ranked by saved assessment score. One is hired.
             </p>
           </div>
           <button
@@ -807,7 +793,7 @@ export const ForHiringPage = () => {
                   <th className="w-10 px-3 py-3"><span className="sr-only">Select</span></th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
-                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Interview Score</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Assessment / Interview Score</th>
                   <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Score</th>
                 </tr>
                 <TableRefreshBar active={rowsLoad.refreshing} colSpan={6} />
@@ -863,8 +849,8 @@ export const ForHiringPage = () => {
                         )}
                       </td>
                       <td className="px-5 py-4 text-center">
-                        <span className={`text-sm font-bold ${row.interviewScore != null ? 'text-[var(--color-primary-900)]' : 'text-slate-300'}`}>
-                          {fmtScore(row.interviewScore)}
+                        <span className={`text-sm font-bold ${row.rankingScore != null ? 'text-[var(--color-primary-900)]' : 'text-slate-300'}`}>
+                          {fmtScore(row.rankingScore)}
                         </span>
                       </td>
                       <td className="px-5 py-4 text-center">

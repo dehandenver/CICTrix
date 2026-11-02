@@ -7,6 +7,7 @@ const {
   upsertMock,
   mockQueryResult,
   mockUpsertResult,
+  upsertDeferred,
 } = vi.hoisted(() => ({
   fromMock: vi.fn(),
   selectMock: vi.fn(),
@@ -14,29 +15,58 @@ const {
   upsertMock: vi.fn(),
   mockQueryResult: { data: [] as unknown[], error: null as unknown },
   mockUpsertResult: { error: null as unknown },
+  upsertDeferred: { current: null as Promise<{ error: unknown }> | null },
 }));
 
 vi.mock('../supabase', () => {
+  let selectedColumns: string[] | null = null;
+
+  // PostgREST returns only the selected columns. Project fixtures the same way
+  // so an omitted column cannot hide behind a richer test row.
+  const projectRow = (row: any, columns: string[]) => {
+    if (columns.length === 1 && columns[0] === '*') return row;
+    const projected: Record<string, unknown> = {};
+    for (const column of columns) {
+      if (row && Object.prototype.hasOwnProperty.call(row, column)) {
+        projected[column] = row[column];
+      }
+    }
+    return projected;
+  };
+
   const queryChain: any = {
     select: (...args: any[]) => {
       selectMock(...args);
+      selectedColumns = String(args[0] ?? '')
+        .split(',')
+        .map((column) => column.trim())
+        .filter(Boolean);
       return queryChain;
     },
     in: (...args: any[]) => {
       inMock(...args);
       return queryChain;
     },
-    then: (resolve: (val: any) => any) => Promise.resolve(mockQueryResult).then(resolve),
+    then: (resolve: (val: any) => any) => {
+      const data = Array.isArray(mockQueryResult.data) && selectedColumns
+        ? mockQueryResult.data.map((row) => projectRow(row, selectedColumns as string[]))
+        : mockQueryResult.data;
+      return Promise.resolve({ ...mockQueryResult, data }).then(resolve);
+    },
   };
 
   const tableChain: any = {
     select: (...args: any[]) => {
       selectMock(...args);
+      selectedColumns = String(args[0] ?? '')
+        .split(',')
+        .map((column) => column.trim())
+        .filter(Boolean);
       return queryChain;
     },
     upsert: (...args: any[]) => {
       upsertMock(...args);
-      return Promise.resolve(mockUpsertResult);
+      return upsertDeferred.current ?? Promise.resolve(mockUpsertResult);
     },
   };
 
@@ -60,6 +90,7 @@ import {
   deriveDefaultCategoryScores,
   hasFinalizedCategoryScores,
   fetchApplicantCategoryScores,
+  fetchApplicantScoreSummaries,
   saveApplicantCategoryScores,
   savePositionWrittenExamScores,
   type ApplicantCategoryScores,
@@ -81,12 +112,23 @@ const makeScores = (overrides?: Partial<ApplicantCategoryScores>): ApplicantCate
   ...overrides,
 });
 
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   mockQueryResult.data = [];
   mockQueryResult.error = null;
   mockUpsertResult.error = null;
+  upsertDeferred.current = null;
 });
 
 describe('applicantScores service layer', () => {
@@ -322,6 +364,153 @@ describe('applicantScores service layer', () => {
     });
   });
 
+  describe('fetchApplicantScoreSummaries', () => {
+    const summaryRow = (overrides: Record<string, unknown> = {}) => ({
+      applicant_id: VALID_UUID_1,
+      appointment_type: 'original',
+      is_finalized: true,
+      education: { initialScore: 16, finalScore: 16, remarks: '' },
+      experience: { initialScore: 14, finalScore: 14, remarks: '' },
+      performance: { initialScore: 18, finalScore: 18, remarks: '' },
+      pcpt: { initialScore: 16, finalScore: 16, remarks: '' },
+      potential: { initialScore: 18, finalScore: 18, remarks: '' },
+      written_exam: { initialScore: 80, finalScore: 80, remarks: '' },
+      oral_exam: { initialScore: 15, finalScore: 15, remarks: '' },
+      written_exam_raw_score: 80,
+      ...overrides,
+    });
+
+    it('returns a durable summary with the original assessment total and separate written exam score', async () => {
+      mockQueryResult.data = [summaryRow()];
+
+      const res = await fetchApplicantScoreSummaries([VALID_UUID_1]);
+
+      expect(res.ok).toBe(true);
+      expect(res.data.get(VALID_UUID_1)).toEqual({
+        applicantId: VALID_UUID_1,
+        appointmentType: 'original',
+        assessmentTotal: 45,
+        writtenExamRawScore: 80,
+        isFinalized: true,
+      });
+    });
+
+    it('selects every persisted column required for original and promotion totals', async () => {
+      mockQueryResult.data = [summaryRow()];
+
+      await fetchApplicantScoreSummaries([VALID_UUID_1]);
+
+      const selected = String(selectMock.mock.calls[selectMock.mock.calls.length - 1]?.[0] ?? '')
+        .split(',')
+        .map((column) => column.trim())
+        .filter(Boolean);
+      expect(selected).toEqual(expect.arrayContaining([
+        'applicant_id',
+        'appointment_type',
+        'is_finalized',
+        'education',
+        'experience',
+        'performance',
+        'potential',
+        'pcpt',
+        'written_exam',
+        'oral_exam',
+        'written_exam_raw_score',
+      ]));
+    });
+
+    it('uses the five-category promotional total without inventing an oral score', async () => {
+      mockQueryResult.data = [summaryRow({ appointment_type: 'promotion' })];
+
+      const res = await fetchApplicantScoreSummaries([VALID_UUID_1]);
+
+      expect(res.data.get(VALID_UUID_1)).toMatchObject({
+        appointmentType: 'promotional',
+        assessmentTotal: 82,
+        writtenExamRawScore: 80,
+        isFinalized: true,
+      });
+    });
+
+    it('returns a null assessment total when a required promotion category or PCPT is incomplete', async () => {
+      mockQueryResult.data = [
+        summaryRow({
+          appointment_type: 'promotional',
+          is_finalized: false,
+          pcpt: { initialScore: 0, finalScore: null, remarks: '' },
+        }),
+      ];
+
+      const res = await fetchApplicantScoreSummaries([VALID_UUID_1]);
+
+      expect(res.data.get(VALID_UUID_1)).toMatchObject({
+        appointmentType: 'promotional',
+        assessmentTotal: null,
+        isFinalized: false,
+      });
+    });
+
+    it('treats valid zero scores as complete instead of missing', async () => {
+      mockQueryResult.data = [
+        summaryRow({
+          education: { initialScore: 0, finalScore: 0, remarks: '' },
+          experience: { initialScore: 0, finalScore: 0, remarks: '' },
+          oral_exam: { initialScore: 0, finalScore: 0, remarks: '' },
+          written_exam: { initialScore: 0, finalScore: 0, remarks: '' },
+          written_exam_raw_score: 0,
+        }),
+      ];
+
+      const res = await fetchApplicantScoreSummaries([VALID_UUID_1]);
+
+      expect(res.data.get(VALID_UUID_1)).toMatchObject({
+        assessmentTotal: 0,
+        writtenExamRawScore: 0,
+        isFinalized: true,
+      });
+    });
+
+    it('reads the remote summary without touching an empty browser cache', async () => {
+      mockQueryResult.data = [summaryRow()];
+      const getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
+
+      const res = await fetchApplicantScoreSummaries([VALID_UUID_1]);
+
+      expect(res.data.get(VALID_UUID_1)?.isFinalized).toBe(true);
+      expect(getItemSpy).not.toHaveBeenCalled();
+      getItemSpy.mockRestore();
+    });
+
+    it('queries only requested valid UUIDs and never scans every score row', async () => {
+      mockQueryResult.data = [summaryRow()];
+
+      await fetchApplicantScoreSummaries([VALID_UUID_1, 'mock-applicant', VALID_UUID_1]);
+
+      expect(fromMock).toHaveBeenCalledWith('applicant_category_scores');
+      expect(inMock).toHaveBeenCalledWith('applicant_id', [VALID_UUID_1]);
+    });
+
+    it('does not query when there are no valid UUIDs', async () => {
+      const empty = await fetchApplicantScoreSummaries([]);
+      const nonUuid = await fetchApplicantScoreSummaries(['mock-applicant']);
+
+      expect(fromMock).not.toHaveBeenCalled();
+      expect(empty).toEqual({ ok: true, data: new Map() });
+      expect(nonUuid).toEqual({ ok: true, data: new Map() });
+    });
+
+    it('reports a failed read instead of falling back to a successful empty or cached ranking', async () => {
+      mockQueryResult.error = new Error('Database connection failed');
+      localStorage.setItem(CAT_SCORES_KEY, JSON.stringify({ [VALID_UUID_1]: makeScores() }));
+
+      const res = await fetchApplicantScoreSummaries([VALID_UUID_1]);
+
+      expect(res.ok).toBe(false);
+      expect(res.error).toBeDefined();
+      expect(res.data.size).toBe(0);
+    });
+  });
+
   describe('saveApplicantCategoryScores', () => {
     it('updates localStorage, dispatches event, and upserts payload with rollups to Supabase', async () => {
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
@@ -382,6 +571,85 @@ describe('applicantScores service layer', () => {
 
       expect(res.ok).toBe(false);
       expect(res.error).toBeDefined();
+    });
+
+    it('does not publish the local cache or success event when the upsert is rejected', async () => {
+      mockUpsertResult.error = new Error('Permission denied');
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      const res = await saveApplicantCategoryScores(VALID_UUID_1, makeScores());
+
+      expect(res.ok).toBe(false);
+      expect(localStorage.getItem(CAT_SCORES_KEY)).toBeNull();
+      const successEvent = dispatchSpy.mock.calls.find(
+        ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
+      );
+      expect(successEvent).toBeUndefined();
+    });
+
+    it('publishes the local cache and event only after the remote upsert resolves', async () => {
+      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      await saveApplicantCategoryScores(VALID_UUID_1, makeScores());
+
+      const eventCallIndex = dispatchSpy.mock.calls.findIndex(
+        ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
+      );
+      expect(eventCallIndex).toBeGreaterThanOrEqual(0);
+      expect(upsertMock.mock.invocationCallOrder[0]).toBeLessThan(setItemSpy.mock.invocationCallOrder[0]);
+      expect(setItemSpy.mock.invocationCallOrder[0])
+        .toBeLessThan(dispatchSpy.mock.invocationCallOrder[eventCallIndex]);
+    });
+
+    it('publishes nothing while a deferred upsert is pending, then publishes when it succeeds', async () => {
+      const pending = deferred<{ error: unknown }>();
+      upsertDeferred.current = pending.promise;
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      const savePromise = saveApplicantCategoryScores(VALID_UUID_1, makeScores());
+      await Promise.resolve();
+
+      expect(upsertMock).toHaveBeenCalled();
+      expect(localStorage.getItem(CAT_SCORES_KEY)).toBeNull();
+      const whilePending = dispatchSpy.mock.calls.find(
+        ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
+      );
+      expect(whilePending).toBeUndefined();
+
+      pending.resolve({ error: null });
+
+      await expect(savePromise).resolves.toEqual({ ok: true });
+      const cached = JSON.parse(localStorage.getItem(CAT_SCORES_KEY) ?? '{}');
+      expect(cached[VALID_UUID_1]).toBeDefined();
+      const afterSuccess = dispatchSpy.mock.calls.find(
+        ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
+      );
+      expect(afterSuccess).toBeDefined();
+    });
+
+    it('publishes nothing while a deferred upsert is pending or after it rejects', async () => {
+      const pending = deferred<{ error: unknown }>();
+      upsertDeferred.current = pending.promise;
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      const savePromise = saveApplicantCategoryScores(VALID_UUID_1, makeScores());
+      await Promise.resolve();
+
+      expect(localStorage.getItem(CAT_SCORES_KEY)).toBeNull();
+      const whilePending = dispatchSpy.mock.calls.find(
+        ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
+      );
+      expect(whilePending).toBeUndefined();
+
+      pending.reject(new Error('offline'));
+
+      await expect(savePromise).resolves.toMatchObject({ ok: false });
+      expect(localStorage.getItem(CAT_SCORES_KEY)).toBeNull();
+      const afterRejection = dispatchSpy.mock.calls.find(
+        ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
+      );
+      expect(afterRejection).toBeUndefined();
     });
   });
 

@@ -37,6 +37,15 @@ export interface ApplicantCategoryScores {
   positionType?: 'rank-and-file' | 'executive';
 }
 
+/** Persisted score state used to rank and finalize an applicant by UUID. */
+export interface ApplicantScoreSummary {
+  applicantId: string;
+  appointmentType: 'original' | 'promotional';
+  assessmentTotal: number | null;
+  writtenExamRawScore: number | null;
+  isFinalized: boolean;
+}
+
 export type ScoringCategoryKey =
   | 'education'
   | 'experience'
@@ -60,6 +69,22 @@ export const BASE_CATS: readonly BaseCategoryKey[] = [
   'pcpt',
   'potential',
 ] as const;
+
+// Assessment categories the modal requires for each appointment type. Written
+// exam stays outside the assessment total and is summarized separately.
+const ORIGINAL_ASSESSMENT_CATEGORIES: readonly ScoringCategoryKey[] = [
+  'education',
+  'experience',
+  'oralExam',
+];
+
+const PROMOTIONAL_ASSESSMENT_CATEGORIES: readonly ScoringCategoryKey[] = [
+  'education',
+  'experience',
+  'performance',
+  'potential',
+  'pcpt',
+];
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -366,30 +391,102 @@ export async function fetchApplicantCategoryScores(
 }
 
 /**
+ * Reads durable, applicant-keyed score summaries from
+ * `public.applicant_category_scores`. Only requested valid UUIDs are queried.
+ *
+ * Remote rows are the only source: browser storage is never consulted, and a
+ * failed read returns `ok: false` with an empty map instead of a successful
+ * empty ranking. Assessment totals use the existing appointment-specific modal
+ * formulas and are null until every required category has a finite final score.
+ */
+export async function fetchApplicantScoreSummaries(
+  applicantIds: string[],
+): Promise<{ ok: boolean; data: Map<string, ApplicantScoreSummary>; error?: unknown }> {
+  const requested = Array.isArray(applicantIds) ? applicantIds : [];
+  const validUuids = Array.from(new Set(requested.filter(isUuid)));
+  if (validUuids.length === 0) {
+    return { ok: true, data: new Map<string, ApplicantScoreSummary>() };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('applicant_category_scores')
+      .select(
+        'applicant_id, appointment_type, is_finalized, education, experience, performance, potential, pcpt, written_exam, oral_exam, written_exam_raw_score',
+      )
+      .in('applicant_id', validUuids);
+
+    if (error) throw error;
+
+    const requestedIds = new Set(validUuids);
+    const summaries = new Map<string, ApplicantScoreSummary>();
+    if (Array.isArray(data)) {
+      for (const row of data) {
+        const applicantId = String(row?.applicant_id ?? '').trim();
+        if (!applicantId || !requestedIds.has(applicantId)) continue;
+
+        const scores = rowToCategoryScores(row);
+        const appointmentType = normalizeApplicationType(row?.appointment_type);
+        summaries.set(applicantId, {
+          applicantId,
+          appointmentType,
+          assessmentTotal: assessmentTotalForScores(scores, appointmentType),
+          writtenExamRawScore: writtenExamRawScoreFromRow(row),
+          isFinalized: row?.is_finalized === true,
+        });
+      }
+    }
+    return { ok: true, data: summaries };
+  } catch (error) {
+    console.warn('[applicantScores] score summary fetch failed:', error);
+    return { ok: false, data: new Map<string, ApplicantScoreSummary>(), error };
+  }
+}
+
+/** A finite number, including zero, or null for missing/NaN/Infinity values. */
+const finiteNumberOrNull = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+/**
+ * Existing modal formula for the appointment track, but only when every
+ * required category has a persisted final score. Zero counts as complete.
+ */
+const assessmentTotalForScores = (
+  scores: ApplicantCategoryScores,
+  appointmentType: 'original' | 'promotional',
+): number | null => {
+  const requiredCategories = appointmentType === 'promotional'
+    ? PROMOTIONAL_ASSESSMENT_CATEGORIES
+    : ORIGINAL_ASSESSMENT_CATEGORIES;
+
+  for (const key of requiredCategories) {
+    if (finiteNumberOrNull(scores[key]?.finalScore) === null) return null;
+  }
+  return calcModalScore(scores, appointmentType);
+};
+
+/** Written exam raw score from persisted columns; never from `applicants`. */
+const writtenExamRawScoreFromRow = (row: any): number | null => {
+  const persisted = finiteNumberOrNull(row?.written_exam_raw_score);
+  if (persisted !== null) return persisted;
+
+  const writtenExam = row?.written_exam ?? row?.writtenExam;
+  return finiteNumberOrNull(writtenExam?.finalScore);
+};
+
+/**
  * Upserts category scores to Supabase `public.applicant_category_scores`,
  * calculates rollup scores (written_exam_raw_score, total_score, interview_score, is_finalized),
- * updates localStorage `cictrix_category_scores`, and dispatches the update event.
+ * then publishes the localStorage cache and update event after the save succeeds.
+ *
+ * Non-UUID test/demo IDs have no remote row and deliberately keep local-only
+ * behavior. For a real UUID, a failed remote save publishes nothing.
  */
 export async function saveApplicantCategoryScores(
   applicantId: string,
   scores: ApplicantCategoryScores,
   isFinalized?: boolean,
 ): Promise<{ ok: boolean; error?: unknown }> {
-  // Update local cache and dispatch event
-  try {
-    if (typeof localStorage !== 'undefined') {
-      const raw = localStorage.getItem(CAT_SCORES_KEY);
-      const cache = raw ? JSON.parse(raw) : {};
-      cache[applicantId] = scores;
-      localStorage.setItem(CAT_SCORES_KEY, JSON.stringify(cache));
-    }
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      window.dispatchEvent(new CustomEvent(CATEGORY_SCORES_UPDATED_EVENT));
-    }
-  } catch (err) {
-    console.warn('[applicantScores] failed to update localStorage cache:', err);
-  }
-
   // Rollups
   const writtenRaw =
     scores.writtenExam?.finalScore ??
@@ -401,8 +498,25 @@ export async function saveApplicantCategoryScores(
   const totalScore = overall.value ?? calcModalScore(scores, scores.appointmentType ?? 'original');
   const finalized = typeof isFinalized === 'boolean' ? isFinalized : hasFinalizedCategoryScores(scores);
 
-  // If non-UUID (e.g. test harness id), do not send to Postgres
+  const publishLocalCache = () => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(CAT_SCORES_KEY);
+        const cache = raw ? JSON.parse(raw) : {};
+        cache[applicantId] = scores;
+        localStorage.setItem(CAT_SCORES_KEY, JSON.stringify(cache));
+      }
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent(CATEGORY_SCORES_UPDATED_EVENT));
+      }
+    } catch (err) {
+      console.warn('[applicantScores] failed to update localStorage cache:', err);
+    }
+  };
+
+  // Non-UUID (e.g. test harness id): there is no Postgres row to save.
   if (!isUuid(applicantId)) {
+    publishLocalCache();
     return { ok: true };
   }
 
@@ -433,11 +547,13 @@ export async function saveApplicantCategoryScores(
       console.error('[applicantScores] save to Supabase failed:', error);
       return { ok: false, error };
     }
-    return { ok: true };
   } catch (error) {
     console.error('[applicantScores] save exception:', error);
     return { ok: false, error };
   }
+
+  publishLocalCache();
+  return { ok: true };
 }
 
 /**

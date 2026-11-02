@@ -153,11 +153,10 @@ const EMAIL_TEMPLATES: Array<{
   },
 ];
 
-const isDemoApplicant = (applicant: any): boolean => {
-  const applicantId = String(applicant?.id || '').toLowerCase();
-  const applicantEmail = String(applicant?.email || '').toLowerCase();
-  return applicantId.startsWith('mock-') || applicantEmail.endsWith('@example.com');
-};
+// Demo rows are recognised by their mock- id. An email domain says nothing:
+// real, scheduled applicants can use @example.com addresses.
+const isDemoApplicant = (applicant: any): boolean =>
+  String(applicant?.id || '').toLowerCase().startsWith('mock-');
 
 const buildEvaluationStatusMap = (evaluations: any[] = []) => {
   const evaluationMap = new Map<string, 'Completed' | 'In Progress'>();
@@ -992,7 +991,7 @@ export function InterviewerApplicantsList({
                             </td>
                             <td data-label="Type">
                               {/* §10: application type is a category, not a status */}
-                              <span className={`badge ${appType === 'Promotional' ? 'badge-neutral' : 'badge-tint'}`}>{appType}</span>
+                              <span className={`badge ${appType === 'Promotional' ? 'badge-tint' : 'badge-neutral'}`}>{appType}</span>
                             </td>
                             <td data-label="Contact info">
                               <span className="ivd-contact">{applicant.email || '—'}</span>
