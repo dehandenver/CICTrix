@@ -2,10 +2,10 @@
 title: Security remediation (credentials, document encryption, authorization and public applicant flows)
 date: 2026-10-16
 status: Draft
-summary: Expanded by the October 27 review and succession scoring dependency; re-verified 2026-11-02 against upstream main e110977 with Phase 1 containment planned in detail (F22–F23 added). Contain leaked keys, replace browser-only credentials, enforce role and office authorization, and protect applicant flows, qualification evidence, review decisions and audit history.
+summary: Expanded by the October 27 review and succession scoring dependency; re-verified and critiqued 2026-11-02 against upstream main e110977 (F6/F7 corrected, F22–F25 added, Phase 1 planned in detail). Contain leaked keys, replace browser-only credentials, enforce role and office authorization, and protect applicant flows, qualification evidence, review decisions and audit history.
 ---
 
-> **Last updated 2026-11-02.** Re-verified against upstream `dehandenver/CICTrix` main (`e110977`, public) and the live project: every Critical/High finding from October 27 is still open (see [November 2 re-verification](#november-2-re-verification)). Phase 1 is now planned step by step below and awaits approval; nothing in it has been executed.
+> **Last updated 2026-11-02.** Re-verified against upstream `dehandenver/CICTrix` main (`e110977`, public) and the live project: every Critical/High finding from October 27 is still open (see [November 2 re-verification](#november-2-re-verification)). The earlier analysis was also checked claim by claim (see [November 2 critique](#november-2-critique-of-the-plan)): F6 and F7 were overstated, and F24 and F25 are new. F25, a default backend JWT secret, may be Critical. Phase 1 is now planned step by step below and awaits approval; nothing in it has been executed.
 
 ## Goal
 
@@ -24,11 +24,11 @@ Original audit of 2026-10-15, read-only, against the repo and the live project `
 | F3 | Tables that do have RLS on use allow-all policies (`using (true)`) for anon. | `employees`, `employee_portal_accounts`, `applicants`, `applicant_attachments`, `employee_children`, `idp_submissions`. `employees` exposes TIN, SSS, GSIS, PhilHealth, Pag-IBIG, birth date, addresses, emergency contacts. |
 | F4 | Portal passwords are stored/compared as plaintext; employee and supervisor credentials are exposed to anon, and office-account passwords to authenticated callers. | Historical counts: `employee_portal_accounts.password` 78 rows, `supervisors.password` 4, `office_role_assignments.account_password` 9; no hashes in that audit. October 27 HEAD verified anonymous access to the employee password column for 130 visible rows without downloading values. Live office-password column grants still allow authenticated SELECT, not anon SELECT. |
 | F5 | Login for employees and promotional applicants is checked in the browser by fetching or caching account rows and comparing passwords. | `src/lib/employeePortalData.ts:92–112,326–337,395–425`; `src/modules/applicant/ApplicantWizard.tsx:1185–1188`. See F19 for password-change and stale-cache consequences. |
-| F6 | Anon can call `SECURITY DEFINER` RPCs that manage accounts: `demo_set_password(account_id, …)` resets anyone's demo password, `demo_create_account` creates accounts with any role. | Advisor `anon_security_definer_function_executable`. |
-| F7 | 10 admin policies trust `user_metadata`, which any signed-in user can edit on themselves. | Advisor `rls_references_user_metadata` (`performance_cycles`, `competencies`, `idp_entries`, `application_activity_log`, `training_course_drafts`, …). |
+| F6 | Anon can call `SECURITY DEFINER` RPCs that manage accounts: `demo_set_password(account_id, …)` resets anyone's demo password, `demo_create_account` creates accounts with any role. *Corrected 2026-11-02:* these functions only touch the `public.accounts` table (0 rows), which is read only by the `/pm-demo` module. They do not touch `employee_portal_accounts`, office accounts or `auth.users`, so this is not a portal takeover. Severity Medium: unauthenticated writes to an isolated demo table plus a public route. | Advisor `anon_security_definer_function_executable`; function bodies inspected 2026-11-02. |
+| F7 | 10 admin policies trust `user_metadata`, which any signed-in user can edit on themselves. *Corrected 2026-11-02:* 3 of the 10 tables (`competencies`, `employee_competencies`, `performance_evaluations`) have RLS **off**, so their policies are never evaluated; those tables are open through F2 instead. The other 7 rely on metadata for writes. Exploiting them needs a Supabase Auth account, so this is staff-to-admin escalation, not anonymous access. Only 5 Auth users exist, and each has a `user_roles` row. | Advisor `rls_references_user_metadata` (`performance_cycles`, `competencies`, `idp_entries`, `application_activity_log`, `training_course_drafts`, …); RLS state checked 2026-11-02. |
 | F8 | `employee-documents` is public with unrestricted bucket-level insert/update/delete policies. `applicant-attachments` is private but allows public reads of files not hidden by the soft-delete helper, and bucket-wide insert/update/delete. | October 27 `storage.buckets` and `storage.objects` policies. Private bucket status alone is not access control when anon SELECT permits downloads/signing. |
 | F9 | FastAPI has unauthenticated data, email and AI routes; privileged handlers use a service-role client. Some routes have since gained authentication. | October 27: 32 router endpoints, 8 without auth dependencies, of which 3 are placeholder auth endpoints. The 5 business endpoints are applicant create/list, email send, competency matching and competency assessment. `evaluations.py` and `weighting.py` now have auth dependencies; do not repeat the old 21-of-32 count. See F17 for authorization holes behind authentication. |
-| F10 | Leaked-password protection remains off; the refreshed advisor reports 44 mutable-search-path functions (34 in the original audit). | Advisors `auth_leaked_password_protection`, `function_search_path_mutable`; snapshot timestamp documented below. |
+| F10 | Leaked-password protection remains off; the refreshed advisor reports 44 mutable-search-path functions (34 in the original audit). 2026-11-02 advisor: 45. | Advisors `auth_leaked_password_protection`, `function_search_path_mutable`; snapshot timestamp documented below. |
 
 ## Approach
 
@@ -75,7 +75,7 @@ The chosen identity architecture is **Supabase Auth for every person who signs i
 |---|---|---|---|
 | RSP / PM / L&D admin (`LoginPage.tsx:92`) | Supabase Auth | `authenticated` | `undo_document_validation`, `finalize_ipcr_surfaces` (`Phase2RatingPanel` → `saveRatings`), `/api/email/send`, rater writes (`RaterManagementPage.tsx`) |
 | Interviewer (`InterviewerLogin.tsx:146`) | Supabase Auth | `authenticated` | `get_document_decryption_key`, `/api/email/send` |
-| Employee portal, office accounts | Browser password compare | `anon` | Reads `employee_portal_accounts.password` and `employees` directly |
+| Employee portal, and the office console it unlocks (`/office/*`, via `getActiveOfficeRoles`) | Browser password compare, with a localStorage fallback that includes a built-in demo account (F24) | `anon` | `employee_portal_accounts` and `employees` with `select('*')`; `office_role_assignments` through anon column grants that exclude the credential columns |
 | `/pm-demo` route (`App.tsx:608`, `DemoRoot`) | `demo_login` RPC | `anon` | `demo_login`, `demo_set_password`, `demo_create_account` |
 | Interviewer login pre-check (`interviewerAccess.ts:49`) | none yet | `anon` | `raters` SELECT |
 
@@ -84,8 +84,10 @@ The chosen identity architecture is **Supabase Auth for every person who signs i
 - Phase 0.1–0.3 answered: real vs demo data and DPO assessment started; offline decision; who controls upstream, the Supabase project and Vercel.
 - Snapshot before changing anything: export current function ACLs, table grants, policies and Auth settings to a private location (not the repo). Note the current Vercel production revision so it can be rolled back.
 
-#### 1.2 Rotate the Supabase API keys *(owner)*
+#### 1.2 Rotate the Supabase API keys *(PR first, then owner)*
 
+0. *(PR, must merge and deploy first)* Upgrade the backend's `supabase` Python package in `requirements.txt` and `backend/requirements.txt` (pinned at `2.4.2`) to a release that accepts the new key format, and run the backend tests. On 2026-11-02, `create_client` from `supabase==2.4.2` raised `SupabaseException: Invalid API key` for an `sb_secret_…`-shaped key and accepted a JWT-shaped one. Without the upgrade, step 2 takes every backend route down. The frontend's `@supabase/supabase-js ^2.93.3` was not tested with the new keys; confirm on a preview deployment.
+0b. *(owner)* Supabase → Authentication → Sign In / Providers: turn off "Allow new users to sign up". The frontend has no `signUp` call, and all 5 existing Auth users are staff with `user_roles` rows. Open sign-up would let anyone get the Auth session that F7, F12 and F13 need. Whether it is currently on was not checked: it isn't visible through SQL.
 1. Supabase dashboard → Project Settings → API Keys: create a new publishable key (`sb_publishable_…`) and a new secret key (`sb_secret_…`).
 2. Vercel → Project → Environment Variables (Production and Preview): set `VITE_SUPABASE_ANON_KEY` to the publishable key; set `SUPABASE_SERVICE_ROLE_KEY` to the secret key; set `SUPABASE_KEY` to the publishable key if the backend still reads it. Redeploy, then confirm every portal loads and signs in.
 3. Update every local `.env` / `backend/.env` (each collaborator). Delete local copies of the old keys.
@@ -105,9 +107,14 @@ Create the migration with `npx supabase migration new phase1_revoke_public_rpcs`
 | `demo_login(text,text)` | yes | yes | yes | Revoke from all three |
 | `undo_document_validation(uuid,text)` | yes | yes | yes | Revoke from `PUBLIC`, `anon`; keep `authenticated` (RSP signs in via Auth) |
 | `finalize_ipcr_surfaces(uuid)` | no | yes | yes | Revoke from `anon`; keep `authenticated` (PM signs in via Auth) |
+| `build_ipcr_semester_roster(integer)` | no | yes | yes | Writes the frozen semester roster. Revoke from `anon` once its caller is confirmed to be an Auth-signed portal |
+| `sync_ipcr_performance_competencies(uuid,uuid)` | no | yes | yes | Writes. Same as above |
+| `evaluate_sor_publication(text)` | no | yes | yes | Writes. Same as above |
+| `resolve_application_reference(text)` | yes | yes | yes | Maps any reference number to that person's primary reference. Keep only if the public tracker needs it, and fold it into the F13 redesign |
 
-- In the same PR, remove the `/pm-demo` route and `DemoRoot` import from `App.tsx`; it cannot work once the demo RPCs are closed, and it is an unauthenticated account-management surface.
-- Inventory the remaining anon-executable `SECURITY DEFINER` functions (18 in the October 26 advisor snapshot) and decide each in this PR: revoke, or record why anon must keep it until Phase 4. Do not regrant to `PUBLIC`. `sync_salaries_for_grade` returns `trigger` and is not a callable RPC; protect writes to its source table instead.
+- In the same PR, remove the `/pm-demo` route and `DemoRoot` import from `App.tsx`. The route cannot work once the demo RPCs are closed. It writes only the isolated `accounts` table (F6 correction), so removing it loses no production function.
+- The 2026-11-02 advisor lists **24** anon-executable `SECURITY DEFINER` functions, not 18. 11 of them return `trigger` and are not callable over the API (`sync_salaries_for_grade`, `assign_application_reference_no`, `finalize_ipcr_surfaces_trigger`, and others). Protect writes to their source tables instead. The 13 callable ones are the rows above plus `is_rsp_admin`, `is_super_admin`, `applicant_file_is_soft_deleted` and `generate_application_reference_no`, which only read or return booleans and can stay until Phase 4. Do not regrant to `PUBLIC`.
+- Before revoking `anon` on the three IPCR writers, grep for their callers. Any caller from the employee or office portals runs as `anon` and would break.
 - Residual: an authenticated user of any role can still call `undo_document_validation` with a forged actor and `finalize_ipcr_surfaces`. The role checks are Phase 4.10.
 - Verify after merge: `has_function_privilege('anon', …)` and the `PUBLIC` ACL entry are false for each row above; RSP undo and PM rating finalization still work.
 
@@ -123,7 +130,8 @@ The employee portal reads the `password` column as `anon` to compare in the brow
 
 1. Add `verify_employee_login(p_username text, p_password text)`, `SECURITY DEFINER`, fixed `search_path`, returning the account row **without** the password column, or nothing. Grant to `anon` only.
 2. Switch `src/lib/employeePortalData.ts` login to the RPC and stop caching account rows with passwords.
-3. Revoke `anon` and `authenticated` SELECT on `employee_portal_accounts.password` (column privilege) and on `supervisors.password` if the same pattern applies there.
+3. Revoke `anon` and `authenticated` SELECT on `employee_portal_accounts.password` and `supervisors.password`. Confirmed 2026-11-02: `supervisors` has RLS off, `anon` has full grants, and the table has a `password` column. Revoking the table grant and regranting every column except `password` is the reliable form, because a column-level revoke alone doesn't remove a table-level grant.
+4. **Before** the revoke, replace every `select('*')` on these tables with an explicit column list. PostgREST rejects `*` once any column is unreadable. Known sites: `employeePortalData.ts:103,135,180` and `officeDirectory.ts:166` (`supervisors`). Grep again at implementation time.
 
 Residual, stated plainly: this stops downloading every password; it does not authenticate later requests, and the 211 plaintext passwords stay exposed until Phase 3 replaces them. Treat all of them as compromised.
 
@@ -135,6 +143,8 @@ Residual, stated plainly: this stops downloading every password; it does not aut
 4. `competency_matching.py` `/analyze` and `competency_assessment.py` `/assess`: require authentication and send the token from `src/lib/api/competencyMatching.ts`.
 5. `backend/main.py`: replace `allow_origins=["*"]` with the production and preview origins from an env var. Low severity on its own, since the API uses bearer tokens rather than cookies.
 6. Stop printing applicant payloads in `applicants.py` (F21); it's a two-line change in a file already being touched.
+7. F25: remove the custom-JWT fast path from `get_authenticated_user` and `get_current_user` in `backend/app/utils/dependencies.py`, and remove the `/api/auth/login` route that issues those tokens. No frontend code calls `/api/auth/login` (checked 2026-11-02), so Supabase Auth tokens are the only real callers. If the path must stay, make `config.py` refuse to start when `JWT_SECRET_KEY` is unset or equals `cictrix-default-jwt-secret-key`.
+8. F24: remove `DEMO_ACCOUNT` and `withDemoAccount` from `src/lib/employeePortalData.ts`, or gate them on mock mode. The connected-mode login must not accept a built-in credential.
 
 #### 1.7 Auth and dependency settings
 
@@ -156,7 +166,10 @@ Export Supabase API and Auth logs as far back as retention allows, plus Vercel f
 
 #### 1.10 Phase 1 exit checks
 
-- Old service-role JWT returns 401; the app runs on the new keys in every portal.
+- Old service-role JWT returns 401; the app and the backend run on the new keys in every portal.
+- A self-service Auth sign-up attempt is refused.
+- A backend request carrying a token signed with `cictrix-default-jwt-secret-key` returns 401.
+- `employee01` with the built-in demo password is rejected in connected mode.
 - `anon` cannot execute any function in 1.3, and `PUBLIC` holds no `EXECUTE` on them.
 - `anon` cannot write `raters` or read any password column; employee login still works through the RPC.
 - A failed decryption-key RPC fails closed; the production bundle contains no private key.
@@ -222,6 +235,8 @@ The approved succession workflow has **no additional HR approval queue**. This s
 ## Risks
 
 - **Phase 1 breaks anything that hardcodes the old keys,** including the local scripts in the repo root and `scratch/`. They need the new keys from `.env`.
+- **The backend can't use the new secret key on its current client** (`supabase==2.4.2`). Upgrade it first (Phase 1.2 step 0), or the key rotation turns into a backend outage.
+- **Column revokes break `select('*')`.** Phase 1.5 has to ship its query changes before or with the revoke.
 - **Phase 4 breaks screens.** Many components read tables directly with the anon client; each table group needs its UI paths tested in every portal before it goes live.
 - **Succession trust depends on source integrity.** Protecting review rows while leaving qualification records or position requirements anonymously editable permits manipulated rankings. Conversely, disabling source access without compatible authenticated PDS/L&D/office clients can interrupt legitimate work. Phase 4A is a coordinated release gate, not a blanket live lockdown.
 - **Force-push disrupts collaborators** and any open PRs on both repos; it needs coordination with whoever owns upstream.
@@ -267,7 +282,7 @@ Refreshed baseline:
 
 **Evidence:** Live `raters` has anon/authenticated INSERT/UPDATE/DELETE grants and permissive `true` policies, including `raters_anon_all`; its only constraints are primary key/unique email, with no user triggers. The live decryption function matches `auth.jwt()->>'email'` to any active rater and returns the single `default` private key, without checking an applicant assignment. This matches `supabase/migrations/20261026102622_document_encryption_keys.sql:59–94`. `src/modules/interviewer/InterviewerLogin.tsx:98–145` also uses these records as the interviewer access list.
 
-**Prerequisite/impact:** A caller with any valid Supabase Auth account/email can make that email an active rater using the public write path, then satisfy the key RPC's interviewer branch. An already-authorized interviewer receives a key shared across applicants, not just assigned applicants. These paths remain unsafe after merely deleting the embedded key in F11. Live policies and function body confirm the chain; no rater was inserted or changed to exercise it.
+**Prerequisite/impact:** A caller with any valid Supabase Auth account/email can make that email an active rater using the public write path, then satisfy the key RPC's interviewer branch. *Qualified 2026-11-02:* the live database has 5 Auth users, all staff with `user_roles` rows, and the frontend has no sign-up flow. Unless self-service sign-up is enabled (unchecked; see Phase 1.2 step 0b), the realistic attacker is a PM or L&D user, or an interviewer, upgrading themselves. Inserting the rater row needs no Auth session at all, though, so an outsider can pre-stage it for any email they later control. An already-authorized interviewer receives a key shared across applicants, not just assigned applicants. These paths remain unsafe after merely deleting the embedded key in F11. Live policies and function body confirm the chain; no rater was inserted or changed to exercise it.
 
 **Remediation/check:** Restrict access-list writes to authorized administrators, bind raters to immutable Auth user IDs, and enforce assignment for individual document access. After rotating the key, verify an unrelated signed-in user cannot self-enroll and interviewer A cannot obtain/decrypt interviewer B's files.
 
@@ -321,7 +336,7 @@ Refreshed baseline:
 
 ### F19 — High: employee password changes are local-only and stale credentials remain a login fallback
 
-**Evidence:** `src/lib/employeePortalData.ts:395–425` changes only the local account list through `saveEmployeePortalAccounts` (lines 210–220). Both the initial password page (`src/modules/employee/SetInitialPasswordPage.tsx:61–73`) and employee settings call it. `src/App.tsx:452–459` tries the database first, then accepts local cached credentials even when the database comparison returns no match. The row mapper/writer (`employeePortalData.ts:21–75`) does not persist/reload `mustChangePassword`.
+**Evidence:** `src/lib/employeePortalData.ts:395–425` changes only the local account list through `saveEmployeePortalAccounts` (lines 210–220). Both the initial password page (`src/modules/employee/SetInitialPasswordPage.tsx:61–73`) and employee settings call it. `src/App.tsx:452–459` tries the database first, then accepts local cached credentials even when the database comparison returns no match. *Line numbers at `e110977` (2026-11-02):* `changeEmployeePortalPassword` is at `employeePortalData.ts:498–529`, `saveEmployeePortalAccounts` at 313–327 (localStorage only, as before), the browser compare at 112 and 437, and the fallback at `App.tsx:456–459`. Behaviour is unchanged. The row mapper/writer (`employeePortalData.ts:21–75`) does not persist/reload `mustChangePassword`.
 
 **Verification/impact:** A local run of the actual password-change function returned `{ok:true}` and changed the browser cache, with a DB mock configured to throw on any access remaining untouched. The database password therefore remains usable; cached credentials can also outlive a later server reset. A fresh browser's database-loaded account loses the local-only first-change flag. These are additional failures beyond plaintext storage in F4–F5.
 
@@ -386,5 +401,40 @@ F5, F10, F12–F14 and F16–F21 were not re-tested; nothing merged since Octobe
 **Impact/limits:** Advisory-level. Exploitability depends on how each package is used. The DOMPurify issues need specific hook or custom-element configurations, and no `dangerouslySetInnerHTML` was found in `src`. Not traced call by call.
 
 **Remediation/check:** Phase 1.7. `npm audit fix`, then the full test suite and a portal click-through.
+
+### F24 — Medium: built-in demo employee credential is accepted by the production login
+
+**Evidence:** `src/lib/employeePortalData.ts:257` defines `DEMO_ACCOUNT` (username `employee01`, with a hardcoded password and employee number `EMP-2024-001`). `withDemoAccount` (line 299) injects it into every account list read from localStorage. `handleEmployeeLogin` (`App.tsx:456–459`) falls back to that list when the database lookup fails, with no mock-mode check. The account ships in the public repo and the bundle.
+
+**Impact/limits:** Anyone can open the employee portal with a known credential. On 2026-11-02 no live employee had `employee_number = 'EMP-2024-001'`, so the session links to no real record. Today it adds little beyond the anon access in F3. It becomes an impersonation path if that number is ever assigned to a real person, and it would survive Phase 3 if left in place. Login was not attempted.
+
+**Remediation/check:** Phase 1.6 step 8. Assert that `employee01` is rejected in connected mode.
+
+### F25 — Critical if unset: backend accepts tokens signed with a default secret published in the repo
+
+**Evidence:** `backend/app/core/config.py:25` defaults `JWT_SECRET_KEY` to `"cictrix-default-jwt-secret-key"`. `backend/app/utils/dependencies.py` tries `verify_token` with that secret **first** in both `get_current_user` and `get_authenticated_user`, and takes `role` straight from the token. `require_role` then trusts it. Every authenticated backend route is affected, including hiring, applicant status, employees and evaluations, and these handlers use the service-role client. Nothing in the frontend calls `/api/auth/login`, so the custom-token path is dead code that is still reachable.
+
+**Impact/limits:** If production never set `JWT_SECRET_KEY`, anyone can mint a token with any role and reach every protected backend route. These tokens also ignore `user_roles.is_active` and can't be revoked (compare F16). Whether Vercel sets the variable was not checked, and no token was forged against a deployment. The October 27 review mentions "custom-JWT acceptance" in Phase 3.8 but didn't connect it to the default secret.
+
+**Remediation/check:** Phase 1.6 step 7. Remove the path, or fail closed on the default. Verify that a token signed with the default secret returns 401.
+
+## November 2 critique of the plan
+
+The plan was largely written by another agent (October 15–27). Each claim below was checked against upstream `e110977` and the live project on 2026-11-02, and the plan was corrected where the evidence differed. Claims not listed held up, including F1–F4, F8, F11, F13–F15, F16 (`is_rsp_admin` still ignores `is_active`; `is_super_admin` treats a null `is_active` as active), F17's evaluation TODO, F18, F21 and the Phase 4.6 view analysis.
+
+| Ref | Plan said | System shows | Change made |
+|---|---|---|---|
+| K1 | F6: demo RPCs reset "anyone's" password and create accounts "with any role" | They write only `public.accounts`, which has 0 rows and is used only by `/pm-demo` | F6 downgraded to Medium and reworded; Phase 1.3 keeps the revoke. The first draft of this plan and the review chat repeated the overstatement. |
+| K2 | F7: 10 policies let any signed-in user act as admin | 3 of those tables have RLS off, so their policies never run; the other 7 need an Auth session, and there are 5 Auth users, all staff | F7 reworded as staff-to-admin escalation |
+| K3 | F12/F13/F7 assume an attacker "with any valid Supabase Auth account" | No sign-up flow in the frontend; sign-up setting not visible through SQL | Added Phase 1.2 step 0b: disable sign-up. It's cheap and removes the prerequisite for three findings. |
+| K4 | Phase 1.1–1.2: rotate keys, then update Vercel and redeploy | `supabase==2.4.2` rejects `sb_secret_…` keys with `Invalid API key` (tested locally) | Added Phase 1.2 step 0: upgrade supabase-py before rotating |
+| K5 | Phase 3.8: "remove unused custom-JWT acceptance" | That path verifies tokens with a default secret published in the repo, before Supabase verification | New F25, moved into Phase 1.6 |
+| K6 | F19 covers local credential fallbacks | The fallback also includes a hardcoded demo account | New F24, Phase 1.6 |
+| K7 | 18 anon-executable definer functions | 24, of which 11 are triggers; 3 callable ones write IPCR data and weren't named | Phase 1.3 table extended |
+| K8 | Revoke password column access | `select('*')` on those tables would start failing | Phase 1.5 step 4 added |
+| K9 | Advisor counts: 79 RLS-off, 44 mutable search path | 80 and 45 (advisor); 81 RLS-off by catalog; 7 tables have policies with RLS disabled, which the plan never mentions | Counts updated. The 7 tables show policies that were written but are not enforced, so check them in Phase 4. |
+| K10 | Source line numbers | They match the `b1594a2` baseline; several moved by `e110977` (e.g. F19) | F19 updated; other references should be re-read at implementation time |
+
+Useful references: [Supabase API key rotation]
 
 Useful references: [Supabase API key rotation](https://supabase.com/docs/guides/api/api-keys), [RLS-disabled advisor remediation](https://supabase.com/docs/guides/database/database-linter?lint=0013_rls_disabled_in_public), [mutable-search-path remediation](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), [metadata-policy remediation](https://supabase.com/docs/guides/database/database-linter?lint=0015_rls_references_user_metadata), [PostgreSQL function privileges](https://www.postgresql.org/docs/current/sql-grant.html).

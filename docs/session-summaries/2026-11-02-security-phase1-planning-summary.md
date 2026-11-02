@@ -20,6 +20,16 @@ Updated [the remediation plan](../plans/2026-10-16-security-remediation.md) as r
 - `npm audit --omit=dev` on the upstream lockfile.
 - Regenerated `docs/plans/index.html` with `build-plans-index.ps1`.
 
+## Follow-up: critique of the earlier analysis (same day)
+
+Checked the October 15–27 claims against upstream `e110977` and the live project, and recorded the results as K1–K10 in the plan's "November 2 critique" section.
+- **Corrections:** F6's demo RPCs only touch an empty, demo-only `accounts` table. F7's metadata policies are inert on 3 tables and need an Auth session on the other 7.
+- **Logic gaps found:** sign-up is never disabled, although F7, F12 and F13 all depend on attackers getting an Auth account. Key rotation would break the backend: `supabase==2.4.2` rejects `sb_secret_` keys, which I reproduced locally. Column revokes would break `select('*')` queries.
+- **New findings:** F24, a built-in demo employee login accepted in connected mode. F25, a backend that accepts tokens signed with a default secret published in the repo.
+- **Phase 1:** updated to cover all of the above.
+
+Extra checks run: live policy, grant and function-body queries; advisor counts (80 RLS-off, 45 mutable search path, 24 anon definer functions, 7 tables with policies but RLS disabled); an aggregate count showing no employee holds the demo account's employee number; a local `create_client` test against supabase-py 2.4.2. Not checked: the Auth sign-up setting, whether Vercel sets `JWT_SECRET_KEY`, and frontend behavior with the new keys.
+
 ## Deviations and limits
 
 No production change, key use or row read. Whether the legacy service-role key is still enabled and whether production sets `QUEUE_DRAIN_SECRET` were not tested. F5, F10, F12–F14 and F16–F21 were not re-tested individually.
