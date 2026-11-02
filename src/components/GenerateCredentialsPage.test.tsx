@@ -158,6 +158,45 @@ describe('Generate Employee Credentials', () => {
     expect(await screen.findByText(/couldn't generate any credentials/i)).toBeInTheDocument();
   });
 
+  it('says nothing was completed when every selected row failed', async () => {
+    const reason = 'Ligaya Bautista: not promoted. This applicant is no longer reserved for the plantilla.';
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [], promotions: [], failures: [reason] });
+    await generateSelected('Ligaya Bautista');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Nothing Was Completed' });
+    expect(within(dialog).getByText(/None of the selected applicants were completed\. Check the reasons below/)).toBeInTheDocument();
+    expect(within(dialog).getByText(reason)).toBeInTheDocument();
+    expect(dialog.textContent).not.toMatch(/Credentials were emailed|accounts? generated/i);
+    expect(screen.queryByText('Employee Records Created')).toBeNull();
+    expect(screen.queryByText(/Check your connection/i)).toBeNull();
+    expect(screen.queryByText(/couldn't generate any credentials/i)).toBeNull();
+    expect(within(dialog).queryByRole('table')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: /Print Credentials/ })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Done' })).toBeInTheDocument();
+  });
+
+  it('keeps the credential title and failure list when some credentials were issued', async () => {
+    const credential = { fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' };
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [credential], promotions: [], failures: ['Ana Reyes: could not be hired.'] });
+    await generateSelected('Juan Dela Cruz', 'Ana Reyes');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Employee Records Created' });
+    expect(within(dialog).getByText('1 account generated. Credentials were emailed where an address was on file.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Ana Reyes: could not be hired.')).toBeInTheDocument();
+    expect(within(dialog).getByText('pw-1')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /Print Credentials/ })).toBeEnabled();
+  });
+
+  it('keeps the promotion title and failure list when some promotions completed', async () => {
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [], promotions: [promotionOutcome], failures: ['Ana Reyes: could not be hired.'] });
+    await generateSelected('Ligaya Bautista', 'Ana Reyes');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Promotions Completed' });
+    expect(within(dialog).getByText('1 promotion completed.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Ana Reyes: could not be hired.')).toBeInTheDocument();
+    expect(dialog.textContent).not.toMatch(/accounts? generated/i);
+  });
+
   it('recovers from a thrown batch error and keeps the selection', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     generateEmployeeCredentials.mockRejectedValue(new Error('permission denied for table employees'));

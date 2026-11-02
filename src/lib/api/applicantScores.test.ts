@@ -6,16 +6,20 @@ const {
   inMock,
   upsertMock,
   mockQueryResult,
+  mockApplicantsResult,
   mockUpsertResult,
   upsertDeferred,
+  currentTable,
 } = vi.hoisted(() => ({
   fromMock: vi.fn(),
   selectMock: vi.fn(),
   inMock: vi.fn(),
   upsertMock: vi.fn(),
   mockQueryResult: { data: [] as unknown[], error: null as unknown },
+  mockApplicantsResult: { data: [] as unknown[], error: null as unknown },
   mockUpsertResult: { error: null as unknown },
   upsertDeferred: { current: null as Promise<{ error: unknown }> | null },
+  currentTable: { name: '' },
 }));
 
 vi.mock('../supabase', () => {
@@ -48,10 +52,11 @@ vi.mock('../supabase', () => {
       return queryChain;
     },
     then: (resolve: (val: any) => any) => {
-      const data = Array.isArray(mockQueryResult.data) && selectedColumns
-        ? mockQueryResult.data.map((row) => projectRow(row, selectedColumns as string[]))
-        : mockQueryResult.data;
-      return Promise.resolve({ ...mockQueryResult, data }).then(resolve);
+      const result = currentTable.name === 'applicants' ? mockApplicantsResult : mockQueryResult;
+      const data = Array.isArray(result.data) && selectedColumns
+        ? result.data.map((row) => projectRow(row, selectedColumns as string[]))
+        : result.data;
+      return Promise.resolve({ ...result, data }).then(resolve);
     },
   };
 
@@ -74,6 +79,7 @@ vi.mock('../supabase', () => {
     supabase: {
       from: (...args: any[]) => {
         fromMock(...args);
+        currentTable.name = String(args[0] ?? '');
         return tableChain;
       },
     },
@@ -127,6 +133,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockQueryResult.data = [];
   mockQueryResult.error = null;
+  mockApplicantsResult.data = [];
+  mockApplicantsResult.error = null;
   mockUpsertResult.error = null;
   upsertDeferred.current = null;
 });
@@ -651,6 +659,98 @@ describe('applicantScores service layer', () => {
       );
       expect(afterRejection).toBeUndefined();
     });
+
+    describe('preserving a persisted written exam', () => {
+      const persistedRow = (overrides: Record<string, unknown> = {}) => ({
+        applicant_id: VALID_UUID_1,
+        education: { initialScore: 0, finalScore: null, remarks: '' },
+        experience: { initialScore: 0, finalScore: null, remarks: '' },
+        performance: { initialScore: 0, finalScore: null, remarks: '' },
+        pcpt: { initialScore: 0, finalScore: null, remarks: '' },
+        potential: { initialScore: 0, finalScore: null, remarks: '' },
+        written_exam: { initialScore: 82, finalScore: 82, remarks: '' },
+        oral_exam: { initialScore: 0, finalScore: null, remarks: '' },
+        appointment_type: 'promotional',
+        position_type: 'rank-and-file',
+        written_exam_raw_score: 82,
+        is_finalized: false,
+        ...overrides,
+      });
+
+      // What the scoring modal sends: it never edits the written exam.
+      const modalScores = (overrides?: Partial<ApplicantCategoryScores>) =>
+        makeScores({
+          appointmentType: 'promotional',
+          writtenExam: { initialScore: 0, finalScore: null, remarks: '' },
+          oralExam: { initialScore: 0, finalScore: null, remarks: '' },
+          ...overrides,
+        });
+
+      it('keeps the persisted written exam when the incoming one is empty', async () => {
+        mockQueryResult.data = [persistedRow()];
+
+        const res = await saveApplicantCategoryScores(VALID_UUID_1, modalScores());
+
+        expect(res.ok).toBe(true);
+        expect(inMock).toHaveBeenCalledWith('applicant_id', [VALID_UUID_1]);
+        expect(upsertMock).toHaveBeenCalledTimes(1);
+        expect(upsertMock.mock.calls[0][0]).toMatchObject({
+          written_exam: { initialScore: 82, finalScore: 82, remarks: '' },
+          written_exam_raw_score: 82,
+        });
+      });
+
+      it('computes the total and the local cache from the merged scores', async () => {
+        mockQueryResult.data = [persistedRow()];
+
+        await saveApplicantCategoryScores(VALID_UUID_1, modalScores());
+
+        // base 16 + 14 + 18 + 16 + 18 = 82, exam 82 / 100 * 30 = 24.6
+        expect(upsertMock.mock.calls[0][0].total_score).toBeCloseTo(106.6, 5);
+        const cached = JSON.parse(localStorage.getItem(CAT_SCORES_KEY) ?? '{}');
+        expect(cached[VALID_UUID_1].writtenExam.finalScore).toBe(82);
+      });
+
+      it('lets an explicit written exam from the caller win', async () => {
+        mockQueryResult.data = [persistedRow()];
+
+        await saveApplicantCategoryScores(
+          VALID_UUID_1,
+          modalScores({ writtenExam: { initialScore: 90, finalScore: 90, remarks: '' } }),
+        );
+
+        expect(upsertMock.mock.calls[0][0]).toMatchObject({
+          written_exam: { initialScore: 90, finalScore: 90, remarks: '' },
+          written_exam_raw_score: 90,
+        });
+      });
+
+      it('fails the save without upserting when the existing row cannot be read', async () => {
+        mockQueryResult.error = new Error('read failed');
+        const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+        const res = await saveApplicantCategoryScores(VALID_UUID_1, modalScores());
+
+        expect(res.ok).toBe(false);
+        expect(res.error).toBeDefined();
+        expect(upsertMock).not.toHaveBeenCalled();
+        expect(localStorage.getItem(CAT_SCORES_KEY)).toBeNull();
+        expect(dispatchSpy.mock.calls.find(
+          ([event]) => (event as CustomEvent).type === CATEGORY_SCORES_UPDATED_EVENT,
+        )).toBeUndefined();
+      });
+
+      it('keeps the incoming payload when no row exists yet', async () => {
+        mockQueryResult.data = [];
+
+        await saveApplicantCategoryScores(VALID_UUID_1, modalScores());
+
+        expect(upsertMock.mock.calls[0][0]).toMatchObject({
+          written_exam: { initialScore: 0, finalScore: null, remarks: '' },
+          written_exam_raw_score: 0,
+        });
+      });
+    });
   });
 
   describe('savePositionWrittenExamScores', () => {
@@ -702,6 +802,79 @@ describe('applicantScores service layer', () => {
         ]),
         { onConflict: 'applicant_id' },
       );
+    });
+
+    it('creates a new row for a promotion applicant as promotional and not finalized', async () => {
+      mockQueryResult.data = [];
+      mockApplicantsResult.data = [{ id: VALID_UUID_1, application_type: 'promotion' }];
+
+      const res = await savePositionWrittenExamScores('Computer Programmer II', { [VALID_UUID_1]: 82 });
+
+      expect(res.ok).toBe(true);
+      expect(fromMock).toHaveBeenCalledWith('applicants');
+      expect(inMock).toHaveBeenCalledWith('id', [VALID_UUID_1]);
+      expect(upsertMock.mock.calls[0][0]).toEqual([
+        expect.objectContaining({
+          applicant_id: VALID_UUID_1,
+          appointment_type: 'promotional',
+          is_finalized: false,
+          written_exam_raw_score: 82,
+        }),
+      ]);
+      const catCache = JSON.parse(localStorage.getItem(CAT_SCORES_KEY) ?? '{}');
+      expect(catCache[VALID_UUID_1].appointmentType).toBe('promotional');
+    });
+
+    it('creates a new row for an original applicant as original and not finalized', async () => {
+      mockQueryResult.data = [];
+      mockApplicantsResult.data = [{ id: VALID_UUID_1, application_type: 'original' }];
+
+      await savePositionWrittenExamScores('Computer Programmer II', { [VALID_UUID_1]: 70 });
+
+      expect(upsertMock.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ appointment_type: 'original', is_finalized: false }),
+      ]);
+    });
+
+    it('falls back to original when the applicant lookup has no value', async () => {
+      mockQueryResult.data = [];
+      mockApplicantsResult.error = new Error('lookup failed');
+
+      const res = await savePositionWrittenExamScores('Computer Programmer II', { [VALID_UUID_1]: 70 });
+
+      expect(res.ok).toBe(true);
+      expect(upsertMock.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ appointment_type: 'original', is_finalized: false }),
+      ]);
+    });
+
+    it('keeps the finalized flag and type of an existing row', async () => {
+      mockQueryResult.data = [
+        {
+          applicant_id: VALID_UUID_1,
+          education: { initialScore: 16, finalScore: 16, remarks: '' },
+          experience: { initialScore: 14, finalScore: 14, remarks: '' },
+          performance: { initialScore: 0, finalScore: null, remarks: '' },
+          pcpt: { initialScore: 0, finalScore: null, remarks: '' },
+          potential: { initialScore: 0, finalScore: null, remarks: '' },
+          written_exam: { initialScore: 0, finalScore: null, remarks: '' },
+          oral_exam: { initialScore: 15, finalScore: 15, remarks: '' },
+          appointment_type: 'original',
+          position_type: 'rank-and-file',
+          is_finalized: true,
+        },
+      ];
+      mockApplicantsResult.data = [{ id: VALID_UUID_1, application_type: 'promotion' }];
+
+      await savePositionWrittenExamScores('Computer Programmer II', { [VALID_UUID_1]: 88 });
+
+      expect(upsertMock.mock.calls[0][0]).toEqual([
+        expect.objectContaining({
+          appointment_type: 'original',
+          is_finalized: true,
+          written_exam_raw_score: 88,
+        }),
+      ]);
     });
 
     it('handles non-UUID entries by storing in localStorage and bypassing Supabase', async () => {

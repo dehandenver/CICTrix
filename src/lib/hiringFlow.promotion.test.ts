@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   saveApplicants: vi.fn(),
   getApplicants: vi.fn(),
   applicantRows: [] as any[],
+  rpc: vi.fn(),
 }));
 
 vi.mock('./supabase', () => {
@@ -27,7 +28,7 @@ vi.mock('./supabase', () => {
     then: (resolve: (v: unknown) => unknown) =>
       Promise.resolve({ data: mocks.applicantRows, error: null }).then(resolve),
   };
-  return { supabase: { from: () => builder } };
+  return { supabase: { from: () => builder, rpc: mocks.rpc } };
 });
 
 vi.mock('./api/employeesApi', () => ({ hireApplicantWithOutcome: mocks.hireApplicant }));
@@ -219,26 +220,47 @@ describe('generateEmployeeCredentials with promotions', () => {
     expect(mocks.hireApplicant).toHaveBeenCalledTimes(1);
   });
 
-  it('says it is safe to try again when the result is uncertain, and continues', async () => {
-    mocks.completePromotionalAppointment.mockRejectedValueOnce(
-      new PromotionalAppointmentError("We couldn't confirm the result of this promotion.", {
-        kind: 'uncertain',
-        retryable: true,
-      }),
-    );
+  describe('retryable promotion failures', () => {
+    // Drive the real completePromotionalAppointment so the messages are the ones users see.
+    const failThroughRealApi = async (rpcFailure: { error: unknown } | { reject: unknown }) => {
+      const real = await vi.importActual<typeof import('./api/promotionalHiring')>('./api/promotionalHiring');
+      mocks.rpc.mockImplementation(() => ({
+        abortSignal: () => ('reject' in rpcFailure
+          ? Promise.reject(rpcFailure.reject)
+          : Promise.resolve({ data: null, error: rpcFailure.error })),
+      }));
+      mocks.completePromotionalAppointment.mockImplementationOnce(real.completePromotionalAppointment);
+      const outcome = await generateEmployeeCredentials([
+        promotionRow(),
+        promotionRow({ id: 'app-promo-2', fullName: 'Ana Reyes' }),
+      ]);
+      expect(outcome.failures).toHaveLength(1);
+      // The batch kept going to the second row.
+      expect(outcome.promotions.map((p) => p.fullName)).toEqual(['Ana Reyes']);
+      expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(2);
+      expectNoExternalSideEffects();
+      return outcome.failures[0];
+    };
+    const countOf = (text: string, pattern: RegExp) => (text.match(pattern) ?? []).length;
 
-    const outcome = await generateEmployeeCredentials([
-      promotionRow(),
-      promotionRow({ id: 'app-promo-2', fullName: 'Ana Reyes' }),
-    ]);
+    it('states retry safety exactly once for a busy database (57014)', async () => {
+      const failure = await failThroughRealApi({ error: { code: '57014', message: 'canceling statement due to statement timeout' } });
 
-    expect(outcome.failures).toHaveLength(1);
-    expect(outcome.failures[0]).toContain('Juan Dela Cruz: not promoted.');
-    expect(outcome.failures[0]).toMatch(/safe to try again/i);
-    expect(outcome.failures[0]).toMatch(/will not (appoint|promote)/i);
-    expect(outcome.promotions.map((p) => p.fullName)).toEqual(['Ana Reyes']);
-    expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(2);
-    expectNoExternalSideEffects();
+      expect(failure).toContain('Juan Dela Cruz: not promoted.');
+      expect(countOf(failure, /try again/gi)).toBe(1);
+      expect(countOf(failure, /retrying is safe/gi)).toBe(1);
+      expect(failure).not.toMatch(/promote them twice/i);
+    });
+
+    it('states retry safety exactly once for an uncertain result', async () => {
+      const failure = await failThroughRealApi({ reject: new TypeError('Failed to fetch') });
+
+      expect(failure).toContain('Juan Dela Cruz: not promoted.');
+      expect(countOf(failure, /retrying is safe/gi)).toBe(1);
+      expect(failure).toMatch(/will not appoint the employee twice/i);
+      expect(failure).not.toMatch(/safe to try again/i);
+      expect(failure).not.toMatch(/promote them twice/i);
+    });
   });
 
   it('treats a row cached as external as a promotion when the hire reports one, keeping the existing account', async () => {

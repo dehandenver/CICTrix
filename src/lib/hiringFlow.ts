@@ -297,11 +297,14 @@ export interface GenerateOutcome {
   failures: string[];
 }
 
-/** Plain next step for a promotion that did not complete. */
+/**
+ * Plain next step for a promotion that did not complete. A retryable
+ * PromotionalAppointmentError already says in its own message that retrying is
+ * safe, so it is not repeated here.
+ */
 const promotionFailureMessage = (fullName: string, err: unknown): string => {
   if (err instanceof PromotionalAppointmentError) {
-    const nextStep = err.retryable ? ' It is safe to try again; a repeat will not promote them twice.' : '';
-    return `${fullName}: not promoted. ${err.message}${nextStep}`;
+    return `${fullName}: not promoted. ${err.message}`;
   }
   return `${fullName}: not promoted. Something went wrong before the promotion finished. It is safe to try again; a repeat will not promote them twice.`;
 };

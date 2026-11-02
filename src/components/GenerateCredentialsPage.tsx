@@ -137,7 +137,8 @@ export const GenerateCredentialsPage = () => {
       setCredentials(outcome.credentials);
       setPromotions(outcome.promotions);
       setFailures(outcome.failures);
-      if (outcome.credentials.length === 0 && outcome.promotions.length === 0) {
+      // When every row failed, the result modal lists each reason, so no banner blames the connection.
+      if (outcome.credentials.length === 0 && outcome.promotions.length === 0 && outcome.failures.length === 0) {
         setError("We couldn't generate any credentials. Check your connection and try again.");
       }
     } catch (err) {
@@ -152,17 +153,23 @@ export const GenerateCredentialsPage = () => {
   };
 
   const closeResults = () => { setCredentials([]); setPromotions([]); setFailures([]); };
-  const resultTitle = credentials.length > 0 && promotions.length > 0
-    ? 'Appointments Completed'
-    : credentials.length === 0 && promotions.length > 0
-      ? 'Promotions Completed'
-      : 'Employee Records Created';
-  const resultSubtitle = [
-    credentials.length > 0 || promotions.length === 0
-      ? `${plural(credentials.length, 'account')} generated. Credentials were emailed where an address was on file.`
-      : null,
-    promotions.length > 0 ? `${plural(promotions.length, 'promotion')} completed.` : null,
-  ].filter(Boolean).join(' ');
+  // Every selected row failed: the modal only lists reasons and claims nothing was created or emailed.
+  const nothingCompleted = credentials.length === 0 && promotions.length === 0;
+  const resultTitle = nothingCompleted
+    ? 'Nothing Was Completed'
+    : credentials.length > 0 && promotions.length > 0
+      ? 'Appointments Completed'
+      : credentials.length === 0
+        ? 'Promotions Completed'
+        : 'Employee Records Created';
+  const resultSubtitle = nothingCompleted
+    ? 'None of the selected applicants were completed. Check the reasons below.'
+    : [
+      credentials.length > 0
+        ? `${plural(credentials.length, 'account')} generated. Credentials were emailed where an address was on file.`
+        : null,
+      promotions.length > 0 ? `${plural(promotions.length, 'promotion')} completed.` : null,
+    ].filter(Boolean).join(' ');
 
   const handleRevoke = async () => {
     if (!revokeTarget) return;
@@ -402,25 +409,27 @@ export const GenerateCredentialsPage = () => {
         onClose={closeResults}
         dismissible={false}
         size="lg"
-        icon={<CheckCircle strokeWidth={1.75} />}
+        icon={nothingCompleted ? <XCircle strokeWidth={1.75} /> : <CheckCircle strokeWidth={1.75} />}
         title={resultTitle}
         subtitle={resultSubtitle}
         footer={(
           <>
-            <button
-              type="button"
-              className="btn btn-md btn-secondary"
-              disabled={credentials.length === 0}
-              title={credentials.length === 0 && promotions.length > 0 ? 'Promotions have no credentials to print.' : undefined}
-              onClick={() => {
-                if (!printCredentialCards(credentials)) {
-                  feedback.warning("The print window didn't open.", "Your browser blocked it. Allow pop-ups for this site, then click Print Credentials again.");
-                }
-              }}
-            >
-              <Printer className="h-4 w-4" aria-hidden="true" />
-              Print Credentials
-            </button>
+            {!nothingCompleted && (
+              <button
+                type="button"
+                className="btn btn-md btn-secondary"
+                disabled={credentials.length === 0}
+                title={credentials.length === 0 && promotions.length > 0 ? 'Promotions have no credentials to print.' : undefined}
+                onClick={() => {
+                  if (!printCredentialCards(credentials)) {
+                    feedback.warning("The print window didn't open.", "Your browser blocked it. Allow pop-ups for this site, then click Print Credentials again.");
+                  }
+                }}
+              >
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Print Credentials
+              </button>
+            )}
             <button type="button" className="btn btn-md btn-primary" onClick={closeResults}>
               Done
             </button>
@@ -436,7 +445,7 @@ export const GenerateCredentialsPage = () => {
         {credentials.length > 0 && promotions.length > 0 && (
           <h3 className="mb-2 text-base font-semibold text-[var(--color-primary-900)]">New employee credentials</h3>
         )}
-        {(credentials.length > 0 || promotions.length === 0) && (
+        {credentials.length > 0 && (
         <div className="abyan-table-wrap">
           <table className="abyan-table w-full">
             <thead>
