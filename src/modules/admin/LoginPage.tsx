@@ -48,7 +48,7 @@ interface LoginPageProps {
  * backend-gated routes like the IPCR weighting config. Do not reintroduce it.
  */
 
-const INTER_STACK = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const FONT_STACK = 'var(--font-sans)';
 
 export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [email, setEmail] = useState('');
@@ -178,8 +178,8 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
   return (
     <div
-      className="min-h-screen w-full bg-slate-50 text-slate-900"
-      style={{ fontFamily: INTER_STACK }}
+      className="min-h-screen w-full bg-slate-50 text-slate-900 abyan-tokens"
+      style={{ fontFamily: FONT_STACK }}
     >
       <div className="flex min-h-screen w-full">
         {/* LEFT — solid indigo brand panel */}

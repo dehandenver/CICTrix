@@ -40,7 +40,7 @@ export const SystemAdministrationPage = () => {
   const [activeTab, setActiveTab] = useState<'directory' | 'access-roles'>('directory');
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
+    <div className="min-h-screen bg-[var(--bg-page)] ds-remap abyan-tokens">
       <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
       <div className="admin-layout">
         <Sidebar activeModule="Super" userRole="super-admin" />
@@ -136,31 +136,31 @@ const OfficeDirectory = () => {
       <div>
         <BackButton className="mb-4" onBack={() => setDrillOfficeRow(null)} />
 
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 700, fontSize: '20px', color: '#1f2937', marginBottom: '4px' }}>
+        <div style={{ background: '#fff', border: '1px solid var(--neutral-200)', borderRadius: '12px', overflow: 'hidden', padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 700, fontSize: '20px', color: 'var(--neutral-800)', marginBottom: '4px' }}>
             <Building2 size={24} className="text-[#363EE8]" />
             {drillOfficeRow.officeName}
           </div>
-          <p style={{ fontSize: '14px', color: '#6b7280', marginTop: 0, marginBottom: '24px' }}>
+          <p style={{ fontSize: '14px', color: 'var(--neutral-600)', marginTop: 0, marginBottom: '24px' }}>
             {drillOfficeRow.employeeCount} employee{drillOfficeRow.employeeCount !== 1 ? 's' : ''}
           </p>
 
           {/* Department Head Card */}
-          <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ background: 'var(--bg-page)', border: '1px solid var(--neutral-200)', borderRadius: '12px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#dbeafe', color: '#1e40af', display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: '18px', justifyContent: 'center' }}>
               {drillOfficeRow.deptHead ? getOfficeDirInitials(drillOfficeRow.deptHead.name) : 'DH'}
             </div>
             <div>
-              <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Department Head</p>
+              <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Department Head</p>
               {drillOfficeRow.deptHead ? (
                 <>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#1f2937' }}>{drillOfficeRow.deptHead.name}</p>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6b7280' }}>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '16px', fontWeight: 700, color: 'var(--neutral-800)' }}>{drillOfficeRow.deptHead.name}</p>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--neutral-600)' }}>
                     {drillOfficeRow.deptHead.position} · {drillOfficeRow.deptHead.contact}
                   </p>
                 </>
               ) : (
-                <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: 600, color: '#b45309' }}>Unassigned</p>
+                <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: 600, color: 'var(--warning-700)' }}>Unassigned</p>
               )}
             </div>
             {drillOfficeRow.deptHead && (
@@ -170,34 +170,34 @@ const OfficeDirectory = () => {
             )}
           </div>
 
-          <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1f2937', marginBottom: '16px', marginTop: 0 }}>Divisions & Assigned Supervisors</h3>
+          <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--neutral-800)', marginBottom: '16px', marginTop: 0 }}>Divisions & Assigned Supervisors</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
             {drillOfficeRow.divisions.map((div, idx) => (
-              <div key={idx} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}>
+              <div key={idx} style={{ background: '#fff', border: '1px solid var(--neutral-200)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}>
                 <div>
-                  <div style={{ borderBottom: '1px solid #f3f4f6', paddingBottom: '12px', marginBottom: '16px' }}>
-                    <h4 style={{ margin: 0, fontWeight: 700, color: '#1f2937', fontSize: '14px' }}>{div.name}</h4>
+                  <div style={{ borderBottom: '1px solid var(--bg-page)', paddingBottom: '12px', marginBottom: '16px' }}>
+                    <h4 style={{ margin: 0, fontWeight: 700, color: 'var(--neutral-800)', fontSize: '14px' }}>{div.name}</h4>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <p style={{ margin: 0, fontSize: '10px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Supervisors</p>
+                    <p style={{ margin: 0, fontSize: '10px', fontWeight: 600, color: 'var(--neutral-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Supervisors</p>
                     {div.supervisors.length === 0 ? (
-                      <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', padding: '12px', color: '#b45309', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <AlertCircle size={16} style={{ color: '#d97706', flexShrink: 0 }} />
+                      <div style={{ background: 'var(--warning-100)', border: '1px solid var(--warning-100)', borderRadius: '8px', padding: '12px', color: 'var(--warning-700)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AlertCircle size={16} style={{ color: 'var(--warning-500)', flexShrink: 0 }} />
                         <span>No supervisors assigned to this division.</span>
                       </div>
                     ) : (
                       div.supervisors.map((sup, sIdx) => {
                         const initials = getOfficeDirInitials(sup.name);
                         return (
-                          <div key={sIdx} style={{ display: 'flex', alignItems: 'start', gap: '12px', padding: '10px', borderRadius: '8px', border: '1px solid #f3f4f6', background: '#fafafa' }}>
+                          <div key={sIdx} style={{ display: 'flex', alignItems: 'start', gap: '12px', padding: '10px', borderRadius: '8px', border: '1px solid var(--bg-page)', background: '#fafafa' }}>
                             <div style={{ width: '32px', height: '32px', borderRadius: '4px', background: '#3b82f6', color: '#fff', fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               {initials}
                             </div>
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              <p style={{ margin: 0, fontWeight: 600, color: '#1f2937', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.name}</p>
-                              <p style={{ margin: '2px 0 0 0', color: '#6b7280', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.position || 'Supervisor'}</p>
-                              <p style={{ margin: '2px 0 0 0', color: '#9ca3af', fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.contact}</p>
+                              <p style={{ margin: 0, fontWeight: 600, color: 'var(--neutral-800)', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.name}</p>
+                              <p style={{ margin: '2px 0 0 0', color: 'var(--neutral-600)', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.position || 'Supervisor'}</p>
+                              <p style={{ margin: '2px 0 0 0', color: 'var(--neutral-400)', fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.contact}</p>
                               <div style={{ marginTop: '8px' }}>
                                 <AccountStatusBadge status={sup.accountStatus} />
                               </div>
@@ -222,7 +222,7 @@ const OfficeDirectory = () => {
       <div style={{ position: 'relative', maxWidth: '440px', marginBottom: '16px' }}>
         <Search
           size={16}
-          style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }}
+          style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-400)' }}
         />
         <input
           type="text"
@@ -232,7 +232,7 @@ const OfficeDirectory = () => {
           style={{
             width: '100%',
             padding: '9px 12px 9px 36px',
-            border: '1px solid #d1d5db',
+            border: '1px solid var(--neutral-200)',
             borderRadius: '8px',
             fontSize: '14px',
             outline: 'none',
@@ -259,21 +259,21 @@ const OfficeDirectory = () => {
         </div>
       )}
 
-      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
+      <div style={{ background: '#fff', border: '1px solid var(--neutral-200)', borderRadius: '12px', overflow: 'hidden' }}>
         <div
           style={{
             padding: '16px 20px',
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid var(--neutral-200)',
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
             fontWeight: 600,
-            color: '#1f2937',
+            color: 'var(--neutral-800)',
           }}
         >
           <Building2 size={18} />
           Office Directory
-          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>
             {officesLoad.initialLoading ? '' : `${filtered.length} office${filtered.length === 1 ? '' : 's'}`}
           </span>
         </div>
@@ -281,7 +281,7 @@ const OfficeDirectory = () => {
         {officesLoad.initialLoading ? (
           <SkeletonList show={officesLoad.showSkeleton} label="Loading offices…" />
         ) : filtered.length === 0 && !error ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--neutral-600)' }}>
             {rows.length === 0
               ? 'No offices found. Ensure the departments table is seeded (migration 006).'
               : 'No offices match your search.'}
@@ -301,7 +301,7 @@ const OfficeDirectory = () => {
                   <tr
                     key={row.officeId}
                     onClick={() => handleOfficeClick(row)}
-                    style={{ borderTop: '1px solid #f0f0f0', cursor: 'pointer' }}
+                    style={{ borderTop: '1px solid var(--neutral-200)', cursor: 'pointer' }}
                     className="hover:bg-blue-50/40"
                   >
                     <td style={td}>
@@ -315,7 +315,7 @@ const OfficeDirectory = () => {
                       {row.deptHead ? (
                         <PersonCell person={row.deptHead} />
                       ) : (
-                        <span style={{ color: '#b45309', fontSize: '14px' }}>Unassigned</span>
+                        <span style={{ color: 'var(--warning-700)', fontSize: '14px' }}>Unassigned</span>
                       )}
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>
@@ -325,7 +325,7 @@ const OfficeDirectory = () => {
                           alignItems: 'center',
                           gap: '6px',
                           fontWeight: 600,
-                          color: '#1f2937',
+                          color: 'var(--neutral-800)',
                         }}
                       >
                         <Users size={14} style={{ color: '#515F69' }} />
@@ -340,7 +340,7 @@ const OfficeDirectory = () => {
         )}
       </div>
 
-      <p style={{ marginTop: '12px', fontSize: '12px', color: '#9ca3af' }}>
+      <p style={{ marginTop: '12px', fontSize: '12px', color: 'var(--neutral-400)' }}>
         Click an office row to view all divisions and assigned supervisors.
       </p>
     </div>
@@ -349,11 +349,11 @@ const OfficeDirectory = () => {
 
 const PersonCell = ({ person }: { person: OfficePerson }) => (
   <div>
-    <div style={{ fontWeight: 600, color: '#1f2937' }}>{person.name}</div>
+    <div style={{ fontWeight: 600, color: 'var(--neutral-800)' }}>{person.name}</div>
     {person.position && (
-      <div style={{ fontSize: '12px', color: '#6b7280' }}>{person.position}</div>
+      <div style={{ fontSize: '12px', color: 'var(--neutral-600)' }}>{person.position}</div>
     )}
-    <div style={{ fontSize: '12px', color: '#9ca3af' }}>{person.contact}</div>
+    <div style={{ fontSize: '12px', color: 'var(--neutral-400)' }}>{person.contact}</div>
     <AccountStatusBadge status={person.accountStatus} />
   </div>
 );
@@ -370,7 +370,7 @@ const AccountStatusBadge = ({ status }: { status: string }) => {
         fontSize: '11px',
         fontWeight: 600,
         background: active ? 'rgba(16, 185, 129, 0.12)' : 'rgba(107, 114, 128, 0.15)',
-        color: active ? '#047857' : '#4b5563',
+        color: active ? '#047857' : 'var(--neutral-600)',
       }}
     >
       {status}
@@ -433,7 +433,7 @@ const AccessRoleManagement = () => {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-        <p style={{ color: '#6b7280', fontSize: '14px', margin: 0, flex: 1 }}>
+        <p style={{ color: 'var(--neutral-600)', fontSize: '14px', margin: 0, flex: 1 }}>
           Assign or remove office roles. Removing preserves history and can transfer the role plus reroute
           pending submissions to a successor.
         </p>
@@ -448,7 +448,7 @@ const AccessRoleManagement = () => {
         <div style={cardHeader}>
           <Users size={18} />
           Active Role Assignments
-          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>
             {assignmentsLoad.initialLoading ? '' : `${assignments.length}`}
           </span>
         </div>
@@ -475,14 +475,14 @@ const AccessRoleManagement = () => {
                 {assignments.map((a) => (
                   <tr key={a.id}>
                     <td style={td}>
-                      <span style={{ fontWeight: 600, color: '#1f2937' }}>{a.employee_name || '—'}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--neutral-800)' }}>{a.employee_name || '—'}</span>
                     </td>
                     <td style={td}>{a.office_name || '—'}</td>
                     <td style={td}>
                       <span style={rolePill(a.role)}>{ROLE_LABELS[a.role]}</span>
                     </td>
                     <td style={td}>
-                      <code style={{ color: '#374151' }}>{a.account_username || '—'}</code>
+                      <code style={{ color: 'var(--neutral-800)' }}>{a.account_username || '—'}</code>
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       <button type="button" onClick={() => setRemoveTarget(a)} style={dangerOutlineBtn}>
@@ -503,7 +503,7 @@ const AccessRoleManagement = () => {
         <div style={cardHeader}>
           <History size={18} />
           Access Change Audit Trail
-          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>
             {audit.length ? `${audit.length} recent` : ''}
           </span>
         </div>
@@ -518,8 +518,8 @@ const AccessRoleManagement = () => {
               >
                 <span style={auditPill(entry.action)}>{entry.action}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '13px', color: '#374151' }}>{entry.details || '—'}</div>
-                  <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--neutral-800)' }}>{entry.details || '—'}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--neutral-400)', marginTop: '2px' }}>
                     {entry.performed_by || 'unknown'} · {new Date(entry.created_at).toLocaleString()}
                   </div>
                 </div>
@@ -774,7 +774,7 @@ export const SearchableEmployeeCombobox: React.FC<SearchableEmployeeComboboxProp
             border: 'none',
             outline: 'none',
             fontSize: '13px',
-            color: '#1e293b',
+            color: 'var(--neutral-800)',
             background: 'transparent',
           }}
         />
@@ -861,7 +861,7 @@ export const SearchableEmployeeCombobox: React.FC<SearchableEmployeeComboboxProp
                           alignItems: 'center',
                           gap: '10px',
                           cursor: 'pointer',
-                          background: isHighlighted ? '#eef2ff' : '#ffffff',
+                          background: isHighlighted ? 'var(--color-primary-50)' : '#ffffff',
                           borderBottom: '1px solid #f1f5f9',
                         }}
                       >
@@ -932,7 +932,7 @@ export const SearchableEmployeeCombobox: React.FC<SearchableEmployeeComboboxProp
                           alignItems: 'center',
                           gap: '10px',
                           cursor: 'pointer',
-                          background: isHighlighted ? '#eef2ff' : '#ffffff',
+                          background: isHighlighted ? 'var(--color-primary-50)' : '#ffffff',
                           borderBottom: '1px solid #f1f5f9',
                         }}
                       >
@@ -988,7 +988,7 @@ export const SearchableEmployeeCombobox: React.FC<SearchableEmployeeComboboxProp
                           alignItems: 'center',
                           gap: '10px',
                           cursor: 'pointer',
-                          background: isHighlighted ? '#eef2ff' : '#ffffff',
+                          background: isHighlighted ? 'var(--color-primary-50)' : '#ffffff',
                           borderBottom: '1px solid #f1f5f9',
                         }}
                       >
@@ -1193,7 +1193,7 @@ export const AppointDepartmentHeadModal = ({
                 </label>
                 {selectedOffice && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: selectedOffice.is_active ? '#166534' : '#6b7280' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: selectedOffice.is_active ? '#166534' : 'var(--neutral-600)' }}>
                       {selectedOffice.is_active ? 'Active Department' : 'Inactive Department'}
                     </span>
                     {incumbent ? (
@@ -1257,17 +1257,17 @@ export const AppointDepartmentHeadModal = ({
                   style={{
                     marginTop: '10px',
                     padding: '12px 14px',
-                    background: '#fffbeb',
-                    border: '1px solid #fde68a',
+                    background: 'var(--warning-100)',
+                    border: '1px solid var(--warning-300)',
                     borderRadius: '8px',
-                    color: '#78350f',
+                    color: 'var(--warning-700)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '10px',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', lineHeight: 1.4 }}>
-                    <AlertCircle size={18} style={{ color: '#d97706', flexShrink: 0, marginTop: '1px' }} />
+                    <AlertCircle size={18} style={{ color: 'var(--warning-500)', flexShrink: 0, marginTop: '1px' }} />
                     <span>
                       This office currently has an active Department Head ({incumbent.employee_name}). To replace this head, use Remove / Transfer to ensure pending IPCR reviews are rerouted.
                     </span>
@@ -1281,9 +1281,9 @@ export const AppointDepartmentHeadModal = ({
                         alignItems: 'center',
                         gap: '6px',
                         padding: '6px 14px',
-                        background: '#fef3c7',
-                        color: '#92400e',
-                        border: '1px solid #fcd34d',
+                        background: 'var(--warning-100)',
+                        color: 'var(--warning-700)',
+                        border: '1px solid var(--warning-300)',
                         borderRadius: '999px',
                         fontSize: '12px',
                         fontWeight: 600,
@@ -1597,20 +1597,20 @@ const RemoveTransferModal = ({
           <div style={{ ...cardHeader, padding: '12px 16px' }}>
             <ClipboardList size={16} />
             Succession Transfer Tool
-            <span style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: 500, color: '#6b7280' }}>
+            <span style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: 500, color: 'var(--neutral-600)' }}>
               {loadingPending ? '' : `${pending.length} pending`}
             </span>
           </div>
           <div style={{ padding: '12px 16px' }}>
             {loadingPending ? (
-              <div style={{ color: '#6b7280', fontSize: '13px' }}>Checking pending submissions…</div>
+              <div style={{ color: 'var(--neutral-600)', fontSize: '13px' }}>Checking pending submissions…</div>
             ) : pending.length === 0 ? (
-              <div style={{ color: '#6b7280', fontSize: '13px' }}>
+              <div style={{ color: 'var(--neutral-600)', fontSize: '13px' }}>
                 No pending or in-progress submissions await this role-holder. Nothing to reroute.
               </div>
             ) : (
               <>
-                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: 0, marginBottom: '10px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--neutral-600)', marginTop: 0, marginBottom: '10px' }}>
                   Select the items to reroute to the successor so nothing gets stuck mid-cycle.
                 </p>
                 {pending.map((p) => (
@@ -1621,7 +1621,7 @@ const RemoveTransferModal = ({
                     <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
                     <span style={{ fontSize: '13px' }}>
                       <strong>{p.kind}</strong> — {p.employeeName} · {p.period}{' '}
-                      <span style={{ color: '#9ca3af' }}>({p.status})</span>
+                      <span style={{ color: 'var(--neutral-400)' }}>({p.status})</span>
                     </span>
                   </label>
                 ))}
@@ -1647,7 +1647,7 @@ const RemoveTransferModal = ({
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div style={{ marginBottom: '14px' }}>
-    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--neutral-800)', marginBottom: '6px' }}>
       {label}
     </label>
     {children}
@@ -1678,25 +1678,25 @@ const td: React.CSSProperties = {};
 
 const card: React.CSSProperties = {
   background: '#fff',
-  border: '1px solid #e5e7eb',
+  border: '1px solid var(--neutral-200)',
   borderRadius: '12px',
   overflow: 'hidden',
 };
 
 const cardHeader: React.CSSProperties = {
   padding: '16px 20px',
-  borderBottom: '1px solid #e5e7eb',
+  borderBottom: '1px solid var(--neutral-200)',
   display: 'flex',
   alignItems: 'center',
   gap: '10px',
   fontWeight: 600,
-  color: '#1f2937',
+  color: 'var(--neutral-800)',
 };
 
 const emptyBox: React.CSSProperties = {
   padding: '32px',
   textAlign: 'center',
-  color: '#6b7280',
+  color: 'var(--neutral-600)',
   fontSize: '14px',
   lineHeight: 1.5,
 };
@@ -1706,13 +1706,13 @@ const emptyBox: React.CSSProperties = {
 const input: React.CSSProperties = {
   width: '100%',
   padding: '9px 12px',
-  border: '1px solid #d1d5db',
+  border: '1px solid var(--neutral-200)',
   borderRadius: '8px',
   fontSize: '14px',
   outline: 'none',
   boxSizing: 'border-box',
   background: '#fff',
-  color: '#111827',
+  color: 'var(--neutral-900)',
 };
 
 const primaryBtn: React.CSSProperties = {
@@ -1733,8 +1733,8 @@ const primaryBtn: React.CSSProperties = {
 const secondaryBtn: React.CSSProperties = {
   padding: '9px 16px',
   background: '#fff',
-  color: '#374151',
-  border: '1px solid #d1d5db',
+  color: 'var(--neutral-800)',
+  border: '1px solid var(--neutral-200)',
   borderRadius: '8px',
   fontSize: '13px',
   fontWeight: 600,
@@ -1743,7 +1743,7 @@ const secondaryBtn: React.CSSProperties = {
 
 const dangerBtn: React.CSSProperties = {
   padding: '9px 16px',
-  background: '#dc2626',
+  background: 'var(--error-500)',
   color: '#fff',
   border: 'none',
   borderRadius: '8px',
@@ -1758,7 +1758,7 @@ const dangerOutlineBtn: React.CSSProperties = {
   gap: '6px',
   padding: '7px 14px',
   background: '#fff',
-  color: '#b91c1c',
+  color: 'var(--error-700)',
   border: '1px solid #fca5a5',
   borderRadius: '8px',
   fontSize: '13px',
@@ -1808,10 +1808,10 @@ const auditPill = (action: string): React.CSSProperties => {
   const map: Record<string, string> = {
     assign: '#047857',
     transfer: '#2563eb',
-    revoke: '#b91c1c',
-    reroute: '#b45309',
+    revoke: 'var(--error-700)',
+    reroute: 'var(--warning-700)',
   };
-  const color = map[action] ?? '#4b5563';
+  const color = map[action] ?? 'var(--neutral-600)';
   return {
     display: 'inline-block',
     padding: '1px 8px',
