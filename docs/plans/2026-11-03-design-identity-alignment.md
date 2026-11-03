@@ -1,7 +1,7 @@
 ---
 title: Align the non-RSP portals with the design identity (UI only)
 date: 2026-11-03
-status: Approved
+status: In Progress
 summary: Bring the Super Admin, PM, Office, L&D, Interviewer, Employee and Public pages onto the DESIGN_IDENTITY.md colors, font and pill buttons by reusing the RSP utility remap and swapping inline literals for tokens, with no change to behavior, data or routing.
 ---
 
@@ -86,3 +86,25 @@ Each step is one commit.
 - Screenshots before and after at desktop and mobile widths, in the light and dark themes. Logout and modal header text still render white.
 - After step 1: RSP matches its pre-change screenshots.
 - The DESIGN_IDENTITY.md §16 checklist.
+
+## Progress
+
+Stopped after step 2 on purpose (credit budget). Resume at **step 3**.
+
+| Step | State | Commit |
+|---|---|---|
+| 1. Remap generalization | Done. Reverting `:is(.rsp-ds, .ds-remap)` to `.rsp-ds` reproduces the old file byte for byte, so RSP is unchanged. | 1d77ce0 |
+| 2. Super Admin and login font | Done. `SuperAdminDashboard.tsx` already used only on-palette hexes, so it only gained the scope classes. | 100ce61 |
+| 3 to 8 | Not started | |
+
+**Checks run for steps 1 and 2:** `npx tsc --noEmit`, `npm run lint` and `npm run build:verify` pass. `npx vitest run` gives 1493 passed and 2 failed (`src/lib/trainingProgress.test.ts` and `scripts/seed-training-attendance.test.mjs`); both fail identically without these changes, and both are date-dependent. A `git diff -U0` audit found no non-styling lines. Tailwind emits color rules for the swapped `text-[var(--…)]`, `border-[var(--…)]` and `bg-[var(--…)]` classes.
+
+**Not done yet:** before/after screenshots in light and dark, desktop and mobile, for Super Admin and RSP. The Super Admin pages need the temporary component harness because local sign-in is disabled. Nothing has been pushed.
+
+**Tip for the next session:** tokens are defined on `.abyan-tokens`, not `:root`, so any file given `var(--…)` values must sit under a root that carries `abyan-tokens`. Most hits in the audit are already on-palette hexes (`#363EE8`, `#515F69`, `#040E6B`, `#E2E8F0`) and the plan doesn't ask for them to change. Only swap the off-palette ones.
+
+**Left unchanged, no match in the plan table** (Super Admin files):
+- avatar colour array in `SystemAdministrationPage.tsx:573` (`#2563eb`, `#7c3aed`, `#059669`, `#d97706`, `#dc2626`, `#0891b2`, `#4f46e5`)
+- blue shades `#2563EB`, `#1E40AF`, `#3B82F6`, `#DBEAFE`, `#BFDBFE`, `#F0F7FF`
+- green and red shades `#047857`, `#166534`, `#991B1B`, `#FEE2E2`, `#FCA5A5`
+- slate shades `#64748B`, `#475569`, `#CBD5E1`, `#F8FAFC`, `#FAFAFA`, `#F5F5F5`
