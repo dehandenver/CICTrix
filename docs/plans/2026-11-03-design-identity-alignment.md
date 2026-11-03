@@ -94,7 +94,7 @@ Stopped after step 2 on purpose (credit budget). Resume at **step 3**.
 | Step | State | Commit |
 |---|---|---|
 | 1. Remap generalization | Done. Reverting `:is(.rsp-ds, .ds-remap)` to `.rsp-ds` reproduces the old file byte for byte, so RSP is unchanged. | 1d77ce0 |
-| 2. Super Admin and login font | Done. `SuperAdminDashboard.tsx` already used only on-palette hexes, so it only gained the scope classes. | 100ce61 |
+| 2. Super Admin and login font | Done. `SuperAdminDashboard.tsx` already used only on-palette hexes, so it only gained the scope classes. | 2ccb04c |
 | 3 to 8 | Not started | |
 
 **Checks run for steps 1 and 2:** `npx tsc --noEmit`, `npm run lint` and `npm run build:verify` pass. `npx vitest run` gives 1493 passed and 2 failed (`src/lib/trainingProgress.test.ts` and `scripts/seed-training-attendance.test.mjs`); both fail identically without these changes, and both are date-dependent. A `git diff -U0` audit found no non-styling lines. Tailwind emits color rules for the swapped `text-[var(--…)]`, `border-[var(--…)]` and `bg-[var(--…)]` classes.
