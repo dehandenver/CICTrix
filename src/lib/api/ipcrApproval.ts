@@ -41,7 +41,7 @@ export interface PendingApproval {
 // auditFailed: the action saved but its ipcr_audit_log row did not (see ipcrAudit.ts).
 type Result<T> = { ok: true; data: T; auditFailed?: boolean } | { ok: false; error: string };
 
-const NO_LONGER_PENDING = 'This IPCR is no longer pending approval. Refresh the list.';
+export const NO_LONGER_PENDING = 'This IPCR is no longer pending approval. Refresh the list.';
 
 /**
  * A return leaves the employee's workspace row saying "Targets Submitted", which

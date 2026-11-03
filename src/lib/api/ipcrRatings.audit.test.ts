@@ -13,8 +13,13 @@ vi.mock('../supabase', () => ({
         update: (payload: unknown) => { call.op = 'update'; call.payload = payload; return builder; },
         insert: (payload: unknown) => { call.op = 'insert'; call.payload = payload; return builder; },
         eq: () => builder,
-        then: (resolve: (v: unknown) => void) =>
-          resolve({ data: null, error: failTables.has(table) ? { message: 'boom' } : null }),
+        is: () => builder,
+        select: () => builder,
+        // The Phase 2 return only proceeds when its update changed a row.
+        then: (resolve: (v: unknown) => void) => resolve({
+          data: table === 'target_settings' && call.op === 'update' ? [{ id: 'ts-1' }] : null,
+          error: failTables.has(table) ? { message: 'boom' } : null,
+        }),
       };
       return builder;
     },
