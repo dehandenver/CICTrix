@@ -11,7 +11,7 @@ vi.mock('../../components/table-loading', () => ({ useDelayedLoading: () => fals
 
 const sheet = (phase2Status = 'locked') => ({
   targetSettingId: 'approved-1', employeeId: 'emp-1', employeeName: 'Ana Cruz', period: 'July–December 2026',
-  phase2Status, phase2OpenTargetDate: null, reviewComment: null,
+  phase2Status, phase2OpenTargetDate: null, reviewComment: null as string | null, returnedAt: null as string | null,
   mfos: [{ id: 'mfo-1', functionType: 'core', title: 'Payroll', indicators: [{
     successIndicatorId: 'si-1', description: 'Process payroll', accomplishment: 'Saved accomplishment',
     remarks: '', quality: 4, efficiency: 4, timeliness: 4, overriddenByOffice: false,
@@ -51,5 +51,36 @@ describe('approved Phase 1 to Phase 2', () => {
     expect(await screen.findByDisplayValue('Saved accomplishment')).toBeDisabled();
     expect(screen.queryByDisplayValue('Stale draft')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /submit/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('returned for revision', () => {
+  const returned = (reviewComment: string | null) => ({ ...sheet('in_progress'), returnedAt: '2026-11-03T02:00:00Z', reviewComment });
+
+  it('stays editable and submittable after the rating window has closed', async () => {
+    load.mockResolvedValue({ ok: true, data: returned(null) });
+    render(<EmployeePhase2 employeeId="emp-1" targetSettingId="approved-1" phaseOpen={false} />);
+    expect(await screen.findByDisplayValue('Saved accomplishment')).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Submit Self-Ratings/ })).toBeEnabled();
+    expect(screen.queryByText(/is not yet open/)).not.toBeInTheDocument();
+  });
+
+  it('shows the revision banner even when the reviewer left no comment', async () => {
+    load.mockResolvedValue({ ok: true, data: returned(null) });
+    render(<EmployeePhase2 employeeId="emp-1" targetSettingId="approved-1" phaseOpen={false} />);
+    expect(await screen.findByText(/Revision Requested by Supervisor/)).toBeInTheDocument();
+  });
+
+  it('shows the reviewer comment when there is one', async () => {
+    load.mockResolvedValue({ ok: true, data: returned('Add evidence') });
+    render(<EmployeePhase2 employeeId="emp-1" targetSettingId="approved-1" phaseOpen />);
+    expect(await screen.findByText(/Add evidence/)).toBeInTheDocument();
+  });
+
+  it('still locks an unfinished sheet that was not returned once the window has closed', async () => {
+    load.mockResolvedValue({ ok: true, data: sheet('in_progress') });
+    render(<EmployeePhase2 employeeId="emp-1" targetSettingId="approved-1" phaseOpen={false} />);
+    expect(await screen.findByDisplayValue('Saved accomplishment')).toBeDisabled();
+    expect(screen.queryByText(/Revision Requested by Supervisor/)).not.toBeInTheDocument();
   });
 });
