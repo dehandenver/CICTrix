@@ -41,4 +41,15 @@ The real app ran against a stub that answered every Supabase request and recorde
 ## Not verified
 
 - **No end-to-end write against a database.** Live data has no Phase 2 sheets in `in_progress` today, so no one is stuck.
-- **The migration has not run anywhere yet.** The Supabase Preview check on the PR will be the first run.
+- **The migration has run only on a local database, inside a rolled-back transaction.** The Supabase Preview check on the PR is still the first run against the full migration history.
+
+## Local database check (Docker)
+
+The local `cictrix-schema-test` stack already held the full schema with no migration log, so the new migration and the changed queries ran there inside one transaction that was rolled back:
+- The migration added `phase2_returned_at timestamptz` (nullable), and a second run skipped it with a notice, so it is safe to re-run.
+- The guarded return updated the pending sheet and changed 0 rows on the approved one.
+- The close's row filter picked only the ordinary `in_progress` sheet and left the returned one.
+- The resubmit cleared the marker.
+- After the rollback the column was gone again.
+
+The test rows were inserted with triggers and foreign keys off, because the local tables have no cycles or employees to reference. The change doesn't touch triggers. Separately, applying the migration folder in order re-ran the first two files on that database without error, then stopped at the third because its tables already existed.
