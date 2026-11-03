@@ -50,6 +50,22 @@ Implements [the plan](../plans/2026-11-03-ipcr-return-lockout-and-audit-history.
 - **`npm run build` fails on this machine, on `origin/main` as well as on this branch.** esbuild cannot delete its temp file (`Access is denied`), including with the temp folder redirected and outside the sandbox. `tsc` passes and all 3,147 modules transform, so this is an environment fault, not a code error. A build on another machine or in CI is still needed.
 - **The branch is 7 commits ahead and 32 behind `origin/main`, and a merge conflicts** in `docs/plans/index.html` (generated, so regenerate it) and `EmployeePage.ipcr.test.tsx` (upstream's row-alignment commit `7e34f31` added tests to the same file). `EmployeePage.tsx` merges cleanly. The branch has not been merged or tested against current `main`.
 - **The real sign-in, and any write.** Approve, return and resubmit were not run end to end against a database. The tests cover those writes with mocks.
-- **Office scope.** A console user with no office role gets no scope, so History shows every office, the same as the pending list does today. The log has no row-level security, so the office filter is the only barrier.
-- **Row cap.** The reader takes the newest 1,000 entries for a phase before the office filter, so an office's older entries could be missing if other offices dominate.
+- **Office scope.** The console refuses a user with no office role, so History is always scoped. The only unscoped case is an office role whose `officeId` and `officeName` are both empty. The log has no row-level security, so the office filter is the only barrier. (An earlier version of this note wrongly said a user with no role saw every office.)
+- **Row cap.** History returns an office's newest 1,000 entries per phase. The cap now applies after the office filter, so another office's rows cannot crowd it out.
 - Entries from before this change have no employee-submit events, so older history starts at the first reviewer action.
+
+## Code review (Opus, medium effort)
+
+An independent review of the seven commits found no Critical issues and rated the branch "ready with fixes". Each finding was checked against the code or the live API before acting. All were real; five were fixed and two deferred.
+
+**Fixed, each with a test that failed first:**
+- **History at scale.** The reader took the newest 1,000 rows across all offices, then filtered, so other offices' rows and Phase 2 draft saves could hide an office's real entries. The office is now resolved first (employees, then their target settings, then log rows for those settings), and drafts are dropped in the query. Separately, a lookup list of about 800 ids makes the API reject the request (HTTP 400, measured live), so every lookup is now split into chunks of 100.
+- **A return that changed nothing.** `returnForRevision` and `approveTargets` did not check how many rows they updated. If another reviewer had already acted, they still logged an audit row (a phantom History entry), notified the employee and, for a return, reset the workspace row. Both now report "This IPCR is no longer pending approval" and do nothing else.
+- **The workspace reset reached too far.** It reset every `Targets Submitted` row for the employee, and live data shows all 13 workspace rows sit at that status, including completed periods. It now resets only the row the employee page reads. The review suggested matching on the cycle title, which would have missed the live row labelled `Jul-Dec 2026`.
+- **A returned record with no saved MFOs** could be rebuilt from the old workspace text and shown as pending again. It now keeps its returned status.
+- **Two cosmetic faults:** a missing space in `current &&(`, and a hard-coded focus colour in History, now `--ring-input`.
+
+**Deferred:**
+- The action filter labels every `rate` as "Rated", so a reviewer cannot filter to approvals only. It would need a second filter on the actor's role.
+- Row-level security on `ipcr_audit_log`. History now presents the log as an office's record, which makes the open `INSERT` grant more serious. It needs its own change (a policy, or inserts through a function).
+
