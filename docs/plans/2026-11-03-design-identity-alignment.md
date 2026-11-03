@@ -89,7 +89,7 @@ Each step is one commit.
 
 ## Progress
 
-Steps 1 to 4 are done. Resume at **step 5** (Interviewer).
+Steps 1 to 7 are done. Remaining: screenshots and `/code-review` on the branch, then set the status to Done. See the [session summary](../session-summaries/2026-11-03-design-identity-alignment-summary.md).
 
 | Step | State | Commit |
 |---|---|---|
@@ -97,7 +97,10 @@ Steps 1 to 4 are done. Resume at **step 5** (Interviewer).
 | 2. Super Admin and login font | Done. `SuperAdminDashboard.tsx` already used only on-palette hexes, so it only gained the scope classes. | 2ccb04c |
 | 3. PM and Office console | Done. Only `IPCRManagementPage.tsx`, `CompetencyFrameworkPage.tsx` and `pm/PMReportsAnalytics.tsx` had off-palette hexes; the other listed files had none. `PMDashboard.tsx`, `IPCRManagementPage.tsx` and `CompetencyFrameworkPage.tsx` roots gained `ds-remap abyan-tokens`. | 3c8409c |
 | 4. L&D | Done. Only the `LNDDashboard.tsx` root changed (`ds-remap abyan-tokens`). The five other listed files render inside it and have no off-palette hexes or Inter stacks. | d3ebb29 |
-| 5 to 8 | Not started | |
+| 5. Interviewer | Done. `interviewer.css` hexes mapped with `var()` fallbacks; inline styles and root in `ApplicantDetailsPage.tsx`. | bb07704 |
+| 6. Employee | Done. | 192c516 |
+| 7. Public | Done. | a2f2533 |
+| 8. Summary and review | Summary written. Screenshots and `/code-review` still to do. | |
 
 **Checks run for steps 1 and 2:** `npx tsc --noEmit`, `npm run lint` and `npm run build:verify` pass. `npx vitest run` gives 1493 passed and 2 failed (`src/lib/trainingProgress.test.ts` and `scripts/seed-training-attendance.test.mjs`); both fail identically without these changes, and both are date-dependent. A `git diff -U0` audit found no non-styling lines. Tailwind emits color rules for the swapped `text-[var(--…)]`, `border-[var(--…)]` and `bg-[var(--…)]` classes.
 
