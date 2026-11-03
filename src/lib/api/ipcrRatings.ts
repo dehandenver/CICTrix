@@ -25,6 +25,7 @@ import type { FunctionType } from './ipcrTargets';
 import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
 import { createNotifications } from './employeeNotifications';
 import { type OfficeScope, getAcceptedOfficeNames, norm } from './officeScope';
+import { REASON_PARTIAL_SAVE, REASON_SELF_RATING_DRAFT, writeAuditEntry } from './ipcrAudit';
 
 const supabase = supabaseClient as any;
 
@@ -81,7 +82,8 @@ export interface RatingInput {
   timeliness: number | null;
 }
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+// auditFailed: the action saved but its ipcr_audit_log row did not (see ipcrAudit.ts).
+type Result<T> = { ok: true; data: T; auditFailed?: boolean } | { ok: false; error: string };
 
 const nowIso = () => new Date().toISOString();
 const clamp15 = (v: number | null): number | null =>
@@ -417,19 +419,15 @@ export async function saveRatings(params: {
       }
     }
 
-    // Best-effort audit line.
-    supabase
-      .from('ipcr_audit_log')
-      .insert({
-        target_setting_id: targetSettingId,
-        action: 'rate',
-        performed_by: raterEmployeeId,
-        performed_by_role: 'office_account',
-        reason: complete ? 'Phase 2 rating completed' : 'Phase 2 partial save',
-      })
-      .then(() => undefined, () => undefined);
+    const audited = await writeAuditEntry({
+      target_setting_id: targetSettingId,
+      action: 'rate',
+      performed_by: raterEmployeeId,
+      performed_by_role: 'office_account',
+      reason: complete ? 'Phase 2 rating completed' : REASON_PARTIAL_SAVE,
+    });
 
-    return { ok: true, data: { phase2Status, overallScore, adjectival } };
+    return { ok: true, data: { phase2Status, overallScore, adjectival }, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to save ratings.' };
   }
@@ -707,16 +705,14 @@ export async function saveEmployeeRatings(params: {
       adjectival: null,
     }));
 
-    supabase
-      .from('ipcr_audit_log')
-      .insert({
-        target_setting_id: targetSettingId,
-        action: 'rate',
-        performed_by: employeeId,
-        performed_by_role: 'employee',
-        reason: submit ? 'Phase 2 self-rating submitted' : 'Phase 2 self-rating draft',
-      })
-      .then(() => undefined, () => undefined);
+    // The employee is not the reader of the audit trail; writeAuditEntry logs a failure.
+    void writeAuditEntry({
+      target_setting_id: targetSettingId,
+      action: 'rate',
+      performed_by: employeeId,
+      performed_by_role: 'employee',
+      reason: submit ? 'Phase 2 self-rating submitted' : REASON_SELF_RATING_DRAFT,
+    });
 
     return { ok: true, data: { phase2Status, overallScore, adjectival } };
   } catch (err) {
@@ -953,7 +949,7 @@ export async function returnPhase2ForRevision(p: {
       .eq('id', p.targetSettingId);
     if (error) return { ok: false, error: error.message };
 
-    await supabase.from('ipcr_audit_log').insert({
+    const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
       action: 'return_phase2',
       performed_by: p.approverEmployeeId,
@@ -985,7 +981,7 @@ export async function returnPhase2ForRevision(p: {
       },
     ]);
 
-    return { ok: true, data: null };
+    return { ok: true, data: null, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Return failed.' };
   }
@@ -1019,7 +1015,7 @@ export async function adminEditRatings(p: {
       if (error) return { ok: false, error: error.message };
     }
 
-    await supabase.from('ipcr_audit_log').insert({
+    const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
       action: 'admin_edit_ratings',
       performed_by: p.approverEmployeeId,
@@ -1027,7 +1023,7 @@ export async function adminEditRatings(p: {
       reason: 'Office Account edited ratings/accomplishments before approval',
     });
 
-    return { ok: true, data: null };
+    return { ok: true, data: null, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Edit failed.' };
   }

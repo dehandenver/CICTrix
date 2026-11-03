@@ -13,6 +13,7 @@ import {
   type RatingSheet,
 } from '../../../lib/api/ipcrRatings';
 import { createNotifications } from '../../../lib/api/employeeNotifications';
+import { withAuditNote } from '../../../lib/api/ipcrAudit';
 import { SkeletonList, useTableLoading } from '../../../components/table-loading';
 import { BackButton } from '../../../components/BackButton';
 import { CharacterCount } from '../../../components/CharacterCount';
@@ -173,7 +174,7 @@ export const Phase2RatingPanel: React.FC<{
     }
     setNotice({
       tone: 'ok',
-      text: `Approved ratings and finalized IPCR for ${sheet.employeeName}. Overall Score: ${res.data.overallScore?.toFixed(2) ?? '—'}.`,
+      text: withAuditNote(`Approved ratings and finalized IPCR for ${sheet.employeeName}. Overall Score: ${res.data.overallScore?.toFixed(2) ?? '—'}.`, res),
     });
     void refreshList();
   };
@@ -194,7 +195,7 @@ export const Phase2RatingPanel: React.FC<{
     }
     setNotice({
       tone: 'ok',
-      text: `Returned IPCR accomplishments of ${sheet.employeeName} for revision.`,
+      text: withAuditNote(`Returned IPCR accomplishments of ${sheet.employeeName} for revision.`, res),
     });
     setReturnDraftId(null);
     setReturnComment('');
@@ -231,7 +232,7 @@ export const Phase2RatingPanel: React.FC<{
       setNotice({ tone: 'err', text: res.error });
       return;
     }
-    setNotice({ tone: 'ok', text: `Saved overrides to ${sheet.employeeName}'s IPCR.` });
+    setNotice({ tone: 'ok', text: withAuditNote(`Saved overrides to ${sheet.employeeName}'s IPCR.`, res) });
     setEditingId(null);
     void refreshList();
   };
