@@ -3,25 +3,25 @@
    ----------------------------------------------------------------------------
    The RSP pages are built from Tailwind utilities (slate-*, blue-600, emerald-*
    …) that predate the guide. Rather than hand-editing ~14k lines, this file
-   remaps those utilities onto the guide's tokens inside `.rsp-ds`, which every
-   RSP page root carries. Tokens themselves come from abyan-tokens.css.
+   remaps those utilities onto the guide's tokens inside `.rsp-ds` (every RSP page
+   root carries it) and `.ds-remap`. Tokens themselves come from abyan-tokens.css.
 
    Two rules keep it safe:
    • Neutral / text / surface remaps are LIGHT-ONLY (`$light` prefix below).
      The RSP portal has a dark theme whose globals.css overrides are
      `!important`; brand-blue and status-hue remaps are fine in both themes.
-   • Everything is scoped to `.rsp-ds`, so L&D / PM / Super Admin pages that
+   • Everything is scoped to `.rsp-ds` (RSP) and `.ds-remap` (portals that opt in), so pages that
      share these utilities and `.admin-layout` are untouched.
 
    Load order: imported from App.tsx AFTER globals.css, so a 2-class selector
    here outranks the 1-class Tailwind utility it remaps.
    ============================================================================ */
 
-/* $light = :root:not([data-theme='dark']) .rsp-ds */
+/* $light = :root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) */
 
 /* ── Legacy variables, re-pointed at the guide (light only) ────────────────── */
-:root:not([data-theme='dark']) .rsp-ds,
-:root:not([data-theme='dark']) .rsp-ds .admin-layout {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap),
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) .admin-layout {
   --primary-color: #363EE8;
   --accent-primary: #363EE8;
   --text-primary: #040E6B;              /* headings / primary text (§3.4) */
@@ -33,115 +33,115 @@
   --color-border: #E2E8F0;
   color: #28343D;                       /* body text */
 }
-:root[data-theme='dark'] .rsp-ds { color: inherit; }
-.rsp-ds { --primary-color: #363EE8; }
+:root[data-theme='dark'] :is(.rsp-ds, .ds-remap) { color: inherit; }
+:is(.rsp-ds, .ds-remap) { --primary-color: #363EE8; }
 
 /* ── Page shell (§8.2): #F1F5F9 page, white cards ──────────────────────────── */
-:root:not([data-theme='dark']) .rsp-ds.min-h-screen,
-:root:not([data-theme='dark']) .rsp-ds .admin-layout,
-:root:not([data-theme='dark']) .rsp-ds .admin-content:not(.bg-white) {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap).min-h-screen,
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) .admin-layout,
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) .admin-content:not(.bg-white) {
   background-color: #F1F5F9;
 }
 
 /* Page title band: Title L + Body L subtitle (§4.1) */
-.rsp-ds .admin-content h1 {
+:is(.rsp-ds, .ds-remap) .admin-content h1 {
   font-size: 24px !important;
   line-height: 32px !important;
   font-weight: 700;
   letter-spacing: 0;
 }
-.rsp-ds .admin-content h1 + p {
+:is(.rsp-ds, .ds-remap) .admin-content h1 + p {
   font-size: 14px;
   line-height: 22px;
   font-weight: 400;
 }
 @media (max-width: 639px) {
-  .rsp-ds .admin-content h1 { font-size: 22px !important; line-height: 28px !important; }
+  :is(.rsp-ds, .ds-remap) .admin-content h1 { font-size: 22px !important; line-height: 28px !important; }
 }
 
 /* Headings are deep navy, not brand blue (§3.4). admin.css forces #363EE8 with
    !important on every .admin-content heading; this outranks it for RSP only.
    Headings that set their own white/inline colour (on blue surfaces) keep it. */
-:root:not([data-theme='dark']) .rsp-ds .admin-content :is(h1, h2, h3, h4):not(.text-white):not([class*="text-white/"]):not(.scoring-modal-title):not([style*="color"]) {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) .admin-content :is(h1, h2, h3, h4):not(.text-white):not([class*="text-white/"]):not(.scoring-modal-title):not([style*="color"]) {
   color: #040E6B !important;
 }
-:root:not([data-theme='dark']) .rsp-ds .admin-content :is(h1, h2, h3, h4) + p:not([class*="text-"]) { color: #515F69; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) .admin-content :is(h1, h2, h3, h4) + p:not([class*="text-"]) { color: #515F69; }
 
 /* ── Text neutrals (§3.4) ──────────────────────────────────────────────────── */
-:root:not([data-theme='dark']) .rsp-ds :is(.text-slate-900, .text-gray-900, .text-black) { color: #040E6B; }
-:root:not([data-theme='dark']) .rsp-ds :is(.text-slate-800, .text-gray-800, .text-slate-700, .text-gray-700) { color: #28343D; }
-:root:not([data-theme='dark']) .rsp-ds :is(.text-slate-600, .text-gray-600, .text-slate-500, .text-gray-500) { color: #515F69; }
-:root:not([data-theme='dark']) .rsp-ds :is(.text-slate-400, .text-gray-400, .text-slate-300) { color: #94A3B8; }
-:root:not([data-theme='dark']) .rsp-ds :is(.hover\:text-slate-700, .hover\:text-slate-900):hover { color: #040E6B; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.text-slate-900, .text-gray-900, .text-black) { color: #040E6B; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.text-slate-800, .text-gray-800, .text-slate-700, .text-gray-700) { color: #28343D; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.text-slate-600, .text-gray-600, .text-slate-500, .text-gray-500) { color: #515F69; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.text-slate-400, .text-gray-400, .text-slate-300) { color: #94A3B8; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.hover\:text-slate-700, .hover\:text-slate-900):hover { color: #040E6B; }
 
 /* ── Surfaces & borders (§3.2, §5) ─────────────────────────────────────────── */
-:root:not([data-theme='dark']) .rsp-ds :is(.bg-slate-50, .bg-gray-50, .bg-\[\#f8f9fa\]) { background-color: #F1F5F9; }
-:root:not([data-theme='dark']) .rsp-ds :is(.hover\:bg-slate-50, .hover\:bg-gray-50):hover { background-color: #F8FAFF; }
-:root:not([data-theme='dark']) .rsp-ds :is(.hover\:bg-slate-100, .hover\:bg-gray-100):hover { background-color: #EEF0FF; }
-:root:not([data-theme='dark']) .rsp-ds :is(.border-slate-100, .border-slate-200, .border-gray-100, .border-gray-200) { border-color: #E2E8F0; }
-:root:not([data-theme='dark']) .rsp-ds :is(.divide-slate-100, .divide-slate-200, .divide-gray-100, .divide-gray-200) > * + * { border-color: #E2E8F0; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.bg-slate-50, .bg-gray-50, .bg-\[\#f8f9fa\]) { background-color: #F1F5F9; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.hover\:bg-slate-50, .hover\:bg-gray-50):hover { background-color: #F8FAFF; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.hover\:bg-slate-100, .hover\:bg-gray-100):hover { background-color: #EEF0FF; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.border-slate-100, .border-slate-200, .border-gray-100, .border-gray-200) { border-color: #E2E8F0; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(.divide-slate-100, .divide-slate-200, .divide-gray-100, .divide-gray-200) > * + * { border-color: #E2E8F0; }
 
 /* Radius (§5.2): cards/tables 12px, large panels 16px, inputs 8px */
-.rsp-ds .rounded-2xl { border-radius: 12px; }
-.rsp-ds .rounded-3xl { border-radius: 16px; }
+:is(.rsp-ds, .ds-remap) .rounded-2xl { border-radius: 12px; }
+:is(.rsp-ds, .ds-remap) .rounded-3xl { border-radius: 16px; }
 
 /* ── Brand blue (§3.1) — both themes ───────────────────────────────────────── */
-.rsp-ds :is(.text-blue-500, .text-blue-600, .text-indigo-600, .text-sky-600, .text-\[\#363EE8\]) { color: #363EE8; }
-.rsp-ds :is(.text-blue-700, .text-blue-800, .text-indigo-700, .text-\[\#050D65\]) { color: #191FA8; }
-.rsp-ds :is(.hover\:text-blue-700, .hover\:text-blue-800):hover { color: #191FA8; }
-.rsp-ds :is(.group:hover .group-hover\:text-blue-600) { color: #363EE8; }
-.rsp-ds :is(.bg-blue-500, .bg-blue-600, .bg-indigo-600, .bg-\[\#363EE8\], .bg-\[var\(--primary-color\)\]) { background-color: #363EE8; }
-.rsp-ds :is(.hover\:bg-blue-700, .hover\:bg-blue-600, .hover\:bg-indigo-700):hover { background-color: #191FA8; }
-.rsp-ds :is(.border-blue-500, .border-blue-600, .border-sky-500, .border-\[\#363EE8\]) { border-color: #363EE8; }
-.rsp-ds :is(.focus\:border-\[\#363EE8\], .focus\:border-blue-500):focus { border-color: #363EE8; }
+:is(.rsp-ds, .ds-remap) :is(.text-blue-500, .text-blue-600, .text-indigo-600, .text-sky-600, .text-\[\#363EE8\]) { color: #363EE8; }
+:is(.rsp-ds, .ds-remap) :is(.text-blue-700, .text-blue-800, .text-indigo-700, .text-\[\#050D65\]) { color: #191FA8; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:text-blue-700, .hover\:text-blue-800):hover { color: #191FA8; }
+:is(.rsp-ds, .ds-remap) :is(.group:hover .group-hover\:text-blue-600) { color: #363EE8; }
+:is(.rsp-ds, .ds-remap) :is(.bg-blue-500, .bg-blue-600, .bg-indigo-600, .bg-\[\#363EE8\], .bg-\[var\(--primary-color\)\]) { background-color: #363EE8; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:bg-blue-700, .hover\:bg-blue-600, .hover\:bg-indigo-700):hover { background-color: #191FA8; }
+:is(.rsp-ds, .ds-remap) :is(.border-blue-500, .border-blue-600, .border-sky-500, .border-\[\#363EE8\]) { border-color: #363EE8; }
+:is(.rsp-ds, .ds-remap) :is(.focus\:border-\[\#363EE8\], .focus\:border-blue-500):focus { border-color: #363EE8; }
 
 /* Tints: selected / info panels / icon chips (§3.2) */
-.rsp-ds :is(.bg-blue-50, .bg-indigo-50, .bg-sky-50) { background-color: #EEF0FF; }
-.rsp-ds :is(.bg-blue-100, .bg-indigo-100, .bg-sky-100) { background-color: #E0E5FF; }
-.rsp-ds :is(.hover\:bg-blue-50, .hover\:bg-blue-100):hover { background-color: #EEF0FF; }
-.rsp-ds :is(.border-blue-100, .border-blue-200, .border-blue-300, .border-indigo-200) { border-color: #C8D1FF; }
-.rsp-ds .ring-indigo-200 { --tw-ring-color: #C8D1FF; }
+:is(.rsp-ds, .ds-remap) :is(.bg-blue-50, .bg-indigo-50, .bg-sky-50) { background-color: #EEF0FF; }
+:is(.rsp-ds, .ds-remap) :is(.bg-blue-100, .bg-indigo-100, .bg-sky-100) { background-color: #E0E5FF; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:bg-blue-50, .hover\:bg-blue-100):hover { background-color: #EEF0FF; }
+:is(.rsp-ds, .ds-remap) :is(.border-blue-100, .border-blue-200, .border-blue-300, .border-indigo-200) { border-color: #C8D1FF; }
+:is(.rsp-ds, .ds-remap) .ring-indigo-200 { --tw-ring-color: #C8D1FF; }
 
 /* Non-status categories (application type, rater role …) use the brand tint,
    never a separate purple family (§10 "Category tags"). */
-.rsp-ds :is(.bg-purple-50, .bg-purple-100, .bg-violet-50, .bg-violet-100) { background-color: #EEF0FF; }
-.rsp-ds :is(.text-purple-500, .text-purple-600, .text-purple-700, .text-violet-600, .text-violet-700) { color: #191FA8; }
-.rsp-ds .group:hover .group-hover\:text-purple-600 { color: #363EE8; }
-.rsp-ds :is(.bg-purple-600, .bg-violet-600) { background-color: #363EE8; }
+:is(.rsp-ds, .ds-remap) :is(.bg-purple-50, .bg-purple-100, .bg-violet-50, .bg-violet-100) { background-color: #EEF0FF; }
+:is(.rsp-ds, .ds-remap) :is(.text-purple-500, .text-purple-600, .text-purple-700, .text-violet-600, .text-violet-700) { color: #191FA8; }
+:is(.rsp-ds, .ds-remap) .group:hover .group-hover\:text-purple-600 { color: #363EE8; }
+:is(.rsp-ds, .ds-remap) :is(.bg-purple-600, .bg-violet-600) { background-color: #363EE8; }
 
 /* ── Status hues (§3.6) — both themes; soft = 100 bg / 700 text ────────────── */
 /* Success */
-.rsp-ds :is(.bg-green-50, .bg-green-100, .bg-emerald-50, .bg-emerald-100) { background-color: #DCFCE7; }
-.rsp-ds :is(.text-green-600, .text-green-700, .text-green-800, .text-green-900, .text-emerald-600, .text-emerald-700, .text-emerald-800) { color: #0F7A40; }
-.rsp-ds :is(.text-green-500, .text-emerald-500) { color: #16A85A; }
-.rsp-ds :is(.border-green-200, .border-green-300, .border-emerald-200, .border-emerald-300) { border-color: #7ECBA1; }
-.rsp-ds :is(.bg-green-500, .bg-green-600, .bg-emerald-500, .bg-emerald-600) { background-color: #16A85A; }
-.rsp-ds :is(.hover\:bg-green-600, .hover\:bg-green-700, .hover\:bg-emerald-700):hover { background-color: #0F7A40; }
-.rsp-ds :is(.hover\:bg-emerald-50, .hover\:bg-emerald-100, .hover\:bg-green-50):hover { background-color: #DCFCE7; }
+:is(.rsp-ds, .ds-remap) :is(.bg-green-50, .bg-green-100, .bg-emerald-50, .bg-emerald-100) { background-color: #DCFCE7; }
+:is(.rsp-ds, .ds-remap) :is(.text-green-600, .text-green-700, .text-green-800, .text-green-900, .text-emerald-600, .text-emerald-700, .text-emerald-800) { color: #0F7A40; }
+:is(.rsp-ds, .ds-remap) :is(.text-green-500, .text-emerald-500) { color: #16A85A; }
+:is(.rsp-ds, .ds-remap) :is(.border-green-200, .border-green-300, .border-emerald-200, .border-emerald-300) { border-color: #7ECBA1; }
+:is(.rsp-ds, .ds-remap) :is(.bg-green-500, .bg-green-600, .bg-emerald-500, .bg-emerald-600) { background-color: #16A85A; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:bg-green-600, .hover\:bg-green-700, .hover\:bg-emerald-700):hover { background-color: #0F7A40; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:bg-emerald-50, .hover\:bg-emerald-100, .hover\:bg-green-50):hover { background-color: #DCFCE7; }
 /* Warning */
-.rsp-ds :is(.bg-amber-50, .bg-amber-100, .bg-orange-50, .bg-orange-100, .bg-yellow-50, .bg-yellow-100) { background-color: #FCE8C8; }
-.rsp-ds :is(.text-amber-600, .text-amber-700, .text-amber-800, .text-orange-600, .text-orange-700, .text-yellow-700, .text-yellow-800) { color: #A8590A; }
-.rsp-ds :is(.text-amber-500, .text-orange-500) { color: #E8821A; }
-.rsp-ds :is(.border-amber-200, .border-amber-300, .border-orange-200, .border-orange-300, .border-yellow-200) { border-color: #F0B478; }
-.rsp-ds :is(.bg-orange-500, .bg-amber-500) { background-color: #E8821A; }
-.rsp-ds :is(.hover\:bg-orange-600):hover { background-color: #A8590A; }
-.rsp-ds :is(.hover\:bg-orange-50, .hover\:bg-amber-50):hover { background-color: #FCE8C8; }
+:is(.rsp-ds, .ds-remap) :is(.bg-amber-50, .bg-amber-100, .bg-orange-50, .bg-orange-100, .bg-yellow-50, .bg-yellow-100) { background-color: #FCE8C8; }
+:is(.rsp-ds, .ds-remap) :is(.text-amber-600, .text-amber-700, .text-amber-800, .text-orange-600, .text-orange-700, .text-yellow-700, .text-yellow-800) { color: #A8590A; }
+:is(.rsp-ds, .ds-remap) :is(.text-amber-500, .text-orange-500) { color: #E8821A; }
+:is(.rsp-ds, .ds-remap) :is(.border-amber-200, .border-amber-300, .border-orange-200, .border-orange-300, .border-yellow-200) { border-color: #F0B478; }
+:is(.rsp-ds, .ds-remap) :is(.bg-orange-500, .bg-amber-500) { background-color: #E8821A; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:bg-orange-600):hover { background-color: #A8590A; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:bg-orange-50, .hover\:bg-amber-50):hover { background-color: #FCE8C8; }
 /* Error */
-.rsp-ds :is(.bg-red-50, .bg-red-100, .bg-rose-50, .bg-rose-100) { background-color: #FDE2E2; }
-.rsp-ds :is(.text-red-600, .text-red-700, .text-red-800, .text-rose-600, .text-rose-700) { color: #B42323; }
-.rsp-ds :is(.text-red-500, .text-rose-500) { color: #E05252; }
-.rsp-ds :is(.border-red-200, .border-red-300, .border-rose-200, .border-rose-300) { border-color: #EF9A9A; }
-.rsp-ds :is(.bg-red-500, .bg-red-600, .bg-rose-500, .bg-rose-600) { background-color: #E05252; }
-.rsp-ds :is(.hover\:bg-red-600, .hover\:bg-red-700, .hover\:bg-rose-700):hover { background-color: #B42323; }
-.rsp-ds :is(.hover\:bg-red-50, .hover\:bg-rose-50, .hover\:bg-rose-100):hover { background-color: #FDE2E2; }
-.rsp-ds :is(.hover\:text-red-700):hover { color: #B42323; }
+:is(.rsp-ds, .ds-remap) :is(.bg-red-50, .bg-red-100, .bg-rose-50, .bg-rose-100) { background-color: #FDE2E2; }
+:is(.rsp-ds, .ds-remap) :is(.text-red-600, .text-red-700, .text-red-800, .text-rose-600, .text-rose-700) { color: #B42323; }
+:is(.rsp-ds, .ds-remap) :is(.text-red-500, .text-rose-500) { color: #E05252; }
+:is(.rsp-ds, .ds-remap) :is(.border-red-200, .border-red-300, .border-rose-200, .border-rose-300) { border-color: #EF9A9A; }
+:is(.rsp-ds, .ds-remap) :is(.bg-red-500, .bg-red-600, .bg-rose-500, .bg-rose-600) { background-color: #E05252; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:bg-red-600, .hover\:bg-red-700, .hover\:bg-rose-700):hover { background-color: #B42323; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:bg-red-50, .hover\:bg-rose-50, .hover\:bg-rose-100):hover { background-color: #FDE2E2; }
+:is(.rsp-ds, .ds-remap) :is(.hover\:text-red-700):hover { color: #B42323; }
 
 /* ── Buttons (§9.1): every labelled action button is a pill ───────────────────
    "Labelled" = has horizontal padding (px-2.5+) and a rounded-* class. Left
    alone: tabs (border-b-2), full-width / left-aligned nav & option tiles,
    square icon buttons (no px-*), and pagination (.rsp-pager, 8px per §9.6). */
-.rsp-ds button:is(.rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl):is([class*="px-2.5"], [class*="px-3"], [class*="px-4"], [class*="px-5"], [class*="px-6"], [class*="px-8"]):not(.w-full):not(.text-left):not(.border-b-2):not(.rsp-pager),
-.rsp-ds a:is(.rounded-lg, .rounded-xl):is(.bg-blue-600, .bg-\[\#363EE8\]) {
+:is(.rsp-ds, .ds-remap) button:is(.rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl):is([class*="px-2.5"], [class*="px-3"], [class*="px-4"], [class*="px-5"], [class*="px-6"], [class*="px-8"]):not(.w-full):not(.text-left):not(.border-b-2):not(.rsp-pager),
+:is(.rsp-ds, .ds-remap) a:is(.rounded-lg, .rounded-xl):is(.bg-blue-600, .bg-\[\#363EE8\]) {
   border-radius: 999px;
   font-weight: 600;
   min-height: 32px;                     /* Small size floor (§9.1) */
@@ -149,36 +149,36 @@
 }
 
 /* Primary fill → button gradient (§14.2) + focus glow */
-.rsp-ds button:is(.bg-blue-600, .bg-\[\#363EE8\], .bg-\[var\(--primary-color\)\], .bg-indigo-600, .bg-purple-600):not(:disabled) {
+:is(.rsp-ds, .ds-remap) button:is(.bg-blue-600, .bg-\[\#363EE8\], .bg-\[var\(--primary-color\)\], .bg-indigo-600, .bg-purple-600):not(:disabled) {
   background-image: linear-gradient(180deg, #363EE8 0%, #191FA8 100%);
   color: #FFFFFF;
 }
-.rsp-ds button:is(.bg-blue-600, .bg-\[\#363EE8\], .bg-\[var\(--primary-color\)\], .bg-indigo-600, .bg-purple-600):not(:disabled):hover {
+:is(.rsp-ds, .ds-remap) button:is(.bg-blue-600, .bg-\[\#363EE8\], .bg-\[var\(--primary-color\)\], .bg-indigo-600, .bg-purple-600):not(:disabled):hover {
   background-image: none;
   background-color: #191FA8;
 }
-.rsp-ds button:is(.bg-blue-600, .bg-\[\#363EE8\], .bg-\[var\(--primary-color\)\], .bg-indigo-600, .bg-purple-600):disabled {
+:is(.rsp-ds, .ds-remap) button:is(.bg-blue-600, .bg-\[\#363EE8\], .bg-\[var\(--primary-color\)\], .bg-indigo-600, .bg-purple-600):disabled {
   background-image: none;
   background-color: #C8D1FF;
   color: rgba(255,255,255,.85);
   opacity: 1;
 }
-.rsp-ds button:focus-visible {
+:is(.rsp-ds, .ds-remap) button:focus-visible {
   outline: none;
   box-shadow: 0 4px 14px rgba(54,62,232,.40), 0 0 0 3px #C8D1FF;
 }
 
 /* Neutral bordered buttons → Secondary (blue outline, §9.1) — light only */
-:root:not([data-theme='dark']) .rsp-ds button:is(.border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300, .border-\[var\(--border-color\)\]):is([class*="px-2.5"], [class*="px-3"], [class*="px-4"], [class*="px-5"], [class*="px-6"]):not(.w-full):not(.text-left):not(.border-b-2):not(.rsp-pager):not(:disabled) {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) button:is(.border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300, .border-\[var\(--border-color\)\]):is([class*="px-2.5"], [class*="px-3"], [class*="px-4"], [class*="px-5"], [class*="px-6"]):not(.w-full):not(.text-left):not(.border-b-2):not(.rsp-pager):not(:disabled) {
   border-color: #363EE8;
   border-width: 1.5px;
   color: #363EE8;
   background-color: #FFFFFF;
 }
-:root:not([data-theme='dark']) .rsp-ds button:is(.border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300, .border-\[var\(--border-color\)\]):is([class*="px-2.5"], [class*="px-3"], [class*="px-4"], [class*="px-5"], [class*="px-6"]):not(.w-full):not(.text-left):not(.border-b-2):not(.rsp-pager):not(:disabled):hover {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) button:is(.border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300, .border-\[var\(--border-color\)\]):is([class*="px-2.5"], [class*="px-3"], [class*="px-4"], [class*="px-5"], [class*="px-6"]):not(.w-full):not(.text-left):not(.border-b-2):not(.rsp-pager):not(:disabled):hover {
   background-color: #EEF0FF;
 }
-:root:not([data-theme='dark']) .rsp-ds button:is(.border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300, .border-\[var\(--border-color\)\]):is([class*="px-2.5"], [class*="px-3"], [class*="px-4"], [class*="px-5"], [class*="px-6"]):not(.w-full):not(.text-left):not(.border-b-2):not(.rsp-pager):disabled {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) button:is(.border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300, .border-\[var\(--border-color\)\]):is([class*="px-2.5"], [class*="px-3"], [class*="px-4"], [class*="px-5"], [class*="px-6"]):not(.w-full):not(.text-left):not(.border-b-2):not(.rsp-pager):disabled {
   border-color: #C8D1FF;
   color: #C8D1FF;
   background-color: transparent;
@@ -186,82 +186,82 @@
 }
 
 /* Legacy <Button> component variants not covered by abyan-tokens.css */
-.rsp-ds .btn-outline { background: #FFFFFF; color: #363EE8; border: 1.5px solid #363EE8; box-shadow: none; }
-.rsp-ds .btn-outline:hover:not(:disabled) { background: #EEF0FF; transform: none; }
-.rsp-ds .btn-ghost { background: transparent; color: #363EE8; border-color: transparent; }
-.rsp-ds .btn-ghost:hover:not(:disabled) { background: #EEF0FF; }
-.rsp-ds .btn:active { transform: none; }
+:is(.rsp-ds, .ds-remap) .btn-outline { background: #FFFFFF; color: #363EE8; border: 1.5px solid #363EE8; box-shadow: none; }
+:is(.rsp-ds, .ds-remap) .btn-outline:hover:not(:disabled) { background: #EEF0FF; transform: none; }
+:is(.rsp-ds, .ds-remap) .btn-ghost { background: transparent; color: #363EE8; border-color: transparent; }
+:is(.rsp-ds, .ds-remap) .btn-ghost:hover:not(:disabled) { background: #EEF0FF; }
+:is(.rsp-ds, .ds-remap) .btn:active { transform: none; }
 
 /* Pagination (§9.6): 8px radius, active page filled */
-.rsp-ds .rsp-pager {
+:is(.rsp-ds, .ds-remap) .rsp-pager {
   min-height: var(--control-h-compact);
   min-width: var(--control-h-compact);
   border-radius: 8px;
   font-weight: 500;
 }
-:root:not([data-theme='dark']) .rsp-ds .rsp-pager { border-color: #E2E8F0; color: #28343D; background: #FFFFFF; }
-:root:not([data-theme='dark']) .rsp-ds .rsp-pager:not(:disabled):hover { background: #EEF0FF; border-color: #C8D1FF; }
-:root:not([data-theme='dark']) .rsp-ds .rsp-pager:disabled { color: #94A3B8; background: #F8FAFC; border-color: #E2E8F0; opacity: 1; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) .rsp-pager { border-color: #E2E8F0; color: #28343D; background: #FFFFFF; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) .rsp-pager:not(:disabled):hover { background: #EEF0FF; border-color: #C8D1FF; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) .rsp-pager:disabled { color: #94A3B8; background: #F8FAFC; border-color: #E2E8F0; opacity: 1; }
 
 /* Tabs on white pages (§9.2): active = brand blue + 2px underline */
-:root:not([data-theme='dark']) .rsp-ds button.border-b-2.border-transparent { color: #515F69; }
-:root:not([data-theme='dark']) .rsp-ds button.border-b-2.border-transparent:hover { color: #040E6B; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) button.border-b-2.border-transparent { color: #515F69; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) button.border-b-2.border-transparent:hover { color: #040E6B; }
 
 /* ── Form controls (§9.3) ──────────────────────────────────────────────────── */
-.rsp-ds :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']), select, textarea) {
+:is(.rsp-ds, .ds-remap) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']), select, textarea) {
   border-radius: 8px;
   font-family: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   transition: border-color 150ms, box-shadow 150ms;
 }
-:root:not([data-theme='dark']) .rsp-ds :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']), select, textarea) {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']), select, textarea) {
   border-color: #E2E8F0;
   color: #28343D;
 }
-:root:not([data-theme='dark']) .rsp-ds :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), select, textarea):not(:disabled):not([readonly]):hover {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), select, textarea):not(:disabled):not([readonly]):hover {
   border-color: #C8D1FF;
 }
-.rsp-ds :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), select, textarea):focus {
+:is(.rsp-ds, .ds-remap) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), select, textarea):focus {
   outline: none;
   border-color: #363EE8;
   box-shadow: 0 0 0 3px rgba(54,62,232,.15);
 }
-:root:not([data-theme='dark']) .rsp-ds :is(input, textarea)::placeholder { color: #94A3B8; }
-:root:not([data-theme='dark']) .rsp-ds :is(input, select, textarea):disabled { background-color: #F1F5F9; color: #94A3B8; }
-.rsp-ds :is(input[type='checkbox'], input[type='radio']) { accent-color: #363EE8; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(input, textarea)::placeholder { color: #94A3B8; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) :is(input, select, textarea):disabled { background-color: #F1F5F9; color: #94A3B8; }
+:is(.rsp-ds, .ds-remap) :is(input[type='checkbox'], input[type='radio']) { accent-color: #363EE8; }
 
 /* ── Tables (§9.5) ─────────────────────────────────────────────────────────── */
 /* Legacy remap for tables not yet on the shared .abyan-table layer
    (src/components/data-table), which carries its own §9.5 styles. */
-:root:not([data-theme='dark']) .rsp-ds table:not(.abyan-table) thead,
-:root:not([data-theme='dark']) .rsp-ds table:not(.abyan-table) thead tr { background-color: #F1F5F9; }
-:root:not([data-theme='dark']) .rsp-ds table:not(.abyan-table) thead th {
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) table:not(.abyan-table) thead,
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) table:not(.abyan-table) thead tr { background-color: #F1F5F9; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) table:not(.abyan-table) thead th {
   color: #040E6B;
   font-weight: 600;
 }
-.rsp-ds table:not(.abyan-table) thead th {
+:is(.rsp-ds, .ds-remap) table:not(.abyan-table) thead th {
   font-size: 13px;
   letter-spacing: 0;
   text-transform: none;
 }
 /* Density (§5.4, §9.5): roomy legacy cell padding (py-4+/px-5+) drops to the
    token values; cells that already use tighter padding keep it. */
-.rsp-ds table:not(.abyan-table) thead th:is(.py-3, .py-3\.5, .py-4, .py-5) { padding-top: var(--table-head-pad-y); padding-bottom: var(--table-head-pad-y); }
-.rsp-ds table:not(.abyan-table) tbody td:is(.py-3\.5, .py-4, .py-5, .py-6) { padding-top: var(--table-cell-pad-y); padding-bottom: var(--table-cell-pad-y); }
-.rsp-ds table:not(.abyan-table) :is(th, td):is(.px-5, .px-6) { padding-left: var(--table-cell-pad-x); padding-right: var(--table-cell-pad-x); }
-:root:not([data-theme='dark']) .rsp-ds table:not(.abyan-table) tbody tr { border-color: #E2E8F0; }
-:root:not([data-theme='dark']) .rsp-ds table:not(.abyan-table) tbody tr:hover { background-color: #F8FAFF; }
+:is(.rsp-ds, .ds-remap) table:not(.abyan-table) thead th:is(.py-3, .py-3\.5, .py-4, .py-5) { padding-top: var(--table-head-pad-y); padding-bottom: var(--table-head-pad-y); }
+:is(.rsp-ds, .ds-remap) table:not(.abyan-table) tbody td:is(.py-3\.5, .py-4, .py-5, .py-6) { padding-top: var(--table-cell-pad-y); padding-bottom: var(--table-cell-pad-y); }
+:is(.rsp-ds, .ds-remap) table:not(.abyan-table) :is(th, td):is(.px-5, .px-6) { padding-left: var(--table-cell-pad-x); padding-right: var(--table-cell-pad-x); }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) table:not(.abyan-table) tbody tr { border-color: #E2E8F0; }
+:root:not([data-theme='dark']) :is(.rsp-ds, .ds-remap) table:not(.abyan-table) tbody tr:hover { background-color: #F8FAFF; }
 
 /* ── Modals (§9.10): deep-blue tinted overlay, not black ───────────────────── */
-.rsp-ds .fixed.inset-0:is(.bg-black\/40, .bg-black\/45, .bg-black\/50, .bg-slate-900\/60) {
+:is(.rsp-ds, .ds-remap) .fixed.inset-0:is(.bg-black\/40, .bg-black\/45, .bg-black\/50, .bg-slate-900\/60) {
   background-color: rgba(4, 14, 107, .45);
 }
-.rsp-ds .fixed.inset-0:is(.bg-black\/60, .bg-black\/70, .bg-slate-900\/70) {
+:is(.rsp-ds, .ds-remap) .fixed.inset-0:is(.bg-black\/60, .bg-black\/70, .bg-slate-900\/70) {
   background-color: rgba(4, 14, 107, .70);
 }
 
 /* ── Sidebar (§8.2): brand blue rail, white text, glass active pill ─────────
    Sidebar.tsx is shared with Super Admin, so this is scoped to the RSP root. */
-.rsp-ds .sidebar {
+:is(.rsp-ds, .ds-remap) .sidebar {
   width: 256px;
   flex-basis: 256px;
   background: linear-gradient(180deg, #363EE8 0%, #040E6B 100%) !important;
@@ -270,41 +270,41 @@
   color: #FFFFFF !important;
   padding: 0 12px;
 }
-.rsp-ds .sidebar-header,
-.rsp-ds .sidebar-footer { border-color: rgba(255, 255, 255, .18); padding-left: 12px; padding-right: 12px; }
-.rsp-ds .sidebar-header h2 { color: #FFFFFF !important; font-size: 18px; line-height: 24px; font-weight: 600; }
-.rsp-ds .sidebar-module { color: rgba(255, 255, 255, .75); font-size: 12px; letter-spacing: .4px; }
-.rsp-ds .sidebar-nav { padding: 12px 0; display: flex; flex-direction: column; gap: 4px; }
-.rsp-ds .sidebar-nav-item {
+:is(.rsp-ds, .ds-remap) .sidebar-header,
+:is(.rsp-ds, .ds-remap) .sidebar-footer { border-color: rgba(255, 255, 255, .18); padding-left: 12px; padding-right: 12px; }
+:is(.rsp-ds, .ds-remap) .sidebar-header h2 { color: #FFFFFF !important; font-size: 18px; line-height: 24px; font-weight: 600; }
+:is(.rsp-ds, .ds-remap) .sidebar-module { color: rgba(255, 255, 255, .75); font-size: 12px; letter-spacing: .4px; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav { padding: 12px 0; display: flex; flex-direction: column; gap: 4px; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-item {
   border-radius: 12px;
   padding: 10px 12px;
   color: rgba(255, 255, 255, .85) !important;
   font-weight: 500;
 }
-.rsp-ds .sidebar-nav-item::before { display: none; }
-.rsp-ds .sidebar-nav-item svg { color: rgba(255, 255, 255, .85) !important; }
-.rsp-ds .sidebar-nav-item:hover { background: rgba(255, 255, 255, .10) !important; color: #FFFFFF !important; }
-.rsp-ds .sidebar-nav-item.active { background: rgba(255, 255, 255, .18) !important; color: #FFFFFF !important; font-weight: 600; }
-.rsp-ds .sidebar-nav-item.active svg { color: #FFFFFF !important; }
-.rsp-ds .sidebar-nav-title { color: inherit !important; font-size: 15px; }
-.rsp-ds .sidebar-nav-subtitle,
-.rsp-ds .sidebar-nav-item.active .sidebar-nav-subtitle { color: rgba(255, 255, 255, .70) !important; font-size: 12px; line-height: 16px; }
-.rsp-ds .sidebar-user-email { color: #FFFFFF !important; }
-.rsp-ds .sidebar-user-role { color: rgba(255, 255, 255, .75) !important; }
-.rsp-ds .sidebar-nav-item:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, .5); }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-item::before { display: none; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-item svg { color: rgba(255, 255, 255, .85) !important; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-item:hover { background: rgba(255, 255, 255, .10) !important; color: #FFFFFF !important; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-item.active { background: rgba(255, 255, 255, .18) !important; color: #FFFFFF !important; font-weight: 600; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-item.active svg { color: #FFFFFF !important; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-title { color: inherit !important; font-size: 15px; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-subtitle,
+:is(.rsp-ds, .ds-remap) .sidebar-nav-item.active .sidebar-nav-subtitle { color: rgba(255, 255, 255, .70) !important; font-size: 12px; line-height: 16px; }
+:is(.rsp-ds, .ds-remap) .sidebar-user-email { color: #FFFFFF !important; }
+:is(.rsp-ds, .ds-remap) .sidebar-user-role { color: rgba(255, 255, 255, .75) !important; }
+:is(.rsp-ds, .ds-remap) .sidebar-nav-item:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, .5); }
 
 @media (min-width: 769px) and (max-width: 1024px) {
-  .rsp-ds .sidebar { width: 13.5rem; flex-basis: 13.5rem; }
+  :is(.rsp-ds, .ds-remap) .sidebar { width: 13.5rem; flex-basis: 13.5rem; }
 }
 @media (max-width: 768px) {
   /* admin.css still offsets for a once-fixed header; AdminHeader is sticky
      and in flow now, so that 60px is just an empty band. */
-  .rsp-ds .admin-content { margin-top: 0; }
-  .rsp-ds .sidebar { width: 100%; flex-basis: auto; padding: 0 8px; }
-  .rsp-ds .sidebar-nav { flex-direction: row; gap: 4px; padding: 8px 0; }
-  .rsp-ds .sidebar-header { display: none; }
+  :is(.rsp-ds, .ds-remap) .admin-content { margin-top: 0; }
+  :is(.rsp-ds, .ds-remap) .sidebar { width: 100%; flex-basis: auto; padding: 0 8px; }
+  :is(.rsp-ds, .ds-remap) .sidebar-nav { flex-direction: row; gap: 4px; padding: 8px 0; }
+  :is(.rsp-ds, .ds-remap) .sidebar-header { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rsp-ds *, .rsp-ds *::before, .rsp-ds *::after { transition-duration: 0ms !important; }
+  :is(.rsp-ds, .ds-remap) *, :is(.rsp-ds, .ds-remap) *::before, :is(.rsp-ds, .ds-remap) *::after { transition-duration: 0ms !important; }
 }
