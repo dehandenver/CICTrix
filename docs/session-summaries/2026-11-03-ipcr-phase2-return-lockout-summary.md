@@ -1,7 +1,7 @@
 ---
 title: Keep a returned Phase 2 rating sheet editable
 date: 2026-11-03
-summary: A Phase 2 sheet returned for revision now stays editable and submittable after the rating window closes, and closing the period skips it. Type-check, lint, the migration check and 1,483 src tests pass. Not checked in a browser.
+summary: A Phase 2 sheet returned for revision now stays editable and submittable after the rating window closes, and closing the period skips it. Type-check, lint, the migration check and 1,483 src tests pass, and a network-stubbed browser run confirmed both screens.
 ---
 
 ## What shipped
@@ -29,8 +29,16 @@ Implements [the plan](../plans/2026-11-03-ipcr-phase2-return-lockout.md) on bran
 - `npx vitest run --dir src`: 158 files, 1,483 tests passed.
 - New tests (`ipcrRatings.return.test.ts`, plus cases in `EmployeePhase2.test.tsx`) failed before the change: 5 of 6 data-layer cases and 2 of 4 sheet cases. The other three already held and stay as guards.
 
+## Browser check (network stubbed)
+
+The real app ran against a stub that answered every Supabase request and recorded each write, so nothing reached the live project. The rating window was closed in every case. The stub files were deleted afterwards.
+- **Returned sheet, no comment.** The achievement field and Submit were enabled. "Revision Requested by Supervisor" showed with the no-comment line, and the "not yet open" notice was hidden. Submitting wrote `phase2_status: 'completed'`, `phase2_returned_at: null` and `review_comment: null`.
+- **Sheet not returned.** The field was disabled, the "not yet open" notice showed, and there was no Submit button.
+- **Reviewer Return.** It sent `PATCH target_settings?id=eq.ts-1&phase2_status=eq.completed&phase2_approved_at=is.null&select=id` with `phase2_returned_at` set, then the audit row, the stage and the notification.
+- **Return on a sheet approved meanwhile.** The screen showed "This IPCR is no longer pending approval. Refresh the list." The guarded update was the only request.
+- **Close Rating Period** with one returned and one ordinary `in_progress` sheet closed only the ordinary one (`id=in.(ts-3)`).
+
 ## Not verified
 
-- **No browser check.** The sheet's behaviour is covered by component tests that render the real `EmployeePhase2` in jsdom, but not in a running app.
 - **No end-to-end write against a database.** Live data has no Phase 2 sheets in `in_progress` today, so no one is stuck.
 - **The migration has not run anywhere yet.** The Supabase Preview check on the PR will be the first run.
