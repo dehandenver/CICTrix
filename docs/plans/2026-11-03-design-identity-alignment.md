@@ -89,19 +89,22 @@ Each step is one commit.
 
 ## Progress
 
-Stopped after step 2 on purpose (credit budget). Resume at **step 3**.
+Steps 1 to 3 are done. Resume at **step 4** (L&D).
 
 | Step | State | Commit |
 |---|---|---|
 | 1. Remap generalization | Done. Reverting `:is(.rsp-ds, .ds-remap)` to `.rsp-ds` reproduces the old file byte for byte, so RSP is unchanged. | 1d77ce0 |
 | 2. Super Admin and login font | Done. `SuperAdminDashboard.tsx` already used only on-palette hexes, so it only gained the scope classes. | 2ccb04c |
-| 3 to 8 | Not started | |
+| 3. PM and Office console | Done. Only `IPCRManagementPage.tsx`, `CompetencyFrameworkPage.tsx` and `pm/PMReportsAnalytics.tsx` had off-palette hexes; the other listed files had none. `PMDashboard.tsx`, `IPCRManagementPage.tsx` and `CompetencyFrameworkPage.tsx` roots gained `ds-remap abyan-tokens`. | STEP3_HASH |
+| 4 to 8 | Not started | |
 
 **Checks run for steps 1 and 2:** `npx tsc --noEmit`, `npm run lint` and `npm run build:verify` pass. `npx vitest run` gives 1493 passed and 2 failed (`src/lib/trainingProgress.test.ts` and `scripts/seed-training-attendance.test.mjs`); both fail identically without these changes, and both are date-dependent. A `git diff -U0` audit found no non-styling lines. Tailwind emits color rules for the swapped `text-[var(--…)]`, `border-[var(--…)]` and `bg-[var(--…)]` classes.
 
 **Not done yet:** before/after screenshots in light and dark, desktop and mobile, for Super Admin and RSP. The Super Admin pages need the temporary component harness because local sign-in is disabled. Nothing has been pushed.
 
 **Tip for the next session:** tokens are defined on `.abyan-tokens`, not `:root`, so any file given `var(--…)` values must sit under a root that carries `abyan-tokens`. Most hits in the audit are already on-palette hexes (`#363EE8`, `#515F69`, `#040E6B`, `#E2E8F0`) and the plan doesn't ask for them to change. Only swap the off-palette ones.
+
+**Left unchanged, no match in the plan table** (PM files): `#10b981` green in `IPCRManagementPage.tsx`, the `rgba(245,158,11,…)` amber backgrounds, and the `#d1fae5` / `#dbeafe` bucket fills in `PMReportsAnalytics.tsx`.
 
 **Left unchanged, no match in the plan table** (Super Admin files):
 - avatar colour array in `SystemAdministrationPage.tsx:573` (`#2563eb`, `#7c3aed`, `#059669`, `#d97706`, `#dc2626`, `#0891b2`, `#4f46e5`)
