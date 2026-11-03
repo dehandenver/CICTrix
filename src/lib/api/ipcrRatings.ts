@@ -26,6 +26,7 @@ import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions'
 import { createNotifications } from './employeeNotifications';
 import { type OfficeScope, getAcceptedOfficeNames, norm } from './officeScope';
 import { REASON_PARTIAL_SAVE, REASON_SELF_RATING_DRAFT, writeAuditEntry } from './ipcrAudit';
+import { NO_LONGER_PENDING } from './ipcrApproval';
 
 const supabase = supabaseClient as any;
 
@@ -560,6 +561,8 @@ async function rollUpToWorkspace(
 
 export interface EmployeeRatingSheet extends RatingSheet {
   phase2OpenTargetDate: string | null;
+  /** Set while the reviewer has returned the sheet and the employee hasn't resubmitted. */
+  returnedAt: string | null;
 }
 
 /**
@@ -604,6 +607,7 @@ export async function loadEmployeeRatingSheet(
         // phase2_status may be undefined pre-migration → treat as locked.
         phase2Status: (setting.phase2_status ?? 'locked') as Phase2Status,
         phase2OpenTargetDate: setting.phase2_open_target_date ?? null,
+        returnedAt: setting.phase2_returned_at ?? null,
       },
     };
   } catch (err) {
@@ -675,6 +679,8 @@ export async function saveEmployeeRatings(params: {
         phase2_status: phase2Status,
         phase2_completed_at: submit ? nowIso() : null,
         phase2_submitted_at: submit ? nowIso() : null,
+        // A resubmit answers the reviewer's return, so the marker and its comment go.
+        ...(submit ? { phase2_returned_at: null, review_comment: null } : {}),
         updated_at: nowIso(),
       })
       .eq('id', targetSettingId);
@@ -758,7 +764,8 @@ export async function openSelfRatingPeriod(params: {
 
 /**
  * Office/PM bulk action: CLOSE the self-rating window. Flips every currently
- * OPEN or IN_PROGRESS record to 'closed' (records who/when). Records that were
+ * OPEN or IN_PROGRESS record to 'closed' (records who/when), except a sheet
+ * returned for revision, which stays open until resubmitted. Records that were
  * already 'completed' (employee submitted) are left as-is — they're terminal.
  * Closing is allowed even if not every employee has submitted; the employee then
  * sees a read-only view of whatever they had saved.
@@ -772,7 +779,9 @@ export async function closeSelfRatingPeriod(params: {
       .from('target_settings')
       .select('id, employee_id')
       .eq('status', 'approved')
-      .in('phase2_status', ['open', 'in_progress']);
+      .in('phase2_status', ['open', 'in_progress'])
+      // A sheet returned for revision stays open until the employee resubmits.
+      .is('phase2_returned_at', null);
     if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
     const { data: openRows, error } = await query;
     if (error) return { ok: false, error: error.message };
@@ -939,15 +948,20 @@ export async function returnPhase2ForRevision(p: {
   comment: string;
 }): Promise<Result<null>> {
   try {
-    const { error } = await supabase
+    const { data: changed, error } = await supabase
       .from('target_settings')
       .update({
         phase2_status: 'in_progress', // revert to in_progress so employee can edit
+        phase2_returned_at: nowIso(),
         review_comment: p.comment?.trim() || null,
         updated_at: nowIso(),
       })
-      .eq('id', p.targetSettingId);
+      .eq('id', p.targetSettingId)
+      .eq('phase2_status', 'completed') // only a sheet still waiting for review
+      .is('phase2_approved_at', null)
+      .select('id');
     if (error) return { ok: false, error: error.message };
+    if (!changed?.length) return { ok: false, error: NO_LONGER_PENDING };
 
     const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,

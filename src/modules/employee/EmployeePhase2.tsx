@@ -200,11 +200,15 @@ export const EmployeePhase2: React.FC<{
     [sheet],
   );
   const isLocked = status === 'locked' || status === 'not_started';
-  const readOnly = Boolean(loadError) || status === 'completed' || status === 'closed' || phaseOpen === false;
+  // A sheet the reviewer sent back stays open until the employee resubmits,
+  // even after the rating window closes (same rule as a returned Phase 1).
+  const isReturned = status === 'in_progress' && Boolean(sheet?.returnedAt);
+  const windowClosed = phaseOpen === false && !isReturned;
+  const readOnly = Boolean(loadError) || status === 'completed' || status === 'closed' || windowClosed;
   // Locked, open and in_progress can all be typed into (prepared). Only open /
   // in_progress can SUBMIT — submission is gated to the rating period.
   const editable = !readOnly;
-  const canSubmit = !loadError && (status === 'open' || status === 'in_progress') && phaseOpen !== false;
+  const canSubmit = !loadError && (status === 'open' || status === 'in_progress') && !windowClosed;
   const expectedOpen = sheet?.phase2OpenTargetDate
     ? new Date(sheet.phase2OpenTargetDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : null;
@@ -340,19 +344,23 @@ export const EmployeePhase2: React.FC<{
         </div>
       )}
 
-      {status === 'in_progress' && sheet?.reviewComment && (
+      {isReturned && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
           <div className="flex items-start gap-2">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <div>
-              <p className="text-[11px] font-bold text-amber-900">Revision Requested by Supervisor:</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-amber-800 italic">“{sheet.reviewComment}”</p>
+              <p className="text-[11px] font-bold text-amber-900">Revision Requested by Supervisor{sheet?.reviewComment ? ':' : ''}</p>
+              {sheet?.reviewComment ? (
+                <p className="mt-0.5 text-[11px] font-semibold text-amber-800 italic">“{sheet.reviewComment}”</p>
+              ) : (
+                <p className="mt-0.5 text-[11px] font-semibold text-amber-800">Update your accomplishments and self-ratings, then submit them again.</p>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {phaseOpen === false && (
+      {windowClosed && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
           <div className="flex items-start gap-2">
             <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
