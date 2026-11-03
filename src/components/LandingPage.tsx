@@ -21,8 +21,8 @@ import { isAdvertised, vacantPlantillaSlots } from '../lib/vacancySearch';
 import { TableSkeletonRows, tableBodyClass, useTableLoading } from './table-loading';
 
 /* ── trish UI theme tokens ──────────────────────────────────────────
-   Brand: Indigo #363EE8 · Hover #2E35D4 · Soft #EEF2FF
-   Ink:   #050D65 · Workspace: #F8FAFC · Surface: #FFFFFF
+   Brand: Indigo #363EE8 · Hover var(--color-primary-700) · Soft var(--color-primary-50)
+   Ink:   var(--color-primary-900) · Workspace: #F8FAFC · Surface: #FFFFFF
 ------------------------------------------------------------------- */
 
 // Same shape JobPortalPage hands to /job-details and /apply as `landingJob`.
@@ -216,7 +216,7 @@ export const LandingPage = () => {
 
   return (
     <div
-      className="min-h-screen bg-[#F8FAFC] text-[#050D65]"
+      className="ds-remap abyan-tokens min-h-screen bg-[#F8FAFC] text-[var(--color-primary-900)]"
       style={{ fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
     >
       {/* ─── Top bar ─────────────────────────────────────────────── */}
@@ -255,7 +255,7 @@ export const LandingPage = () => {
 
             {/* Login Dropdown */}
             <div className="relative group">
-              <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]">
+              <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[var(--color-primary-50)]">
                 <Users size={18} />
                 <span>Login</span>
               </button>
@@ -264,23 +264,23 @@ export const LandingPage = () => {
               <div className="absolute right-0 top-full mt-2 w-52 bg-white text-slate-900 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2 border border-slate-100">
                 <a
                   href="/employee/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
                   <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#059669] text-white"><Users size={15} /></span>
                   Employee Portal
                 </a>
                 <a
                   href="/interviewer/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
                   <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#7C3AED] text-white"><ClipboardCheck size={15} /></span>
                   Interviewer Portal
                 </a>
                 <a
                   href="/admin/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
-                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#050D65] text-white"><ShieldCheck size={15} /></span>
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[var(--color-primary-900)] text-white"><ShieldCheck size={15} /></span>
                   HR Administration
                 </a>
               </div>
@@ -291,7 +291,7 @@ export const LandingPage = () => {
 
       {/* ─── Hero ────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#363EE8] to-[#050D65]" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#363EE8] to-[var(--color-primary-900)]" />
         <div className="landing-hero-bg" aria-hidden="true">
           <div className="landing-hero-ring landing-hero-ring--tr" />
           <div className="landing-hero-ring landing-hero-ring--bl" />
@@ -334,7 +334,7 @@ export const LandingPage = () => {
         <div className="mx-auto max-w-7xl px-6">
           <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-[#050D65]">Currently Vacant Jobs</h2>
+              <h2 className="text-2xl font-bold text-[var(--color-primary-900)]">Currently Vacant Jobs</h2>
               <p className="mt-1 text-sm text-slate-500">Browse and apply for available positions</p>
             </div>
             
@@ -361,7 +361,7 @@ export const LandingPage = () => {
                   setSortBy(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#050D65] focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[var(--color-primary-900)] focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
               >
                 <option value="newest">Newest to Oldest</option>
                 <option value="oldest">Oldest to Newest</option>
@@ -372,16 +372,16 @@ export const LandingPage = () => {
 
               {/* Entries Limit */}
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-[#050D65]">Show</label>
+                <label className="text-sm font-medium text-[var(--color-primary-900)]">Show</label>
                 <select
                   value={itemsPerPage}
                   onChange={handleItemsPerPageChange}
-                  className="rounded-lg border-2 border-[#363EE8] bg-white px-3 py-2 text-sm font-medium text-[#050D65] transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/20"
+                  className="rounded-lg border-2 border-[#363EE8] bg-white px-3 py-2 text-sm font-medium text-[var(--color-primary-900)] transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/20"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
                 </select>
-                <span className="text-sm font-medium text-[#050D65]">entries</span>
+                <span className="text-sm font-medium text-[var(--color-primary-900)]">entries</span>
               </div>
             </div>
           </div>
@@ -391,12 +391,12 @@ export const LandingPage = () => {
             <table className="abyan-table w-full">
               <thead className="bg-slate-100">
                 <tr className="border-b border-slate-200">
-                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Position Title</th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Department / Office</th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Plantilla</th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Monthly Salary</th>
-                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Closing Date</th>
-                  <th className="px-4 py-3 text-center font-semibold text-[#050D65]">Apply</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[var(--color-primary-900)]">Position Title</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[var(--color-primary-900)]">Department / Office</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[var(--color-primary-900)]">Plantilla</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[var(--color-primary-900)]">Monthly Salary</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[var(--color-primary-900)]">Closing Date</th>
+                  <th className="px-4 py-3 text-center font-semibold text-[var(--color-primary-900)]">Apply</th>
                 </tr>
               </thead>
               <tbody className={tableBodyClass(false)}>
@@ -411,7 +411,7 @@ export const LandingPage = () => {
                       <button
                         type="button"
                         onClick={retryVacancies}
-                        className="mt-3 rounded-lg border border-[#363EE8] px-4 py-2 text-xs font-semibold text-[#363EE8] transition hover:bg-[#EEF2FF]"
+                        className="mt-3 rounded-lg border border-[#363EE8] px-4 py-2 text-xs font-semibold text-[#363EE8] transition hover:bg-[var(--color-primary-50)]"
                       >
                         Try again
                       </button>
@@ -431,11 +431,11 @@ export const LandingPage = () => {
                     return (
                       <tr key={job.rowKey}className="border-b border-slate-200 transition hover:bg-slate-50">
                         <td className="px-4 py-3">
-                          <p className="font-semibold text-[#050D65]">{job.title}</p>
+                          <p className="font-semibold text-[var(--color-primary-900)]">{job.title}</p>
                         </td>
                         <td className="px-4 py-3 text-slate-600">{job.department || 'Not specified'}</td>
                         <td className="px-4 py-3 text-slate-600">
-                          <span className="font-semibold text-[#050D65]">{job.plantilla.text}</span>
+                          <span className="font-semibold text-[var(--color-primary-900)]">{job.plantilla.text}</span>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-slate-600">{vacancySalaryLabel(job.originalJob, salarySchedule)}</td>
                         <td className="px-4 py-3 text-slate-600">

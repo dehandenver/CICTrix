@@ -952,7 +952,7 @@ export const ApplicationStatusPage = () => {
               <p className="text-xs" style={{ color: '#C8D1FF' }}>Action may be required — review each notice below</p>
             </div>
           </div>
-          <div className="divide-y bg-white" style={{ borderColor: '#EEF0FD' }}>
+          <div className="divide-y bg-white" style={{ borderColor: 'var(--color-primary-50)' }}>
             {resubmissionNotices.map((notice) => {
               const n = parseNotice(notice);
               return (
@@ -972,12 +972,12 @@ export const ApplicationStatusPage = () => {
                     </p>
                   )}
                   {n.notes && (
-                    <p className="mt-1.5 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                    <p className="mt-1.5 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'var(--color-primary-50)', color: '#363EE8' }}>
                       <span className="font-semibold">RSP Note:</span> {n.notes}
                     </p>
                   )}
                   {n.date && (
-                    <p className="mt-2 text-xs" style={{ color: '#6B7280' }}>Issued: {new Date(n.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p className="mt-2 text-xs" style={{ color: 'var(--neutral-600)' }}>Issued: {new Date(n.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   )}
                 </div>
               );
@@ -1071,7 +1071,7 @@ export const ApplicationStatusPage = () => {
                   <div className="px-3 py-2" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
                     <p className="text-xs font-bold text-white tracking-wide uppercase">Your Schedule</p>
                   </div>
-                  <div className="divide-y bg-white" style={{ borderColor: '#EEF0FD' }}>
+                  <div className="divide-y bg-white" style={{ borderColor: 'var(--color-primary-50)' }}>
                     {(record.exam_date || record.exam_time) && (
                       <div className="px-3 py-2 flex items-start gap-2">
                         <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Written Exam</span>
@@ -1209,7 +1209,7 @@ export const ApplicationStatusPage = () => {
                         <RefreshCw size={12} /> Resubmitted
                       </span>
                     ) : (
-                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>
+                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: 'var(--color-primary-50)', color: '#363EE8', borderColor: '#C8D1FF' }}>
                         <CheckCircle2 size={12} /> Submitted
                       </span>
                     )}
@@ -1364,7 +1364,7 @@ export const ApplicationStatusPage = () => {
   ) : null;
 
   return (
-    <div className="min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+    <div className="ds-remap abyan-tokens min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
       <div className="mx-auto w-full max-w-5xl">
         {/* Header */}
         <header className="mb-8 text-center">

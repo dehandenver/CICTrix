@@ -72,7 +72,7 @@
 
 .portal-landing-header p {
   margin: 0.6rem 0 2rem;
-  color: #4b5563;
+  color: var(--neutral-600, #515F69);
   font-size: var(--font-size-xl);
 }
 
@@ -105,7 +105,7 @@
 
 .application-entry-card p {
   margin: 0.45rem 0 1.4rem;
-  color: #4b5563;
+  color: var(--neutral-600, #515F69);
   font-size: var(--font-size-lg);
 }
 
@@ -129,7 +129,7 @@
   background: #ffffff;
   border-radius: 10px;
   padding: 0.8rem 1.5rem;
-  color: #111827;
+  color: var(--neutral-900, #101E29);
   font-size: var(--font-size-base);
   font-weight: 600;
   display: inline-flex;
@@ -228,7 +228,7 @@
   margin: 0;
   font-size: var(--font-size-lg);
   font-weight: 700;
-  color: #0f172a;
+  color: var(--neutral-900, #101E29);
 }
 
 .progress-status {
@@ -307,7 +307,7 @@
   margin: 0.1rem 0 0;
   font-size: var(--font-size-base);
   font-weight: 700;
-  color: #0f172a;
+  color: var(--neutral-900, #101E29);
 }
 
 .review-documents-list {
@@ -328,7 +328,7 @@
 
 .doc-name {
   margin: 0;
-  color: #0f172a;
+  color: var(--neutral-900, #101E29);
   font-size: var(--font-size-base);
   font-weight: 600;
 }
@@ -427,15 +427,15 @@
 }
 
 .employee-auth-form label {
-  color: #0f172a;
+  color: var(--neutral-900, #101E29);
   font-weight: 700;
   font-size: var(--font-size-sm);
 }
 
 .employee-auth-form input {
   width: 100%;
-  border: 1px solid #d1d5db;
-  background: #f3f4f6;
+  border: 1px solid var(--neutral-200, #E2E8F0);
+  background: var(--bg-page, #F1F5F9);
   border-radius: 10px;
   padding: 0.7rem 0.85rem;
   font-size: 1.05rem;
@@ -537,7 +537,7 @@
 .submission-reference-label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--neutral-600, #515F69);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: 0 0 0.35rem;
@@ -553,7 +553,7 @@
 
 .submission-reference-hint {
   font-size: 0.8rem;
-  color: #6b7280;
+  color: var(--neutral-600, #515F69);
   margin: 0.5rem 0 0;
 }
 
