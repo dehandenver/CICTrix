@@ -95,7 +95,7 @@ Steps 1 to 3 are done. Resume at **step 4** (L&D).
 |---|---|---|
 | 1. Remap generalization | Done. Reverting `:is(.rsp-ds, .ds-remap)` to `.rsp-ds` reproduces the old file byte for byte, so RSP is unchanged. | 1d77ce0 |
 | 2. Super Admin and login font | Done. `SuperAdminDashboard.tsx` already used only on-palette hexes, so it only gained the scope classes. | 2ccb04c |
-| 3. PM and Office console | Done. Only `IPCRManagementPage.tsx`, `CompetencyFrameworkPage.tsx` and `pm/PMReportsAnalytics.tsx` had off-palette hexes; the other listed files had none. `PMDashboard.tsx`, `IPCRManagementPage.tsx` and `CompetencyFrameworkPage.tsx` roots gained `ds-remap abyan-tokens`. | STEP3_HASH |
+| 3. PM and Office console | Done. Only `IPCRManagementPage.tsx`, `CompetencyFrameworkPage.tsx` and `pm/PMReportsAnalytics.tsx` had off-palette hexes; the other listed files had none. `PMDashboard.tsx`, `IPCRManagementPage.tsx` and `CompetencyFrameworkPage.tsx` roots gained `ds-remap abyan-tokens`. | 3c8409c |
 | 4 to 8 | Not started | |
 
 **Checks run for steps 1 and 2:** `npx tsc --noEmit`, `npm run lint` and `npm run build:verify` pass. `npx vitest run` gives 1493 passed and 2 failed (`src/lib/trainingProgress.test.ts` and `scripts/seed-training-attendance.test.mjs`); both fail identically without these changes, and both are date-dependent. A `git diff -U0` audit found no non-styling lines. Tailwind emits color rules for the swapped `text-[var(--…)]`, `border-[var(--…)]` and `bg-[var(--…)]` classes.
