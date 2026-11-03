@@ -579,7 +579,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             if (targetIsApproved || ws.status === 'Accomplishments Submitted' || ws.status === 'Completed') {
               setTargetStatus('approved');
               setIpcrApproved(true);
-            } else if (ws.status === 'Targets Submitted') {
+            } else if (ws.status === 'Targets Submitted' && !(tsRes?.ok && tsRes.data.setting?.status === 'returned_for_revision')) {
+              // A returned record keeps its status; the workspace row only supplies the rebuilt text.
               setTargetStatus('submitted_for_approval');
             }
           }

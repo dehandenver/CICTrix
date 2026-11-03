@@ -92,6 +92,19 @@ describe('returned for revision', () => {
     expect(screen.getByRole('button', { name: /Submit Targets for Approval/ })).toBeInTheDocument();
   });
 
+  it('stays returned when the saved targets are rebuilt from the old workspace text', async () => {
+    const blank = { title: '', indicators: [{ description: '' }] };
+    mocks.targets.mockResolvedValue({ ok: true, data: {
+      setting: { id: 'ts-1', cycle_id: 2, status: 'returned_for_revision', review_comment: 'Fix the indicators' },
+      targets: { core: [blank], strategic: [blank], support: [blank] },
+    } });
+    staleWorkspace();
+    mount();
+    expect(await screen.findByText('Needs Revision')).toBeInTheDocument();
+    expect(screen.queryByText('Pending Approval')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Payroll')).toBeEnabled();
+  });
+
   it('stays editable after the Phase 1 window has closed', async () => {
     setStatus('returned_for_revision'); staleWorkspace(); mocks.phaseOpen.mockReturnValue(false);
     mount();

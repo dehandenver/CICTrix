@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { approveTargets, returnForRevision } from './ipcrApproval';
 
 type Call = { table: string; op: string; payload?: any; eq: Record<string, unknown> };
-const { calls, failTables } = vi.hoisted(() => ({ calls: [] as any[], failTables: new Set<string>() }));
+const { calls, failTables, state, workspaceRow, notify } = vi.hoisted(() => ({
+  calls: [] as any[],
+  failTables: new Set<string>(),
+  state: { noRowsMatch: false },
+  workspaceRow: { current: null as any },
+  notify: vi.fn(),
+}));
 
 vi.mock('../supabase', () => ({
   supabase: {
@@ -13,8 +19,13 @@ vi.mock('../supabase', () => ({
         update: (payload: unknown) => { call.op = 'update'; call.payload = payload; return builder; },
         insert: (payload: unknown) => { call.op = 'insert'; call.payload = payload; return builder; },
         eq: (column: string, value: unknown) => { call.eq[column] = value; return builder; },
-        then: (resolve: (v: unknown) => void) =>
-          resolve({ data: null, error: failTables.has(table) ? { message: 'boom' } : null }),
+        select: () => builder,
+        then: (resolve: (v: unknown) => void) => {
+          const failed = failTables.has(table);
+          // A status update reports the rows it changed; none means another reviewer got there first.
+          const changed = table === 'target_settings' && call.op === 'update' && !state.noRowsMatch ? [{ id: 'ts-1' }] : [];
+          resolve({ data: failed ? null : call.op === 'update' ? changed : null, error: failed ? { message: 'boom' } : null });
+        },
       };
       return builder;
     },
@@ -22,14 +33,22 @@ vi.mock('../supabase', () => ({
 }));
 vi.mock('./ipcrSubmissions', () => ({
   setSubmissionStage: vi.fn(),
-  resolveTargetSettingMeta: async () => null,
+  resolveTargetSettingMeta: async () => ({
+    employeeId: 'emp-1', employeeName: 'Ana Cruz', officeId: null, officeName: null, period: 'July–December 2026',
+  }),
 }));
-vi.mock('./employeeNotifications', () => ({ createNotifications: vi.fn() }));
+vi.mock('./ipcrWorkspace', () => ({ getWorkspace: async () => workspaceRow.current }));
+vi.mock('./employeeNotifications', () => ({ createNotifications: notify }));
 
 afterEach(() => {
   calls.length = 0;
   failTables.clear();
+  state.noRowsMatch = false;
+  workspaceRow.current = { id: 'w-1', employee_id: 'emp-1', period: 'July–December 2026', status: 'Targets Submitted' };
+  notify.mockClear();
 });
+// The row the employee page would read for this return.
+workspaceRow.current = { id: 'w-1', employee_id: 'emp-1', period: 'July–December 2026', status: 'Targets Submitted' };
 
 const returnIt = () =>
   returnForRevision({
@@ -53,7 +72,29 @@ describe('returnForRevision', () => {
     await returnIt();
     const [update] = callsTo('ipcr_workspace', 'update');
     expect(update.payload.status).toBe('Draft Targets');
-    expect(update.eq).toEqual({ employee_id: 'emp-1', status: 'Targets Submitted' });
+    expect(update.eq).toEqual({ id: 'w-1', status: 'Targets Submitted' });
+  });
+
+  it('resets only the row the employee page reads, never the employee’s other periods', async () => {
+    workspaceRow.current = { id: 'w-2', employee_id: 'emp-1', period: 'Jul-Dec 2026', status: 'Targets Submitted' };
+    await returnIt();
+    const updates = callsTo('ipcr_workspace', 'update');
+    expect(updates).toHaveLength(1);
+    expect(updates[0].eq).toEqual({ id: 'w-2', status: 'Targets Submitted' });
+  });
+
+  it('leaves a workspace row alone when it is no longer submitted', async () => {
+    workspaceRow.current = { id: 'w-1', employee_id: 'emp-1', period: 'July–December 2026', status: 'Accomplishments Submitted' };
+    await returnIt();
+    expect(callsTo('ipcr_workspace', 'update')).toHaveLength(0);
+  });
+
+  it('does nothing and says so when the IPCR is no longer pending', async () => {
+    state.noRowsMatch = true;
+    expect(await returnIt()).toEqual({ ok: false, error: 'This IPCR is no longer pending approval. Refresh the list.' });
+    expect(callsTo('ipcr_audit_log', 'insert')).toHaveLength(0);
+    expect(callsTo('ipcr_workspace', 'update')).toHaveLength(0);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('still succeeds when the workspace reset fails', async () => {
@@ -80,6 +121,13 @@ describe('audit trail', () => {
       expect.objectContaining({ action: 'return', performed_by: 'head-1', reason: 'Fix the indicators' }),
       expect.objectContaining({ action: 'approve', performed_by: 'head-1', performed_by_role: 'office_account' }),
     ]);
+  });
+
+  it('does nothing and says so when an approval finds the IPCR no longer pending', async () => {
+    state.noRowsMatch = true;
+    expect(await approveIt()).toEqual({ ok: false, error: 'This IPCR is no longer pending approval. Refresh the list.' });
+    expect(callsTo('ipcr_audit_log', 'insert')).toHaveLength(0);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('reports nothing wrong when the audit row saved', async () => {

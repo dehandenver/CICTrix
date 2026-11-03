@@ -75,7 +75,7 @@ const formatWhen = (iso: string): string =>
 const ROLE_LABEL: Record<string, string> = { employee: 'Employee', office_account: 'Reviewer' };
 
 const toolbarControl =
-  'h-9 rounded-lg border border-[var(--neutral-200)] bg-white px-3 text-sm font-medium text-[color:var(--color-primary-900)] hover:border-[var(--color-primary-200)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-[3px] focus:ring-[rgba(54,62,232,.15)]';
+  'h-9 rounded-lg border border-[var(--neutral-200)] bg-white px-3 text-sm font-medium text-[color:var(--color-primary-900)] hover:border-[var(--color-primary-200)] focus:border-[var(--color-primary)] focus:outline-none focus:shadow-[var(--ring-input)]';
 const pagerButton =
   'inline-flex h-9 min-w-9 items-center justify-center gap-1 rounded-lg border px-3 text-sm font-medium border-[var(--neutral-200)] bg-white text-[color:var(--neutral-800)] hover:border-[var(--color-primary-200)] hover:bg-[var(--color-primary-50)] disabled:cursor-not-allowed disabled:border-[var(--neutral-200)] disabled:bg-[var(--bg-disabled)] disabled:text-[color:var(--neutral-400)] disabled:hover:bg-[var(--bg-disabled)]';
 

@@ -402,7 +402,7 @@ export async function saveTargetSetting(params: {
 
     const current = existing.data.setting;
     const wasReturned = current?.status === 'returned_for_revision';
-    if (current &&(current.status === 'submitted_for_approval' || current.status === 'approved')) {
+    if (current && (current.status === 'submitted_for_approval' || current.status === 'approved')) {
       return { ok: false, error: 'Targets are locked and can no longer be edited.' };
     }
 

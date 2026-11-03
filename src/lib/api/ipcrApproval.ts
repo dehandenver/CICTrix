@@ -16,6 +16,7 @@ import { createNotifications } from './employeeNotifications';
 import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
 import { type OfficeScope, getAcceptedOfficeNames, norm } from './officeScope';
 import { writeAuditEntry } from './ipcrAudit';
+import { getWorkspace } from './ipcrWorkspace';
 
 export interface PendingIndicator {
   id: string;
@@ -40,16 +41,21 @@ export interface PendingApproval {
 // auditFailed: the action saved but its ipcr_audit_log row did not (see ipcrAudit.ts).
 type Result<T> = { ok: true; data: T; auditFailed?: boolean } | { ok: false; error: string };
 
+const NO_LONGER_PENDING = 'This IPCR is no longer pending approval. Refresh the list.';
+
 /**
  * A return leaves the employee's workspace row saying "Targets Submitted", which
- * the employee page reads as still pending. Put it back to a draft, best-effort:
- * the return itself has already succeeded.
+ * the employee page reads as still pending. Put that one row back to a draft,
+ * best-effort: the return itself has already succeeded. getWorkspace picks the
+ * same row the employee page reads, so the employee's other periods are untouched.
  */
-async function resetWorkspaceToDraft(employeeId: string): Promise<void> {
+async function resetWorkspaceToDraft(employeeId: string, period: string): Promise<void> {
+  const row = await getWorkspace(employeeId, period);
+  if (!row || row.status !== 'Targets Submitted') return;
   const { error } = await (supabase as any)
     .from('ipcr_workspace')
     .update({ status: 'Draft Targets', updated_at: new Date().toISOString() })
-    .eq('employee_id', employeeId)
+    .eq('id', row.id)
     .eq('status', 'Targets Submitted');
   if (error) console.warn('[ipcrApproval] workspace reset failed:', error.message);
 }
@@ -133,7 +139,7 @@ export async function approveTargets(p: {
     openTarget.setMonth(openTarget.getMonth() + 5); // display-only expected open (~5 months)
     // Approval freezes Phase 1 AND auto-locks Phase 2 (locked ≠ open — the office
     // must still explicitly open the rating window later).
-    const { error } = await (supabase as any)
+    const { data: changed, error } = await (supabase as any)
       .from('target_settings')
       .update({
         status: 'approved',
@@ -144,8 +150,10 @@ export async function approveTargets(p: {
         phase2_open_target_date: openTarget.toISOString().slice(0, 10),
       })
       .eq('id', p.targetSettingId)
-      .eq('status', 'submitted_for_approval'); // only a pending record can be approved
+      .eq('status', 'submitted_for_approval') // only a pending record can be approved
+      .select('id');
     if (error) return { ok: false, error: error.message };
+    if (!changed?.length) return { ok: false, error: NO_LONGER_PENDING };
     const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
       action: 'approve',
@@ -251,7 +259,7 @@ export async function returnForRevision(p: {
     return { ok: false, error: 'You cannot return your own IPCR.' };
   }
   try {
-    const { error } = await (supabase as any)
+    const { data: changed, error } = await (supabase as any)
       .from('target_settings')
       .update({
         status: 'returned_for_revision',
@@ -260,8 +268,11 @@ export async function returnForRevision(p: {
         review_comment: p.comment?.trim() || null,
       })
       .eq('id', p.targetSettingId)
-      .eq('status', 'submitted_for_approval');
+      .eq('status', 'submitted_for_approval')
+      .select('id');
     if (error) return { ok: false, error: error.message };
+    // Nothing matched: another reviewer already approved or returned it. Do not log, notify or reset.
+    if (!changed?.length) return { ok: false, error: NO_LONGER_PENDING };
 
     const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
@@ -270,9 +281,14 @@ export async function returnForRevision(p: {
       performed_by_role: 'office_account',
       reason: p.comment?.trim() || null,
     });
-    await resetWorkspaceToDraft(p.submitterEmployeeId);
+    let meta: Awaited<ReturnType<typeof resolveTargetSettingMeta>> = null;
     try {
-      const meta = await resolveTargetSettingMeta(p.targetSettingId);
+      meta = await resolveTargetSettingMeta(p.targetSettingId);
+    } catch (err) {
+      console.warn('[ipcrApproval] return metadata lookup failed:', err);
+    }
+    await resetWorkspaceToDraft(p.submitterEmployeeId, meta?.period ?? '');
+    try {
       if (meta) {
         await setSubmissionStage({
           employeeId: meta.employeeId,
