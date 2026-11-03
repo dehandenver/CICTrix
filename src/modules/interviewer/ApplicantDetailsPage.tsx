@@ -2029,7 +2029,7 @@ function ApplicantDetailsPageView() {
   }
 
   return (
-    <div className={isRspAdmin ? 'rsp-ds min-h-screen bg-[#f8f9fa]' : 'min-h-screen bg-slate-100'}>
+    <div className={isRspAdmin ? 'rsp-ds min-h-screen bg-[var(--bg-page)]' : 'ds-remap abyan-tokens min-h-screen bg-slate-100'}>
       {isRspAdmin && <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />}
       <div className={isRspAdmin ? 'admin-layout' : ''}>
         {isRspAdmin && <Sidebar activeModule="RSP" userRole="rsp" />}
@@ -2774,7 +2774,7 @@ function ApplicantDetailsPageView() {
               <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
                 {/* Recipient row */}
-                <div className="grid grid-cols-2 gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: '#EEF0FD' }}>
+                <div className="grid grid-cols-2 gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: 'var(--color-primary-50)' }}>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>TO:</p>
                     <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: '#040E6B' }}>{applicant?.email || '—'}</p>
@@ -2810,7 +2810,7 @@ function ApplicantDetailsPageView() {
                     })}
                   </div>
                   {resubmitSelectedSlots.length > 0 && (
-                    <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                    <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: 'var(--color-primary-50)', color: '#363EE8' }}>
                       Selected: {resubmitSelectedSlots.join(', ')}
                     </p>
                   )}
@@ -2839,7 +2839,7 @@ function ApplicantDetailsPageView() {
                     })}
                   </div>
                   {resubmitReason && (
-                    <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                    <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: 'var(--color-primary-50)', color: '#363EE8' }}>
                       Selected: {resubmitReason}
                     </p>
                   )}
@@ -3024,7 +3024,7 @@ function ApplicantDetailsPageView() {
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-xl font-semibold text-slate-800">I Education (20%)</p>
                       {educationAttainment && (
-                        <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                        <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: 'var(--color-primary-50)', color: '#363EE8' }}>
                           Auto-filled · Editable
                         </span>
                       )}
@@ -3047,7 +3047,7 @@ function ApplicantDetailsPageView() {
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-xl font-semibold text-slate-800">II Experience (20%)</p>
                       {experienceYears && (
-                        <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                        <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: 'var(--color-primary-50)', color: '#363EE8' }}>
                           Auto-filled · Editable
                         </span>
                       )}
