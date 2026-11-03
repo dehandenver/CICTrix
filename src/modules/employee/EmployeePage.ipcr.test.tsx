@@ -127,6 +127,55 @@ describe('returned for revision', () => {
   });
 });
 
+describe('Phase 1 target inputs', () => {
+  const renderDraft = async () => {
+    mocks.targets.mockResolvedValue({ ok: true, data: {
+      setting: { id: 'draft-1', cycle_id: 2, status: 'draft' },
+      targets: { core: [{ title: '', indicators: [{ description: '' }] }], strategic: [], support: [] },
+    } });
+    render(<MemoryRouter initialEntries={['/employee/ipcr-workspace']}><EmployeePage currentUser={employee} onLogout={() => {}} /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Phase 1: Target Setting' }));
+    return {
+      mfo: await screen.findByPlaceholderText('e.g. Payroll Management'),
+      indicator: await screen.findByPlaceholderText(/e\.g\. Process payroll within 3 days/),
+    };
+  };
+
+  it('top-aligns the MFO and Success Indicator cells so their inputs share a row start', async () => {
+    const { mfo, indicator } = await renderDraft();
+    expect(mfo.closest('td')).toHaveClass('is-top');
+    expect(indicator.closest('td')).toHaveClass('is-top');
+    expect(mfo.closest('tr')).toBe(indicator.closest('tr'));
+  });
+
+  it('keeps both inputs editable, counted, and removable', async () => {
+    const { mfo, indicator } = await renderDraft();
+    expect(mfo).toBeEnabled();
+    expect(indicator).toBeEnabled();
+
+    fireEvent.change(mfo, { target: { value: 'Payroll' } });
+    fireEvent.change(indicator, { target: { value: 'Process payroll on time' } });
+    expect(mfo).toHaveValue('Payroll');
+    expect(indicator).toHaveValue('Process payroll on time');
+    expect(screen.getByText('7/120')).toBeInTheDocument();
+    expect(screen.getByText('23/280')).toBeInTheDocument();
+
+    // Strategic and support start with a blank MFO each, so index 0 is the core section's.
+    fireEvent.click(screen.getAllByRole('button', { name: '+ Add Success Indicator' })[0]);
+    expect(screen.getAllByPlaceholderText(/e\.g\. Process payroll within 3 days/)).toHaveLength(2);
+    expect(screen.getByDisplayValue('Process payroll on time')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByTitle('Delete this success indicator')[1]);
+    expect(screen.getAllByPlaceholderText(/e\.g\. Process payroll within 3 days/)).toHaveLength(1);
+
+    fireEvent.click(screen.getAllByRole('button', { name: '+ Add MFO' })[0]);
+    expect(screen.getAllByPlaceholderText('e.g. Payroll Management')).toHaveLength(2);
+    fireEvent.click(screen.getAllByTitle('Delete this MFO')[1]);
+    expect(screen.getAllByPlaceholderText('e.g. Payroll Management')).toHaveLength(1);
+    expect(screen.getByDisplayValue('Payroll')).toBeInTheDocument();
+  });
+});
+
 describe('profile setup reminder', () => {
   const incomplete = { ...employee, emergencyRelationship: 'Mother', emergencyContactNumber: '09123456780', sssNumber: '' };
   const mount = (path = '/employee/profile', current = incomplete) => render(

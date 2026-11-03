@@ -1944,8 +1944,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                             </thead>
                             <tbody>
                               {rows.map((mfo, i) => (
-                                <tr key={i} className="align-top">
-                                  <td className="border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
+                                <tr key={i}>
+                                  <td className="is-top border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
                                     <div className="flex items-start gap-1.5">
                                       <div className="min-w-0 flex-1">
                                         <input
@@ -1972,7 +1972,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                                       )}
                                     </div>
                                   </td>
-                                  <td className="border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
+                                  <td className="is-top border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
                                     <div className="space-y-1.5">
                                       {mfo.indicators.map((si, j) => (
                                         <div key={j} className="flex items-start gap-1.5">
