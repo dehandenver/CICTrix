@@ -1345,7 +1345,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   };
 
   return (
-    <div className="brand-text min-h-screen" style={{ background: '#F0F2FD', fontFamily: "'Poppins', sans-serif" }}>
+    <div className="brand-text ds-remap abyan-tokens min-h-screen" style={{ background: '#F0F2FD', fontFamily: "'Poppins', sans-serif" }}>
       {/* ── Top bar: the shared portal bar (§8.2), with the portal tabs as its
           navigation row ── */}
       <PortalHeader
@@ -1905,7 +1905,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 </div>
 
                 {isPendingApproval && (
-                  <div className="rounded-lg border border-[#C8D1FF] bg-[#EEF0FD] px-4 py-3 flex items-center gap-2.5">
+                  <div className="rounded-lg border border-[#C8D1FF] bg-[var(--color-primary-50)] px-4 py-3 flex items-center gap-2.5">
                     <Clock className="h-4 w-4 text-[#363EE8] shrink-0" />
                     <p className="text-xs font-semibold text-[#191FA8]">
                       Your targets have been submitted and are awaiting review and approval by your Department Head. Targets are locked while pending approval.
@@ -1945,7 +1945,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                             <tbody>
                               {rows.map((mfo, i) => (
                                 <tr key={i}>
-                                  <td className="is-top border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
+                                  <td className="is-top border-b px-3 py-2" style={{ borderColor: 'var(--color-primary-50)' }}>
                                     <div className="flex items-start gap-1.5">
                                       <div className="min-w-0 flex-1">
                                         <input
@@ -1972,7 +1972,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                                       )}
                                     </div>
                                   </td>
-                                  <td className="is-top border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
+                                  <td className="is-top border-b px-3 py-2" style={{ borderColor: 'var(--color-primary-50)' }}>
                                     <div className="space-y-1.5">
                                       {mfo.indicators.map((si, j) => (
                                         <div key={j} className="flex items-start gap-1.5">
@@ -2071,7 +2071,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                       onClick={() => void handleSaveWorkspaceTargets(true)}
                       disabled={workspaceSaving}
                       aria-busy={workspaceAction === 'submit' || undefined}
-                      className="inline-flex items-center justify-center gap-2 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition disabled:opacity-50"
+                      className="inline-flex items-center justify-center gap-2 bg-[#363EE8] hover:bg-[var(--color-primary-700)] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition disabled:opacity-50"
                     >
                       {workspaceAction === 'submit' && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                       Submit Targets for Approval
@@ -2174,7 +2174,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                           href={workspaceRow.pdf_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                          className="inline-flex items-center gap-2 bg-[#363EE8] hover:bg-[var(--color-primary-700)] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
                         >
                           <Download className="h-4 w-4" /> Download IPCR PDF
                         </a>
@@ -2297,7 +2297,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                             onClick={() => void handleSubmitWorkspaceAccomplishments(true)}
                             disabled={!isAccomplishmentRatingActive || workspaceSaving}
                             aria-busy={workspaceAction === 'submit' || undefined}
-                            className="inline-flex items-center justify-center gap-2 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
+                            className="inline-flex items-center justify-center gap-2 bg-[#363EE8] hover:bg-[var(--color-primary-700)] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
                           >
                             {workspaceAction === 'submit' && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                             Submit Evaluation
@@ -2390,7 +2390,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                         setSaveSuccess('Checklist verified. Probationary clock is now ACTIVE.');
                         setTimeout(() => setSaveSuccess(null), 4000);
                       }}
-                      className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                      className="bg-[#363EE8] hover:bg-[var(--color-primary-700)] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
                     >
                       Verify Checklist & Start Clock
                     </button>
@@ -2444,7 +2444,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
 
         // Steps 1 & 2 gate on wizardTryNext; Step 3 always shows red (persistent nudge).
         const redIf = (val: string, alwaysRed = false) => ({
-          border: `1.5px solid ${(alwaysRed || wizardTryNext) && !val.trim() ? '#EF4444' : '#C8D1FF'}`,
+          border: `1.5px solid ${(alwaysRed || wizardTryNext) && !val.trim() ? 'var(--error-500)' : '#C8D1FF'}`,
           borderRadius: 8, padding: '0.6rem 0.85rem', fontSize: '0.9rem',
           outline: 'none', width: '100%', boxSizing: 'border-box' as const,
           color: '#040E6B', fontFamily: "'Poppins', sans-serif",
@@ -2454,7 +2454,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
 
         const labelStyle: React.CSSProperties = { display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#040E6B', marginBottom: '0.3rem' };
         const fieldWrap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 0 };
-        const errMsg: React.CSSProperties = { fontSize: '0.72rem', color: '#EF4444', marginTop: '0.2rem', fontWeight: 600 };
+        const errMsg: React.CSSProperties = { fontSize: '0.72rem', color: 'var(--error-700)', marginTop: '0.2rem', fontWeight: 600 };
 
         // Partial save helper for Step 3 (only saves filled fields)
         const saveStep3Partial = () => {
@@ -2649,7 +2649,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   {wizardStep === 3 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                       <div style={{ background: '#FFF9E6', border: '1.5px solid #FCD34D', borderRadius: 10, padding: '0.75rem 1rem', fontSize: '0.82rem', color: '#92400E', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                        <AlertCircle className="h-4 w-4 shrink-0" style={{ color: '#D97706', marginTop: 1 }} />
+                        <AlertCircle className="h-4 w-4 shrink-0" style={{ color: 'var(--warning-500)', marginTop: 1 }} />
                         <span>Government IDs are required for payroll and benefits. You can skip for now, but please complete this section as soon as possible.</span>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -2671,7 +2671,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 </div>
 
                 {/* Footer */}
-                <div style={{ padding: '1rem 1.5rem', borderTop: '1.5px solid #EEF0FD', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ padding: '1rem 1.5rem', borderTop: '1.5px solid var(--color-primary-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
                   <button
                     type="button"
                     onClick={() => { if (wizardStep > 1) { setWizardStep((wizardStep - 1) as 1 | 2 | 3); setWizardTryNext(false); } else closeSetupWizard(); }}
