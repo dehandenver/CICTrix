@@ -1,7 +1,7 @@
 ---
 title: Keep a returned Phase 2 rating sheet editable
 date: 2026-11-03
-status: Approved
+status: Done
 summary: A Phase 2 sheet returned for revision stays editable and submittable after the rating window closes, and closing the period no longer locks it. Adds a phase2_returned_at marker and a pending-only guard on the return.
 ---
 
