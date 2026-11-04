@@ -137,6 +137,8 @@ export const buildEvaluationSnapshotMap = (rows: any[] = []) => {
     const parsedSnapshots = rawSnapshots ? JSON.parse(rawSnapshots) : {};
     Object.entries(parsedSnapshots).forEach(([key, val]: [string, any]) => {
       if (!val || typeof val !== 'object') return;
+      // Older saves also wrote an email key; applications sharing an email are separate.
+      if (key.startsWith('email:')) return;
       const synthSnapshot: EvaluationSnapshot = {
         applicantId: key.replace(/^(id|email|name):/, ''),
         jobId: null,

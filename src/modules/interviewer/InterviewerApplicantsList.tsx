@@ -21,7 +21,7 @@ import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { getApplicantType, storeApplicantTypeForEval } from '../../lib/interviewerEvalNavigation';
 import { sendEmail } from '../../lib/email';
-import { type ApplicantWorkflowStatus } from '../../lib/api/applicantStatus';
+import { canTransition, normalizeStatus, type ApplicantWorkflowStatus } from '../../lib/api/applicantStatus';
 import { transitionApplicantStatus, type StatusTransitionResult } from '../../lib/api/applicantStatusTransition';
 import { describeActionFailure } from '../../lib/friendlyErrors';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -339,8 +339,12 @@ const readInterviewerScoreSnapshot = () => {
 };
 
 const DECISION_ACTION = 'update this application';
+const EVALUATED_STATUS: ApplicantWorkflowStatus = 'For Evaluation';
 
-const decisionFailure = (outcome: Exclude<StatusTransitionResult, { kind: 'advanced' }>) => {
+const EVALUATION_REQUIRED_STEP = 'Submit the evaluation first, or check the status with the RSP office.';
+const CHECK_WITH_RSP_STEP = 'Check the status with the RSP office.';
+
+const decisionFailure = (outcome: Exclude<StatusTransitionResult, { kind: 'advanced' }>, refusedStep: string) => {
   if (outcome.kind === 'failed') return describeActionFailure(DECISION_ACTION, new Error(outcome.error));
   if (outcome.reason === 'concurrent-change') {
     return {
@@ -353,7 +357,7 @@ const decisionFailure = (outcome: Exclude<StatusTransitionResult, { kind: 'advan
   }
   return {
     message: "This application can't move to that status from where it is now.",
-    nextStep: 'Submit the evaluation first, or check the status with the RSP office.',
+    nextStep: refusedStep,
   };
 };
 
@@ -729,14 +733,30 @@ export function InterviewerApplicantsList({
     setActiveTab('overview');
   };
 
-  const decideApplicant = async (applicantId: string, target: ApplicantWorkflowStatus, storedAs?: string) => {
+  const decideApplicant = async (decided: Applicant, target: ApplicantWorkflowStatus, storedAs?: string) => {
+    const applicantId = decided.id;
+    const evaluated = decided.evaluation_status === 'Completed';
+    const refusedStep = target === 'Qualified' && !evaluated ? EVALUATION_REQUIRED_STEP : CHECK_WITH_RSP_STEP;
     setDecisionBusy(true);
     setDecisionError(null);
+
+    // A saved evaluation whose status step failed still sits at the interview
+    // stage. Nothing else moves it on, so qualifying has to finish that step.
+    const stored = normalizeStatus(decided.status);
+    if (target === 'Qualified' && evaluated && stored && canTransition(stored, EVALUATED_STATUS)) {
+      const advanced = await transitionApplicantStatus(applicantId, EVALUATED_STATUS);
+      if (advanced.kind === 'failed') {
+        setDecisionBusy(false);
+        setDecisionError(decisionFailure(advanced, refusedStep));
+        return;
+      }
+    }
+
     const outcome = await transitionApplicantStatus(applicantId, target, storedAs);
     setDecisionBusy(false);
 
     if (outcome.kind !== 'advanced') {
-      setDecisionError(decisionFailure(outcome));
+      setDecisionError(decisionFailure(outcome, refusedStep));
       return;
     }
 
@@ -1069,14 +1089,14 @@ export function InterviewerApplicantsList({
                     <button type="button" className="details-btn details-btn-neutral" onClick={() => setShowMessageDialog(true)}>
                       <Plane size={16} /> Send Message
                     </button>
-                    <button type="button" className="details-btn details-btn-danger" disabled={decisionBusy} onClick={() => void decideApplicant(activeApplicant.id, 'Disqualified', 'Not Qualified')}>
+                    <button type="button" className="details-btn details-btn-danger" disabled={decisionBusy} onClick={() => void decideApplicant(activeApplicant, 'Disqualified', 'Not Qualified')}>
                       <AlertCircle size={16} /> Disqualify
                     </button>
                     {/* Shortlisting must name the documents and reason requiring
                         resubmission, which happens in the RSP "Notice of Resubmission"
                         modal on /admin/rsp/applicant/:id. That route is admin-only,
                         so there is no standalone shortlist action here. */}
-                    <button type="button" className="details-btn details-btn-success" disabled={decisionBusy} onClick={() => void decideApplicant(activeApplicant.id, 'Qualified')}>
+                    <button type="button" className="details-btn details-btn-success" disabled={decisionBusy} onClick={() => void decideApplicant(activeApplicant, 'Qualified')}>
                       <CheckCircle2 size={16} /> Qualify
                     </button>
                   </>

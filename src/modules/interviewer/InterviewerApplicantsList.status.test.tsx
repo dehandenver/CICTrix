@@ -143,6 +143,52 @@ describe('InterviewerApplicantsList decisions', () => {
   });
 });
 
+describe('InterviewerApplicantsList after a failed status step', () => {
+  const markEvaluated = () =>
+    localStorage.setItem('cictrix_interviewer_score_snapshot', JSON.stringify({ [`id:${ORIGINAL_ID}`]: { pcptAverage: 4 } }));
+
+  it('moves an evaluated applicant to For Evaluation before qualifying', async () => {
+    markEvaluated();
+    transition.mockResolvedValueOnce({ kind: 'advanced', status: 'For Evaluation' });
+
+    fireEvent.click(await openDetails('Interview/Exam Scheduled'));
+
+    await waitFor(() => expect(transition).toHaveBeenCalledTimes(2));
+    expect(transition.mock.calls[0]).toEqual([ORIGINAL_ID, 'For Evaluation']);
+    expect(transition.mock.calls[1]).toEqual([ORIGINAL_ID, 'Qualified', undefined]);
+  });
+
+  it('stops when that first move fails', async () => {
+    markEvaluated();
+    transition.mockResolvedValueOnce({ kind: 'failed', error: 'write rejected' });
+
+    fireEvent.click(await openDetails('Interview/Exam Scheduled'));
+
+    expect(await screen.findByText(/couldn't update this application/i)).toBeTruthy();
+    expect(transition).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not tell someone to evaluate an applicant who is already evaluated', async () => {
+    markEvaluated();
+    transition.mockResolvedValue({ kind: 'unchanged', reason: 'transition-not-allowed' });
+
+    fireEvent.click(await openDetails('Hired'));
+
+    expect(await screen.findByText(/check the status with the RSP office/i)).toBeTruthy();
+    expect(screen.queryByText(/submit the evaluation/i)).toBeNull();
+  });
+
+  it('does not suggest an evaluation when a Disqualify is refused', async () => {
+    await openDetails('Hired');
+    transition.mockResolvedValue({ kind: 'unchanged', reason: 'transition-not-allowed' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disqualify' }));
+
+    expect(await screen.findByText(/check the status with the RSP office/i)).toBeTruthy();
+    expect(screen.queryByText(/submit the evaluation/i)).toBeNull();
+  });
+});
+
 describe('InterviewerApplicantsList status pill', () => {
   it('does not read Not Qualified as qualified', async () => {
     await openDetails('Not Qualified');

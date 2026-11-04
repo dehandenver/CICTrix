@@ -80,7 +80,7 @@ const EVALUATED_STATUS = 'For Evaluation' as const;
 const statusOutcomeMessage = (outcome: StatusTransitionResult): string => {
   if (outcome.kind === 'advanced') return `The applicant has moved to ${EVALUATED_STATUS}.`;
   if (outcome.kind === 'failed') {
-    return "Your evaluation is saved, but we couldn't update the applicant's status. You do not need to submit it again; let the RSP office know.";
+    return "Your evaluation is saved, but we couldn't update the applicant's status. You do not need to submit it again.";
   }
   if (outcome.reason === 'concurrent-change') {
     return "The applicant's status changed while you were submitting, so it was left as it is.";
