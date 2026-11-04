@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QualifiedApplicantsSection, type ApplicantRecord } from './QualifiedApplicantsSection';
+import type { EvaluationSnapshot } from '../lib/evaluationScores';
 
 const APPLICANT_ID = 'a1b2c3d4-e5f6-4a1b-8c2d-111111111111';
 
@@ -11,7 +12,7 @@ const saveApplicantCategoryScores = vi.fn();
 const savePositionWrittenExamScores = vi.fn();
 const fetchWrittenExamTotals = vi.fn();
 const saveWrittenExamTotal = vi.fn();
-const fetchLatestEvaluationForApplicantOrEmailAnySource = vi.fn();
+const fetchLatestEvaluationForApplicantAnySource = vi.fn();
 const listApplicantDocumentAttachments = vi.fn();
 
 vi.mock('../lib/api/examTotalPoints', async (importOriginal) => {
@@ -38,8 +39,8 @@ vi.mock('../lib/evaluationScores', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/evaluationScores')>();
   return {
     ...actual,
-    fetchLatestEvaluationForApplicantOrEmailAnySource: (...args: unknown[]) =>
-      fetchLatestEvaluationForApplicantOrEmailAnySource(...args),
+    fetchLatestEvaluationForApplicantAnySource: (...args: unknown[]) =>
+      fetchLatestEvaluationForApplicantAnySource(...args),
     subscribeToEvaluationChanges: () => () => {},
   };
 });
@@ -101,6 +102,18 @@ const renderSection = () => render(
   </MemoryRouter>,
 );
 
+const siblingEvaluation: EvaluationSnapshot = {
+  applicantId: 'sibling-application',
+  jobId: null,
+  score: null,
+  pcptRawScore: null,
+  writtenExamRawScore: 87,
+  oralRawScore: null,
+  completed: true,
+  updatedAt: '2026-10-29T00:00:00.000Z',
+  row: {},
+};
+
 const openFolder = async () => {
   const folderCell = await screen.findByRole('cell', { name: /Engineer I/ });
   fireEvent.click(folderCell.closest('tr') as HTMLElement);
@@ -125,11 +138,58 @@ beforeEach(() => {
   fetchApplicantScoreSummaries.mockResolvedValue({ ok: true, data: new Map() });
   saveApplicantCategoryScores.mockResolvedValue({ ok: true });
   savePositionWrittenExamScores.mockResolvedValue({ ok: true });
-  fetchLatestEvaluationForApplicantOrEmailAnySource.mockResolvedValue(null);
+  fetchLatestEvaluationForApplicantAnySource.mockResolvedValue(null);
   listApplicantDocumentAttachments.mockResolvedValue([]);
 });
 
 describe('Applicant score persistence and finalization', () => {
+  it('does not give an application a sibling evaluation found by email or name', async () => {
+    render(
+      <MemoryRouter>
+        <QualifiedApplicantsSection
+          applicants={[applicant]}
+          completedEvaluationIds={new Set()}
+          evaluationsByApplicant={{
+            'sibling-application': siblingEvaluation,
+            'email:ana.cruz@example.com': siblingEvaluation,
+            'name:ana cruz': siblingEvaluation,
+          }}
+        />
+      </MemoryRouter>,
+    );
+    await openFolder();
+    const row = await applicantRow();
+
+    expect(within(row).queryByText(/^87\b/)).not.toBeInTheDocument();
+  });
+
+  it('shows an evaluation filed under the application itself', async () => {
+    render(
+      <MemoryRouter>
+        <QualifiedApplicantsSection
+          applicants={[applicant]}
+          completedEvaluationIds={new Set()}
+          evaluationsByApplicant={{ [APPLICANT_ID]: siblingEvaluation }}
+        />
+      </MemoryRouter>,
+    );
+    await openFolder();
+    const row = await applicantRow();
+
+    expect(within(row).getByText(/^87\b/)).toBeInTheDocument();
+  });
+
+  it('asks for the opened application only when refreshing its evaluation', async () => {
+    renderSection();
+    await openFolder();
+    fireEvent.click(await screen.findByRole('button', { name: /Open scores for Ana Cruz/ }));
+    await screen.findByRole('dialog');
+
+    await waitFor(() => expect(fetchLatestEvaluationForApplicantAnySource).toHaveBeenCalled());
+    expect(fetchLatestEvaluationForApplicantAnySource.mock.calls[0][0]).toBe(APPLICANT_ID);
+    expect(fetchLatestEvaluationForApplicantAnySource.mock.calls[0]).not.toContain(applicant.email);
+  });
+
   it('keeps the modal open and editable with entered values when the remote save is rejected', async () => {
     saveApplicantCategoryScores.mockResolvedValue({ ok: false, error: new Error('permission denied') });
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent');

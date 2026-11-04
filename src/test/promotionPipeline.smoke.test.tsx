@@ -146,7 +146,7 @@ vi.mock('../lib/evaluationScores', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/evaluationScores')>();
   return {
     ...actual,
-    fetchLatestEvaluationForApplicantOrEmailAnySource: vi.fn(async () => null),
+    fetchLatestEvaluationForApplicantAnySource: vi.fn(async () => null),
     subscribeToEvaluationChanges: () => () => undefined,
   };
 });

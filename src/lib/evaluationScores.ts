@@ -84,17 +84,10 @@ export const buildEvaluationSnapshotMap = (rows: any[] = []) => {
     const snapshot = deriveEvaluationSnapshot(row);
     if (!snapshot) return;
 
+    // Keyed by application: applications sharing an email or name are separate.
     const keys = new Set<string>([snapshot.applicantId]);
     if (snapshot.jobId) {
       keys.add(`job:${snapshot.jobId}`);
-    }
-    const email = String(row?.applicant_email ?? row?.email ?? '').trim().toLowerCase();
-    if (email) {
-      keys.add(`email:${email}`);
-    }
-    const name = String(row?.applicant_name ?? row?.name ?? row?.full_name ?? '').trim().toLowerCase();
-    if (name) {
-      keys.add(`name:${name}`);
     }
 
     keys.forEach((key) => {
@@ -113,18 +106,10 @@ export const buildEvaluationSnapshotMap = (rows: any[] = []) => {
       localEvals.forEach((row) => {
         const snapshot = deriveEvaluationSnapshot(row);
         if (!snapshot) return;
-        const keys = new Set<string>([snapshot.applicantId]);
-        const email = String(row?.applicant_email ?? row?.email ?? '').trim().toLowerCase();
-        if (email) keys.add(`email:${email}`);
-        const name = String(row?.applicant_name ?? row?.name ?? row?.full_name ?? '').trim().toLowerCase();
-        if (name) keys.add(`name:${name}`);
-
-        keys.forEach((key) => {
-          const current = map.get(key);
-          if (!current || new Date(snapshot.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
-            map.set(key, snapshot);
-          }
-        });
+        const current = map.get(snapshot.applicantId);
+        if (!current || new Date(snapshot.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
+          map.set(snapshot.applicantId, snapshot);
+        }
       });
     }
   } catch {
@@ -187,59 +172,15 @@ export const fetchLatestEvaluationForApplicant = async (applicantId: string, cli
   return row ? deriveEvaluationSnapshot(row) : null;
 };
 
-export const fetchLatestEvaluationForApplicantOrEmail = async (
+export const fetchLatestEvaluationForApplicantAnySource = async (
   applicantId: string,
-  applicantEmail?: string,
-  client: any = supabase,
-) => {
-  const direct = await fetchLatestEvaluationForApplicant(applicantId, client);
-  if (direct) return direct;
-
-  const email = String(applicantEmail ?? '').trim().toLowerCase();
-  if (!email) return null;
-
-  try {
-    const { data: applicantsData, error: applicantsError } = await client
-      .from('applicants')
-      .select('id,email')
-      .eq('email', email);
-
-    if (applicantsError) throw applicantsError;
-    const aliasIds = Array.isArray(applicantsData)
-      ? applicantsData
-          .map((row: any) => String(row?.id ?? '').trim())
-          .filter(Boolean)
-      : [];
-
-    if (aliasIds.length === 0) return null;
-
-    const { data: evalRows, error: evalError } = await client
-      .from('evaluations')
-      .select('*')
-      .in('applicant_id', aliasIds)
-      .order('updated_at', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (evalError) throw evalError;
-
-    const row = Array.isArray(evalRows) ? evalRows[0] : null;
-    return row ? deriveEvaluationSnapshot(row) : null;
-  } catch {
-    return null;
-  }
-};
-
-export const fetchLatestEvaluationForApplicantOrEmailAnySource = async (
-  applicantId: string,
-  applicantEmail?: string,
   preferredClient: any = supabase,
 ) => {
   const secondaryClient = preferredClient === supabase ? (mockDatabase as any) : supabase;
 
   const [primaryResult, secondaryResult] = await Promise.allSettled([
-    fetchLatestEvaluationForApplicantOrEmail(applicantId, applicantEmail, preferredClient),
-    fetchLatestEvaluationForApplicantOrEmail(applicantId, applicantEmail, secondaryClient),
+    fetchLatestEvaluationForApplicant(applicantId, preferredClient),
+    fetchLatestEvaluationForApplicant(applicantId, secondaryClient),
   ]);
 
   const primary = primaryResult.status === 'fulfilled' ? primaryResult.value : null;
