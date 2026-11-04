@@ -432,10 +432,10 @@ export const EmployeePhase2: React.FC<{
                         const a = avgOf([e.quality, e.efficiency, e.timeliness]);
                         return (
                           <tr key={si.successIndicatorId} className="align-top">
-                            <td className="border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
+                            <td className="border-b px-3 py-2" style={{ borderColor: 'var(--color-primary-50)' }}>
                               <div className="rounded-md bg-slate-100 px-2 py-1.5 text-[11px] text-slate-500 shadow-inner">{si.description}</div>
                             </td>
-                            <td className="border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
+                            <td className="border-b px-3 py-2" style={{ borderColor: 'var(--color-primary-50)' }}>
                               <textarea
                                 aria-label={`Achievement for ${si.description}`}
                                 value={e.accomplishment}
@@ -449,7 +449,7 @@ export const EmployeePhase2: React.FC<{
                               {editable && <CharacterCount value={e.accomplishment} max={IPCR_LIMITS.accomplishment} />}
                             </td>
                             {(['quality', 'efficiency', 'timeliness'] as const).map((dim) => (
-                              <td key={dim} className="border-b px-1 py-2 text-center" style={{ borderColor: '#EEF0FD' }}>
+                              <td key={dim} className="border-b px-1 py-2 text-center" style={{ borderColor: 'var(--color-primary-50)' }}>
                                 <select
                                   value={e[dim] ?? ''}
                                   onChange={(ev) => setField(si.successIndicatorId, dim, ev.target.value === '' ? null : Number(ev.target.value))}
@@ -476,7 +476,7 @@ export const EmployeePhase2: React.FC<{
                                 })()}
                               </td>
                             ))}
-                            <td className="border-b px-2 py-2 text-center font-bold text-slate-700" style={{ borderColor: '#EEF0FD' }}>{a != null ? a.toFixed(2) : '—'}</td>
+                            <td className="border-b px-2 py-2 text-center font-bold text-slate-700" style={{ borderColor: 'var(--color-primary-50)' }}>{a != null ? a.toFixed(2) : '—'}</td>
                           </tr>
                         );
                       })}
@@ -493,7 +493,7 @@ export const EmployeePhase2: React.FC<{
           guess what a rating means, and the wording is the PM Administrator's
           to set — this falls back to the built-in text if none is configured,
           because an empty legend reads as a fault rather than an explanation. */}
-      <div className="mt-3 rounded-lg border px-3 py-2.5" style={{ borderColor: '#EEF0FD', background: '#F8FAFF' }}>
+      <div className="mt-3 rounded-lg border px-3 py-2.5" style={{ borderColor: 'var(--color-primary-50)', background: '#F8FAFF' }}>
         <p className="!mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
           What each rating means
         </p>
@@ -538,7 +538,7 @@ export const EmployeePhase2: React.FC<{
               disabled={saving || !isComplete || !canSubmit}
               aria-busy={savingAction === 'submit' || undefined}
               title={!canSubmit ? 'Submission opens during the rating period.' : isComplete ? '' : 'Please rate at least one dimension (Q, E, or T) for each indicator.'}
-              className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] hover:bg-[#2e35d4] text-white px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] hover:bg-[var(--color-primary-700)] text-white px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
             >
               {savingAction === 'submit'
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
