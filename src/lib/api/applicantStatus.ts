@@ -134,7 +134,7 @@ const LEGACY_MAP: Record<string, ApplicantWorkflowStatus> = {
   'new application': 'Submitted',
   submitted: 'Submitted',
   'under review': 'Under Initial Screening',
-  reviewed: 'Under Initial Screening',
+  reviewed: 'For Evaluation',
   pending: 'Pending',
   shortlisted: 'Shortlisted',
   'recommended for hiring': 'Shortlisted',
