@@ -11,6 +11,8 @@ import { mockDatabase } from '../../lib/mockDatabase';
 import { getApplicants as getRecruitmentApplicants, saveApplicants as saveRecruitmentApplicants } from '../../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import { describeActionFailure } from '../../lib/friendlyErrors';
+import { canTransition, normalizeStatus } from '../../lib/api/applicantStatus';
+import { transitionApplicantStatus, type StatusTransitionResult } from '../../lib/api/applicantStatusTransition';
 import { usePlantillaNames } from '../../hooks/usePlantillaNames';
 import { getApplicantType } from '../../lib/interviewerEvalNavigation';
 
@@ -72,12 +74,28 @@ type AppointmentType = 'original' | 'promotional';
 const SCORE_SETUP_STORAGE_KEY = 'cictrix_rsp_score_setup';
 const INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY = 'cictrix_interviewer_score_snapshot';
 
+/** Where a submitted evaluation moves the applicant. */
+const EVALUATED_STATUS = 'For Evaluation' as const;
+
+const statusOutcomeMessage = (outcome: StatusTransitionResult): string => {
+  if (outcome.kind === 'advanced') return `The applicant has moved to ${EVALUATED_STATUS}.`;
+  if (outcome.kind === 'failed') {
+    return "Your evaluation is saved, but we couldn't update the applicant's status. You do not need to submit it again; let the RSP office know.";
+  }
+  if (outcome.reason === 'concurrent-change') {
+    return "The applicant's status changed while you were submitting, so it was left as it is.";
+  }
+  if (outcome.reason === 'not-found') {
+    return "Your evaluation is saved, but we couldn't find this application to update its status.";
+  }
+  return "The applicant's status stays as it is, because it isn't at the interview stage.";
+};
+
 const saveInterviewerScoreSnapshot = (
   applicantId: string | undefined,
-  applicantEmail: string | undefined,
   snapshot: { pcptAverage?: number; oralAverage?: number }
 ) => {
-  if (!applicantId && !applicantEmail) return;
+  if (!applicantId) return;
 
   const cleanScore = (value?: number) => {
     if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) return undefined;
@@ -96,14 +114,7 @@ const saveInterviewerScoreSnapshot = (
     const raw = localStorage.getItem(INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as Record<string, typeof payload>) : {};
 
-    if (applicantId) {
-      parsed[`id:${String(applicantId).trim()}`] = payload;
-    }
-
-    const normalizedEmail = String(applicantEmail ?? '').trim().toLowerCase();
-    if (normalizedEmail) {
-      parsed[`email:${normalizedEmail}`] = payload;
-    }
+    parsed[`id:${String(applicantId).trim()}`] = payload;
 
     localStorage.setItem(INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY, JSON.stringify(parsed));
   } catch {
@@ -167,6 +178,7 @@ export function EvaluationForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [statusOutcome, setStatusOutcome] = useState<StatusTransitionResult | null>(null);
   const [activeTab, setActiveTab] = useState<'pcpt' | 'oral'>('pcpt');
   const [appointmentType, setAppointmentType] = useState<AppointmentType>('original');
   const [isInterviewerNameLocked, setIsInterviewerNameLocked] = useState(false);
@@ -463,39 +475,32 @@ export function EvaluationForm() {
         if (evalError) throw evalError;
       };
 
-      const updateApplicantStatus = async (client: any) => {
-        try {
-          await client.from('applicants').update({ status: 'Reviewed' }).eq('id', id);
-        } catch {
-          // Non-fatal: evaluation save succeeded regardless
-        }
-      };
-
       // No mock fallback: a failed save must reach the interviewer as an error.
       await submitWithClient(supabase);
 
-      await updateApplicantStatus(supabase);
+      const outcome = await transitionApplicantStatus(id as string, EVALUATED_STATUS);
+      setStatusOutcome(outcome);
 
-      saveInterviewerScoreSnapshot(id, applicant?.email, {
+      saveInterviewerScoreSnapshot(id, {
         pcptAverage: averagePcpt,
         oralAverage,
       });
 
-      // Keep recruitment fallback data in sync so InterviewerApplicantsList can show Reviewed/Evaluated.
-      try {
-        const recruitmentRows = getRecruitmentApplicants();
-        const updatedRows = recruitmentRows.map((row: any) => {
-          const idMatch = String(row?.id ?? '') === String(id ?? '');
-          const emailMatch = String(row?.personalInfo?.email ?? '').toLowerCase() === String(applicant?.email ?? '').toLowerCase();
-          if (!idMatch && !emailMatch) return row;
-          return {
-            ...row,
-            status: 'Reviewed',
-          };
-        });
-        saveRecruitmentApplicants(updatedRows);
-      } catch {
-        // Non-fatal: evaluation save already succeeded
+      // Mirror only what the server confirmed, and only onto this application:
+      // applications that share an email are separate applications.
+      if (outcome.kind === 'advanced') {
+        try {
+          const recruitmentRows = getRecruitmentApplicants();
+          const updatedRows = recruitmentRows.map((row: any) => {
+            if (String(row?.id ?? '') !== String(id ?? '')) return row;
+            const localStatus = normalizeStatus(row?.status);
+            if (!localStatus || !canTransition(localStatus, EVALUATED_STATUS)) return row;
+            return { ...row, status: EVALUATED_STATUS };
+          });
+          saveRecruitmentApplicants(updatedRows);
+        } catch {
+          // Non-fatal: evaluation save already succeeded
+        }
       }
 
       setShowSuccess(true);
@@ -1144,7 +1149,11 @@ export function EvaluationForm() {
         title="Evaluation Submitted"
       >
         <p>✅ Evaluation has been successfully submitted!</p>
-        <p>The applicant status has been updated to "Reviewed".</p>
+        {statusOutcome?.kind === 'failed' ? (
+          <p role="alert">{statusOutcomeMessage(statusOutcome)}</p>
+        ) : statusOutcome ? (
+          <p>{statusOutcomeMessage(statusOutcome)}</p>
+        ) : null}
         <Button onClick={() => { setShowSuccess(false); goBack(); }}>
           Done
         </Button>
