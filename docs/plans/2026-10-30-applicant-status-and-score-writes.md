@@ -1,7 +1,7 @@
 ---
 title: Fix applicant score and status writes, and the live-data seed test
 date: 2026-10-30
-status: Approved
+status: In Progress
 summary: Remove the unreachable RSP score path that writes a missing `applicants.total_score` column, move evaluated applicants to For Evaluation without overwriting a newer status, guard the interviewer Qualify and Disqualify writer, keep applications that share an email independent, and stop the training-attendance seed test from depending on live data.
 spec: docs/session-summaries/2026-10-30-promotional-hiring-audit-summary.md
 ---
@@ -98,6 +98,8 @@ Not in this plan. Each item keeps its own plan and needs a fresh file list from 
 - **Step 1 is a large deletion.** It's limited to code with no route to it (F2). If you want the modal back later, it needs D1-B's durable-save redesign anyway.
 - **The type change could ripple.** The effect of Step 2 hasn't been tested. If it shows more than a handful of `tsc` errors outside the readers listed in F4, stop and report before widening the change. Run the `ForHiringPage` and `ApplicantRankingPage` tests after Step 2.
 - **Follow-up, out of scope: hire status naming and remaining silent writers.** `applicantStatus.ts` and migration `20261021200000_one_reference_per_applicant.sql` treat `Selected` as the canonical hire status. Every writer still stores `Hired`: `employeesApi.ts`, `hiredApplicantSync.ts`, the local mirror in `hiringFlow.ts`, and promotional Task 4. All live hired rows are `Hired`. Readers that match the raw string `hired` (`RSPDashboard.tsx`, `ApplicationStatusPage.tsx`) would mislabel a `Selected` row as not hired. Moving to `Selected` needs one change that updates those readers first, then the writers, then backfills existing rows. It belongs in its own plan, together with the remaining silent status writers, including `ApplicantRankingPage.tsx:224`.
+- **RSP scoring still reads by email.** Found in review on 2026-11-04. `evaluationScores.ts` email keys and sibling lookups, used by `QualifiedApplicantsRSPPage` and `QualifiedApplicantsSection`, can give an application a sibling's scores, and saving writes them to `applicant_category_scores`. The Goal's shared-email line is not met until this is decided. See the [session summary](../session-summaries/2026-10-30-applicant-status-and-score-writes-summary.md).
+- **Before Done.** Besides the interviewer session, run a read-only count of rows that normalize to `Shortlisted` with an `interview_date`: they are refused on Qualify after evaluation.
 - **No live writes.** Tests mock Supabase, and the seeder is not run.
 
 ## Checks to run
