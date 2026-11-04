@@ -106,8 +106,8 @@
       </tr>
       <tr>
         <td class="date">2026-10-30</td>
-        <td><a href="2026-10-30-applicant-status-and-score-writes.md">Fix applicant score and status writes, and the live-data seed test</a><p class="summary">Remove the unreachable RSP score path that writes a missing `applicants.total_score` column, make interviewer evaluations move applicants to For Evaluation instead of the legacy Reviewed, and stop the training-attendance seed test from asserting a live employee snapshot.</p></td>
-        <td class="status"><span class="badge badge-neutral">Draft</span></td>
+        <td><a href="2026-10-30-applicant-status-and-score-writes.md">Fix applicant score and status writes, and the live-data seed test</a><p class="summary">Remove the unreachable RSP score path that writes a missing `applicants.total_score` column, move evaluated applicants to For Evaluation without overwriting a newer status, guard the interviewer Qualify and Disqualify writer, keep applications that share an email independent, and stop the training-attendance seed test from depending on live data.</p></td>
+        <td class="status"><span class="badge badge-primary">Approved</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-29</td>
