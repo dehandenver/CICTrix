@@ -1345,7 +1345,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   };
 
   return (
-    <div className="brand-text ds-remap abyan-tokens min-h-screen" style={{ background: '#F0F2FD', fontFamily: "'Poppins', sans-serif" }}>
+    <div className="brand-text ds-remap abyan-tokens min-h-screen" style={{ background: 'var(--bg-page)', fontFamily: 'var(--font-sans)' }}>
       {/* ── Top bar: the shared portal bar (§8.2), with the portal tabs as its
           navigation row ── */}
       <PortalHeader

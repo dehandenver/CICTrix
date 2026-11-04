@@ -1364,7 +1364,7 @@ export const ApplicationStatusPage = () => {
   ) : null;
 
   return (
-    <div className="ds-remap abyan-tokens min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+    <div className="abyan-tokens min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
       <div className="mx-auto w-full max-w-5xl">
         {/* Header */}
         <header className="mb-8 text-center">
