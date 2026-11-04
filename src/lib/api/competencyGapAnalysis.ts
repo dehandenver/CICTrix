@@ -1,7 +1,7 @@
 import { IPCRRatingRecord } from '../../modules/admin/pm/SummaryOfRatings';
 import { supabase } from '../supabase';
 import { listDepartments } from './departments';
-import { PROFICIENCY_NUMERIC, type ProficiencyLevel } from './pmCompetency';
+import { PROFICIENCY_NUMERIC, readAllRequirementRows, type ProficiencyLevel } from './pmCompetency';
 
 // Raw row shape mirroring the view
 export interface GapAnalysisRow {
@@ -39,9 +39,7 @@ export async function getGapAnalysisRows(): Promise<GapAnalysisRow[]> {
 // of truth for which competencies apply to a position and at what required
 // level. We read it live so future PM edits flow straight into the gap analysis.
 async function getRequiredLevelMap(): Promise<Map<string, ProficiencyLevel>> {
-  const { data, error } = await supabase
-    .from('position_competency_requirements')
-    .select('position_title, competency_id, proficiency_level');
+  const { data, error } = await readAllRequirementRows('position_title, competency_id, proficiency_level');
 
   if (error) {
     console.error('Error fetching position_competency_requirements:', error);

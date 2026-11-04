@@ -66,8 +66,7 @@ const PositionSearchInput = ({
     const q = query.trim().toLowerCase();
     // An empty query lists everything, so the field is browsable as well as
     // searchable — it replaces a dropdown, after all.
-    const list = q ? positions.filter((p) => p.toLowerCase().includes(q)) : positions;
-    return list.slice(0, 50);
+    return q ? positions.filter((p) => p.toLowerCase().includes(q)) : positions;
   }, [positions, query]);
 
   useEffect(() => {

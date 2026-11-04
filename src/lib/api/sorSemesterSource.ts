@@ -13,7 +13,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
-import { listCompetencyStandards, PROFICIENCY_NUMERIC, type ProficiencyLevel } from './pmCompetency';
+import { listCompetencyStandards, PROFICIENCY_NUMERIC, readAllRequirementRows, type ProficiencyLevel } from './pmCompetency';
 
 const supabase = supabaseClient as any;
 
@@ -84,9 +84,7 @@ async function buildRequiredMap(): Promise<{
   streamByName: Map<string, string>;
 }> {
   const [reqRes, stdRes] = await Promise.all([
-    supabase
-      .from('position_competency_requirements')
-      .select('position_title, competency_id, proficiency_level'),
+    readAllRequirementRows('position_title, competency_id, proficiency_level'),
     listCompetencyStandards(),
   ]);
 
