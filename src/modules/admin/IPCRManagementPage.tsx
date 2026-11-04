@@ -68,7 +68,7 @@ export const IPCRManagementPage = () => {
   const current = SUBTABS.find((s) => s.key === active) ?? SUBTABS[0];
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
+    <div className="ds-remap abyan-tokens min-h-screen bg-[var(--bg-page)]">
       <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
       <div className="admin-layout">
         <Sidebar activeModule="Super" userRole="super-admin" />
@@ -93,9 +93,9 @@ export const IPCRManagementPage = () => {
                   padding: '8px 16px',
                   borderRadius: '999px',
                   border: '1px solid',
-                  borderColor: active === s.key ? '#363EE8' : '#d1d5db',
+                  borderColor: active === s.key ? '#363EE8' : 'var(--neutral-200)',
                   background: active === s.key ? '#363EE8' : '#fff',
-                  color: active === s.key ? '#fff' : '#374151',
+                  color: active === s.key ? '#fff' : 'var(--neutral-800)',
                   fontWeight: 600,
                   fontSize: '13px',
                   cursor: 'pointer',
@@ -115,9 +115,9 @@ export const IPCRManagementPage = () => {
           ) : active === 'history' ? (
             <PerformanceHistory />
           ) : (
-            <div style={{ background: '#fff', border: '1px dashed #d1d5db', borderRadius: '12px', padding: '40px', textAlign: 'center' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937', marginBottom: '8px' }}>{current.label}</h3>
-              <p style={{ color: '#6b7280', maxWidth: '640px', margin: '0 auto', lineHeight: 1.5 }}>{current.blurb}</p>
+            <div style={{ background: '#fff', border: '1px dashed var(--neutral-200)', borderRadius: '12px', padding: '40px', textAlign: 'center' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--neutral-800)', marginBottom: '8px' }}>{current.label}</h3>
+              <p style={{ color: 'var(--neutral-600)', maxWidth: '640px', margin: '0 auto', lineHeight: 1.5 }}>{current.blurb}</p>
             </div>
           )}
         </main>
@@ -242,7 +242,7 @@ const NewEntrantOnboarding = () => {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
         <div style={{ position: 'relative', flex: 1, maxWidth: '420px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-400)' }} />
           <input
             type="text"
             value={search}
@@ -261,7 +261,7 @@ const NewEntrantOnboarding = () => {
         <div style={ui.cardHeader}>
           <UserPlus size={18} />
           New Entrants
-          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>
             {entrantsLoad.initialLoading ? '' : `${filtered.length}`}
           </span>
         </div>
@@ -291,7 +291,7 @@ const NewEntrantOnboarding = () => {
                 {filtered.map((e) => (
                   <tr key={e.id}>
                     <td style={ui.td}>
-                      <span style={{ fontWeight: 600, color: '#1f2937' }}>{e.employee_name || '—'}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--neutral-800)' }}>{e.employee_name || '—'}</span>
                     </td>
                     <td style={ui.td}>{e.office_name || '—'}</td>
                     <td style={ui.td}>{fmtDate(e.start_date)}</td>
@@ -317,7 +317,7 @@ const NewEntrantOnboarding = () => {
                       <button
                         type="button"
                         onClick={() => remove(e.id)}
-                        style={{ ...ui.secondaryBtn, padding: '6px 10px', color: '#b91c1c', borderColor: '#fca5a5' }}
+                        style={{ ...ui.secondaryBtn, padding: '6px 10px', color: 'var(--error-700)', borderColor: '#fca5a5' }}
                         title="Remove"
                       >
                         <Trash2 size={14} />
@@ -354,8 +354,8 @@ const Metric = ({ icon, label, value }: { icon: React.ReactNode; label: string; 
       {icon}
     </div>
     <div>
-      <div style={{ fontSize: '20px', fontWeight: 700, color: '#1f2937' }}>{value}</div>
-      <div style={{ fontSize: '12px', color: '#6b7280' }}>{label}</div>
+      <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--neutral-800)' }}>{value}</div>
+      <div style={{ fontSize: '12px', color: 'var(--neutral-600)' }}>{label}</div>
     </div>
   </div>
 );
@@ -452,7 +452,7 @@ const EntrantModal = ({
           </Field>
         </div>
 
-        <div style={{ fontSize: '13px', fontWeight: 700, color: '#374151', margin: '6px 0 8px' }}>Job Orientation Log</div>
+        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--neutral-800)', margin: '6px 0 8px' }}>Job Orientation Log</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <Field label="Scheduled orientation date">
             <input type="date" value={form.orientationDate ?? ''} onChange={(e) => set('orientationDate', e.target.value || null)} style={ui.input} />
@@ -643,8 +643,8 @@ const SubmissionPhasePanel = ({
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '0 0 16px', flexWrap: 'wrap' }}>
-        <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>
-          Period: <strong style={{ color: '#374151' }}>{period || '—'}</strong>
+        <p style={{ fontSize: '13px', color: 'var(--neutral-600)', margin: 0 }}>
+          Period: <strong style={{ color: 'var(--neutral-800)' }}>{period || '—'}</strong>
         </p>
         <span
           style={{
@@ -653,7 +653,7 @@ const SubmissionPhasePanel = ({
             fontSize: '11px',
             fontWeight: 700,
             background: systemPhaseState === 'Open' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-            color: systemPhaseState === 'Open' ? '#10b981' : '#ef4444',
+            color: systemPhaseState === 'Open' ? '#10b981' : 'var(--error-700)',
             border: `1px solid ${systemPhaseState === 'Open' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
           }}
         >
@@ -672,7 +672,7 @@ const SubmissionPhasePanel = ({
           <button
             type="button"
             onClick={() => setShowConfirmClose(true)}
-            style={{ ...ui.secondaryBtn, padding: '5px 12px', fontSize: '12px', borderColor: '#ef4444', color: '#ef4444' }}
+            style={{ ...ui.secondaryBtn, padding: '5px 12px', fontSize: '12px', borderColor: 'var(--error-500)', color: 'var(--error-700)' }}
           >
             Close Phase {phase === 'target' ? '1' : '2'}
           </button>
@@ -683,7 +683,7 @@ const SubmissionPhasePanel = ({
         <Dialog open onClose={() => setShowConfirmOpen(false)} title={`Open Phase ${phase === 'target' ? '1' : '2'}`}>
           <div style={{ color: 'var(--text-primary)', fontSize: '14px' }}>
             <p>Are you sure you want to open Phase {phase === 'target' ? '1 (Target Setting)' : '2 (Accomplishment Rating)'} system-wide?</p>
-            <p style={{ color: '#6b7280', fontSize: '12px', marginTop: '8px' }}>
+            <p style={{ color: 'var(--neutral-600)', fontSize: '12px', marginTop: '8px' }}>
               This will notify all Office Accounts and allow employees to prepare/submit their {phase === 'target' ? 'targets' : 'self-ratings'}.
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
@@ -720,7 +720,7 @@ const SubmissionPhasePanel = ({
         <Dialog open onClose={() => setShowConfirmClose(false)} title={`Close Phase ${phase === 'target' ? '1' : '2'}`}>
           <div style={{ color: 'var(--text-primary)', fontSize: '14px' }}>
             <p>Are you sure you want to close Phase {phase === 'target' ? '1 (Target Setting)' : '2 (Accomplishment Rating)'} system-wide?</p>
-            <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '8px', fontWeight: 600 }}>
+            <p style={{ color: 'var(--error-700)', fontSize: '12px', marginTop: '8px', fontWeight: 600 }}>
               This will lock the submission window for all regular employees.
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
@@ -744,7 +744,7 @@ const SubmissionPhasePanel = ({
                   else flash(`✓ Phase ${phase === 'target' ? '1' : '2'} closed successfully.`);
                 }}
                 disabled={actionBusy}
-                style={{ ...ui.primaryBtn, background: '#ef4444', borderColor: '#ef4444' }}
+                style={{ ...ui.primaryBtn, background: 'var(--error-500)', borderColor: 'var(--error-500)' }}
               >
                 {actionBusy ? 'Closing…' : 'Confirm Close'}
               </button>
@@ -773,11 +773,11 @@ const SubmissionPhasePanel = ({
               <li key={n.id} style={{ display: 'flex', gap: '12px', padding: '10px 20px', borderTop: '1px solid #f5f5f5' }}>
                 <Bell size={15} style={{ color: '#363EE8', marginTop: '2px' }} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '13px', color: '#374151' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--neutral-800)' }}>
                     <strong>{meta.notif}</strong> → {n.office_name || 'All offices'} · {n.employee_count} employee(s)
                     {n.message ? ` — “${n.message}”` : ''}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--neutral-400)', marginTop: '2px' }}>
                     {n.triggered_by || 'PM'} · {new Date(n.created_at).toLocaleString()}
                   </div>
                 </div>
@@ -848,7 +848,7 @@ const SubmissionPhasePanel = ({
                     <Fragment key={r.employeeId}>
                       <tr>
                         <td style={ui.td}>
-                          <span style={{ fontWeight: 600, color: '#1f2937' }}>{r.employeeName}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--neutral-800)' }}>{r.employeeName}</span>
                         </td>
                         <td style={ui.td}>{r.officeName || '—'}</td>
                         <td style={ui.td}>
@@ -885,7 +885,7 @@ const SubmissionPhasePanel = ({
                                 />
                               </button>
                             ) : (
-                              <span style={{ fontSize: '14px', color: '#b45309' }}>Not in Vault</span>
+                              <span style={{ fontSize: '14px', color: 'var(--warning-700)' }}>Not in Vault</span>
                             )}
                           </td>
                         )}
@@ -898,11 +898,11 @@ const SubmissionPhasePanel = ({
                                 Locked targets (read-only, from Vault) — the employee rates accomplishments against each of these.
                               </div>
                               {locked.length === 0 ? (
-                                <div style={{ fontSize: '14px', color: '#6b7280' }}>No target rows in this set.</div>
+                                <div style={{ fontSize: '14px', color: 'var(--neutral-600)' }}>No target rows in this set.</div>
                               ) : (
                                 <ol style={{ margin: 0, paddingLeft: '18px' }}>
                                   {locked.map((t, i) => (
-                                    <li key={i} style={{ fontSize: '14px', color: '#374151', marginBottom: '4px' }}>
+                                    <li key={i} style={{ fontSize: '14px', color: 'var(--neutral-800)', marginBottom: '4px' }}>
                                       {t.function_type ? <strong>[{t.function_type}] </strong> : null}
                                       {t.target_text || JSON.stringify(t)}
                                     </li>
@@ -922,7 +922,7 @@ const SubmissionPhasePanel = ({
         )}
       </div>
 
-      <p style={{ marginTop: '12px', fontSize: '12px', color: '#9ca3af' }}>{meta.forwardNote}</p>
+      <p style={{ marginTop: '12px', fontSize: '12px', color: 'var(--neutral-400)' }}>{meta.forwardNote}</p>
 
       {showNotify && (
         <NotifyModal
@@ -950,9 +950,9 @@ const scoreTone = (adj: string | null): { bg: string; fg: string } => {
     case 'Very Satisfactory':
       return { bg: 'rgba(54,62,232,0.1)', fg: '#363EE8' };
     case 'Satisfactory':
-      return { bg: 'rgba(245,158,11,0.15)', fg: '#b45309' };
+      return { bg: 'rgba(245,158,11,0.15)', fg: 'var(--warning-700)' };
     default:
-      return { bg: 'rgba(220,38,38,0.12)', fg: '#b91c1c' };
+      return { bg: 'rgba(220,38,38,0.12)', fg: 'var(--error-700)' };
   }
 };
 
@@ -1039,18 +1039,18 @@ const PerformanceHistory = () => {
           <div style={{ ...ui.card, padding: '16px 20px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '20px' }}>
               <div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: '#1f2937' }}>{history.cyclesCompleted}</div>
-                <div style={{ fontSize: '12px', color: '#6b7280' }}>cycles completed</div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--neutral-800)' }}>{history.cyclesCompleted}</div>
+                <div style={{ fontSize: '12px', color: 'var(--neutral-600)' }}>cycles completed</div>
               </div>
               <div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: '#1f2937' }}>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--neutral-800)' }}>
                   {history.avgScore != null ? history.avgScore.toFixed(2) : '—'}
                 </div>
-                <div style={{ fontSize: '12px', color: '#6b7280' }}>avg rating</div>
+                <div style={{ fontSize: '12px', color: 'var(--neutral-600)' }}>avg rating</div>
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginLeft: 'auto' }}>
                 {history.trends.length === 0 ? (
-                  <span style={{ fontSize: '13px', color: '#9ca3af' }}>Not enough cycles for trend analysis</span>
+                  <span style={{ fontSize: '13px', color: 'var(--neutral-400)' }}>Not enough cycles for trend analysis</span>
                 ) : (
                   history.trends.map((t) => (
                     <span
@@ -1088,7 +1088,7 @@ const PerformanceHistory = () => {
                       {c.finalScore?.toFixed(2)} · {c.adjectival}
                     </span>
                   )}
-                  <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }}>
+                  <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--neutral-400)' }}>
                     {c.status ?? '—'}
                     {c.approvedAt ? ` · ${new Date(c.approvedAt).toLocaleDateString()}` : ''}
                   </span>
@@ -1108,10 +1108,10 @@ const PerformanceHistory = () => {
                         {c.rows.map((r, j) => (
                           <tr key={j}>
                             <td style={{ ...ui.td, width: '50%' }}>
-                              {r.functionType ? <strong style={{ color: '#6b7280' }}>[{r.functionType}] </strong> : null}
+                              {r.functionType ? <strong style={{ color: 'var(--neutral-600)' }}>[{r.functionType}] </strong> : null}
                               {r.target || '—'}
                             </td>
-                            <td style={{ ...ui.td, width: '50%', color: r.accomplishment ? '#374151' : '#b45309' }}>
+                            <td style={{ ...ui.td, width: '50%', color: r.accomplishment ? 'var(--neutral-800)' : 'var(--warning-700)' }}>
                               {r.accomplishment || 'No accomplishment recorded'}
                             </td>
                           </tr>
@@ -1123,7 +1123,7 @@ const PerformanceHistory = () => {
               </div>
             );
           })}
-          <p style={{ marginTop: '4px', fontSize: '12px', color: '#9ca3af' }}>
+          <p style={{ marginTop: '4px', fontSize: '12px', color: 'var(--neutral-400)' }}>
             Read-only. Feeds promotional application review (Module 4) and performance pattern analysis.
           </p>
         </>
@@ -1176,7 +1176,7 @@ const NotifyModal = ({
   return (
     <Dialog open onClose={onClose} title={`Send “${meta.notif}”`}>
       <div style={{ color: 'var(--text-primary)' }}>
-        <p style={{ fontSize: '13px', color: '#6b7280', marginTop: 0 }}>
+        <p style={{ fontSize: '13px', color: 'var(--neutral-600)', marginTop: 0 }}>
           Logs that PM triggered the {meta.noun}-phase notification to the selected Office Account(s) for {period || 'this cycle'}.
         </p>
         <Field label="Office">
@@ -1192,7 +1192,7 @@ const NotifyModal = ({
         <Field label="Message (optional)">
           <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={2} style={{ ...ui.input, resize: 'vertical' }} placeholder="e.g. Please submit targets by month-end." />
         </Field>
-        <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '-4px' }}>
+        <p style={{ fontSize: '12px', color: 'var(--neutral-400)', marginTop: '-4px' }}>
           {count} employee(s) will be recorded as included.
         </p>
         {err && <div style={{ ...ui.bannerErr, margin: '8px 0 12px' }}>{err}</div>}
