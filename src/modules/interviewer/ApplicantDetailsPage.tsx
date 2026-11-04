@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleX,
-  Eye,
   FileText,
   Loader2,
   Lock,
@@ -14,7 +13,6 @@ import {
   Send,
   Star,
   User,
-  Users,
   X
 } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
@@ -138,70 +136,11 @@ type ApplicantRouteState = {
 };
 
 type AppointmentType = 'original' | 'promotional';
-type EducationAttainmentValue =
-  | ''
-  | 'elementary_level'
-  | 'elementary_graduate'
-  | 'high_school_level'
-  | 'high_school_graduate'
-  | 'college_level'
-  | 'college_graduate'
-  | 'masteral_units'
-  | 'graduate_school';
 
 type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview';
 
-type ScoreBreakdown = {
-  total: number;
-  education: number;
-  experience: number;
-  performance: number;
-  written: number;
-  pcpt: number;
-  rawPcpt: number;
-  oral: number;
-  adjective: string;
-};
-
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
 const SCORE_SETUP_STORAGE_KEY = 'cictrix_rsp_score_setup';
-const SCORE_EDUCATION_STORAGE_KEY = 'cictrix_rsp_score_education';
-const SCORE_EXPERIENCE_STORAGE_KEY = 'cictrix_rsp_score_experience';
-const SCORE_WRITTEN_STORAGE_KEY = 'cictrix_rsp_score_written';
-const SCORE_FINALIZED_STORAGE_KEY = 'cictrix_rsp_score_finalized';
-const SCORE_DRAFT_STORAGE_KEY = 'cictrix_rsp_score_draft';
-const INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY = 'cictrix_interviewer_score_snapshot';
-
-type StoredInterviewerScoreSnapshot = {
-  pcptAverage?: number;
-  oralAverage?: number;
-  updatedAt?: string;
-};
-
-const EDUCATION_ATTAINMENT_OPTIONS: Array<{
-  value: EducationAttainmentValue;
-  label: string;
-  points: number;
-}> = [
-    { value: '', label: 'Select Educational Attainment', points: 0 },
-    { value: 'elementary_level', label: 'Elementary Level (10 pts)', points: 10 },
-    { value: 'elementary_graduate', label: 'Elementary Graduate (11 pts)', points: 11 },
-    { value: 'high_school_level', label: 'High School Level (12 pts)', points: 12 },
-    { value: 'high_school_graduate', label: 'High School Graduate (13 pts)', points: 13 },
-    { value: 'college_level', label: 'College Level (14 pts)', points: 14 },
-    { value: 'college_graduate', label: 'College Graduate (16 pts)', points: 16 },
-    { value: 'masteral_units', label: 'Masteral Units (18 pts)', points: 18 },
-    { value: 'graduate_school', label: 'Graduate School (20 pts)', points: 20 },
-  ];
-
-const experienceYearsToPoints = (years: number): number => {
-  if (years <= 0) return 0;
-  if (years <= 5) return 12;
-  if (years <= 10) return 14;
-  if (years <= 15) return 16;
-  if (years <= 20) return 18;
-  return 20;
-};
 
 const formatDate = (value?: string) => {
   if (!value) return '--';
@@ -268,28 +207,6 @@ const statusBadge = (status?: string) => {
     return { label: 'Shortlisted', className: 'bg-blue-100 text-blue-700 border-blue-300' };
   }
   return { label: 'Under Review', className: 'bg-amber-100 text-amber-700 border-amber-300' };
-};
-
-const adjectiveFromScore = (score: number) => {
-  if (score >= 90) return 'Excellent';
-  if (score >= 77) return 'Very Good';
-  if (score >= 64) return 'Good';
-  if (score >= 51) return 'Average';
-  return 'Below Average';
-};
-
-const clamp20 = (value: number) => Math.max(0, Math.min(20, Math.round(value)));
-
-const to20FromFivePoint = (value?: number) => {
-  if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) return 0;
-  return clamp20((value / 5) * 20);
-};
-
-const to20FromPcpt = (value?: number) => {
-  if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) return 0;
-  // Support both legacy average scale (1-5) and current raw sum scale (6-30).
-  if (value <= 5) return clamp20((value / 5) * 20);
-  return clamp20((value / 30) * 20);
 };
 
 const parseScore = (value: unknown): number => {
@@ -360,101 +277,6 @@ const selectBestEvaluation = (rows: EvaluationRecord[] | null | undefined): Eval
   });
 
   return sorted[0] ?? null;
-};
-
-const computeScoreBreakdown = (
-  evaluation: EvaluationRecord | null,
-  fallback?: StoredInterviewerScoreSnapshot | null,
-): ScoreBreakdown => {
-  if (!evaluation && !fallback) {
-    return {
-      total: 0,
-      education: 0,
-      experience: 0,
-      performance: 0,
-      written: 0,
-      pcpt: 0,
-      rawPcpt: 0,
-      oral: 0,
-      adjective: 'Below Average',
-    };
-  }
-
-  const fallbackOralAverage =
-    typeof fallback?.oralAverage === 'number' && fallback.oralAverage > 0
-      ? fallback.oralAverage
-      : 0;
-  const fallbackPcptAverage =
-    typeof fallback?.pcptAverage === 'number' && fallback.pcptAverage > 0
-      ? fallback.pcptAverage
-      : 0;
-
-  if (!evaluation) {
-    const oralFromFallback = to20FromFivePoint(fallbackOralAverage);
-    const rawPcptFromFallback = fallbackPcptAverage || fallbackOralAverage;
-    const pcptFromFallback = to20FromPcpt(rawPcptFromFallback);
-    const totalFromFallback = Math.max(0, Math.min(100, oralFromFallback + pcptFromFallback));
-
-    return {
-      total: totalFromFallback,
-      education: 0,
-      experience: 0,
-      performance: 0,
-      written: 0,
-      pcpt: pcptFromFallback,
-      rawPcpt: rawPcptFromFallback,
-      oral: oralFromFallback,
-      adjective: adjectiveFromScore(totalFromFallback),
-    };
-  }
-
-  const technicalScore = parseScore(evaluation.technical_score);
-  const overallScore = parseScore(evaluation.overall_score) || parseScore(evaluation.score);
-  const communicationSkillsScore = parseScore(evaluation.communication_skills_score) || parseScore(evaluation.communication_score);
-  const confidenceScore = parseScore(evaluation.confidence_score);
-  const comprehensionScore = parseScore(evaluation.comprehension_score);
-  const personalityScore = parseScore(evaluation.personality_score);
-  const jobKnowledgeScore = parseScore(evaluation.job_knowledge_score);
-  const overallImpressionScore = parseScore(evaluation.overall_impression_score);
-
-  const education = clamp20((technicalScore > 0 ? technicalScore : 0) / 1.5);
-  const experience = to20FromFivePoint(jobKnowledgeScore);
-  const performance = to20FromFivePoint(overallImpressionScore);
-  const written = clamp20((technicalScore > 0 ? technicalScore : 0) / 1.5);
-
-  const oralRaw = [
-    communicationSkillsScore,
-    confidenceScore,
-    comprehensionScore,
-  ].filter((v) => v > 0) as number[];
-  const oralAverage = oralRaw.length > 0 ? oralRaw.reduce((sum, v) => sum + v, 0) / oralRaw.length : fallbackOralAverage;
-  const oral = to20FromFivePoint(oralAverage);
-
-  const pcptSource =
-    (personalityScore > 0 ? personalityScore : undefined) ??
-    (overallImpressionScore > 0 ? overallImpressionScore : undefined) ??
-    (fallbackPcptAverage > 0 ? fallbackPcptAverage : undefined) ??
-    (oralAverage > 0 ? oralAverage : 0);
-  const pcpt = to20FromPcpt(pcptSource);
-
-  let total = 0;
-  if (overallScore > 0) {
-    total = Math.max(0, Math.min(100, Math.round(overallScore)));
-  } else {
-    total = Math.max(0, Math.min(100, education + experience + performance + written + pcpt));
-  }
-
-  return {
-    total,
-    education,
-    experience,
-    performance,
-    written,
-    pcpt,
-    rawPcpt: pcptSource,
-    oral,
-    adjective: adjectiveFromScore(total),
-  };
 };
 
 /** An attachment for the in-site viewer, which signs, fetches and decrypts it without a new tab. */
@@ -571,16 +393,6 @@ const buildFallbackEvaluation = (applicant: Applicant | null): EvaluationRecord 
   };
 };
 
-const getStoredAppointmentType = (applicantId: string): AppointmentType => {
-  try {
-    const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
-    return parsed[applicantId] === 'promotional' ? 'promotional' : 'original';
-  } catch {
-    return 'original';
-  }
-};
-
 const saveStoredAppointmentType = (applicantId: string, appointmentType: AppointmentType) => {
   try {
     const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
@@ -592,60 +404,6 @@ const saveStoredAppointmentType = (applicantId: string, appointmentType: Appoint
   }
 };
 
-const getStoredEducationAttainment = (applicantId: string): EducationAttainmentValue => {
-  try {
-    const raw = localStorage.getItem(SCORE_EDUCATION_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, EducationAttainmentValue>) : {};
-    return parsed[applicantId] ?? '';
-  } catch {
-    return '';
-  }
-};
-
-const saveStoredEducationAttainment = (applicantId: string, educationAttainment: EducationAttainmentValue) => {
-  try {
-    const raw = localStorage.getItem(SCORE_EDUCATION_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, EducationAttainmentValue>) : {};
-    parsed[applicantId] = educationAttainment;
-    localStorage.setItem(SCORE_EDUCATION_STORAGE_KEY, JSON.stringify(parsed));
-  } catch {
-    // Best effort persistence only.
-  }
-};
-
-const formValueToEducationAttainmentValue = (formValue: string): EducationAttainmentValue => {
-  const map: Record<string, EducationAttainmentValue> = {
-    'Elementary Level': 'elementary_level',
-    'Elementary Graduate': 'elementary_graduate',
-    'High School Level': 'high_school_level',
-    'High School Graduate': 'high_school_graduate',
-    'College Level': 'college_level',
-    'College Graduate': 'college_graduate',
-    'Masteral Units': 'masteral_units',
-    'Graduate School': 'graduate_school',
-  };
-  return map[formValue] ?? '';
-};
-
-const getStoredExperienceYears = (applicantId: string): string => {
-  try {
-    const raw = localStorage.getItem(SCORE_EXPERIENCE_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    return parsed[applicantId] ?? '';
-  } catch {
-    return '';
-  }
-};
-
-const saveStoredExperienceYears = (applicantId: string, years: string) => {
-  try {
-    const raw = localStorage.getItem(SCORE_EXPERIENCE_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    parsed[applicantId] = years;
-    localStorage.setItem(SCORE_EXPERIENCE_STORAGE_KEY, JSON.stringify(parsed));
-  } catch { /* localStorage unavailable (private mode or quota); persisting here is best-effort. */ }
-};
-
 // The database row comes first; the local recruitment store fills gaps.
 const isPromotionalSource = (
   recruitmentApplicant?: Applicant | null,
@@ -655,95 +413,6 @@ const isPromotionalSource = (
     application_type: applicantRow?.application_type || recruitmentApplicant?.applicationType,
     employee_id: applicantRow?.employee_id || recruitmentApplicant?.internalApplication?.employeeId,
   }) === 'Promotional';
-
-const getStoredWrittenScore = (applicantId: string): string => {
-  try {
-    const raw = localStorage.getItem(SCORE_WRITTEN_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    return parsed[applicantId] ?? '';
-  } catch {
-    return '';
-  }
-};
-
-const saveStoredWrittenScore = (applicantId: string, written: string) => {
-  try {
-    const raw = localStorage.getItem(SCORE_WRITTEN_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    parsed[applicantId] = written;
-    localStorage.setItem(SCORE_WRITTEN_STORAGE_KEY, JSON.stringify(parsed));
-  } catch { /* localStorage unavailable (private mode or quota); persisting here is best-effort. */ }
-};
-
-const getStoredFinalizedState = (applicantId: string): boolean => {
-  try {
-    const raw = localStorage.getItem(SCORE_FINALIZED_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-    return Boolean(parsed[applicantId]);
-  } catch {
-    return false;
-  }
-};
-
-const saveStoredFinalizedState = (applicantId: string, finalized: boolean) => {
-  try {
-    const raw = localStorage.getItem(SCORE_FINALIZED_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-    parsed[applicantId] = finalized;
-    localStorage.setItem(SCORE_FINALIZED_STORAGE_KEY, JSON.stringify(parsed));
-  } catch {
-    // Best effort persistence only.
-  }
-};
-
-const getStoredDraftState = (applicantId: string): boolean => {
-  try {
-    const raw = localStorage.getItem(SCORE_DRAFT_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-    return Boolean(parsed[applicantId]);
-  } catch {
-    return false;
-  }
-};
-
-const saveStoredDraftState = (applicantId: string, isDraft: boolean) => {
-  try {
-    const raw = localStorage.getItem(SCORE_DRAFT_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-    parsed[applicantId] = isDraft;
-    localStorage.setItem(SCORE_DRAFT_STORAGE_KEY, JSON.stringify(parsed));
-  } catch {
-    // Best effort persistence only.
-  }
-};
-
-const getStoredInterviewerScoreSnapshot = (
-  applicantId?: string,
-  applicantEmail?: string,
-): StoredInterviewerScoreSnapshot | null => {
-  try {
-    const raw = localStorage.getItem(INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, StoredInterviewerScoreSnapshot>) : {};
-
-    const byId = applicantId ? parsed[`id:${String(applicantId).trim()}`] : undefined;
-    const normalizedEmail = String(applicantEmail ?? '').trim().toLowerCase();
-    const byEmail = normalizedEmail ? parsed[`email:${normalizedEmail}`] : undefined;
-
-    const validValue = (value?: number) =>
-      typeof value === 'number' && Number.isFinite(value) && value > 0 ? Number(value) : undefined;
-
-    const merged: StoredInterviewerScoreSnapshot = {
-      pcptAverage: validValue(byId?.pcptAverage) ?? validValue(byEmail?.pcptAverage),
-      oralAverage: validValue(byId?.oralAverage) ?? validValue(byEmail?.oralAverage),
-      updatedAt: byId?.updatedAt ?? byEmail?.updatedAt,
-    };
-
-    if (!merged.pcptAverage && !merged.oralAverage) return null;
-    return merged;
-  } catch {
-    return null;
-  }
-};
 
 const DOCUMENT_SLOTS = [
   { type: 'application_letter', label: 'Application Letter', required: true },
@@ -788,17 +457,8 @@ function ApplicantDetailsPageView() {
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
-  const [showScoresModal, setShowScoresModal] = useState(false);
   const [notes, setNotes] = useState('');
   const [showNoteEditor, setShowNoteEditor] = useState(false);
-  const [appointmentType, setAppointmentType] = useState<AppointmentType>('original');
-  const [educationAttainment, setEducationAttainment] = useState<EducationAttainmentValue>('');
-  const [experienceYears, setExperienceYears] = useState('');
-  const [writtenScore, setWrittenScore] = useState('');
-  const [potentialScore, setPotentialScore] = useState('');
-  const [positionType, setPositionType] = useState<'rank-file' | 'executive'>('rank-file');
-  const [isScoreFinalized, setIsScoreFinalized] = useState(false);
-  const [isScoreDraft, setIsScoreDraft] = useState(false);
 
   const [showSendEmailModal, setShowSendEmailModal] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
@@ -824,7 +484,7 @@ function ApplicantDetailsPageView() {
   const [showEditDetails, setShowEditDetails] = useState(false);
   const [recruitmentApplicant, setRecruitmentApplicant] = useState<Applicant | null>(routeState?.applicant ?? null);
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
-  const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
+  const [, setEvaluation] = useState<EvaluationRecord | null>(null);
   const { success: notifySuccess, error: notifyError } = useFeedback();
   const [navQueue, setNavQueue] = useState<ReviewQueueEntry[] | null>(routeState?.navQueue ?? null);
   const [reviewComplete, setReviewComplete] = useState(false);
@@ -933,12 +593,6 @@ function ApplicantDetailsPageView() {
 
       setRecruitmentApplicant(storedRecruitmentApplicant);
       setNotes(storedRecruitmentApplicant?.notes?.[0]?.content ?? '');
-      setAppointmentType(getStoredAppointmentType(id));
-      setEducationAttainment(getStoredEducationAttainment(id));
-      setExperienceYears(getStoredExperienceYears(id));
-      setWrittenScore(getStoredWrittenScore(id));
-      setIsScoreFinalized(getStoredFinalizedState(id));
-      setIsScoreDraft(getStoredDraftState(id));
       // Do not seed from localStorage: docsValidatedDurable derives the real
       // answer from the doc_validated rows once attachments load.
       setDocsValidated(false);
@@ -1146,38 +800,6 @@ function ApplicantDetailsPageView() {
     load();
   }, [id, routeApplicantId]);
 
-  // Pre-fill the Experience scoring input with what the applicant submitted in
-  // the application portal (work_experience_years). RSP can still overwrite it
-  // — we only fill when no stored RSP value exists yet.
-  useEffect(() => {
-    if (!id || experienceYears.trim()) return;
-    const submitted =
-      (applicant as any)?.years_of_experience ??
-      (applicant as any)?.work_experience_years ??
-      (recruitmentApplicant as any)?.workExperienceYears;
-    if (submitted == null || submitted === '') return;
-    const numeric = Number(submitted);
-    if (!Number.isFinite(numeric) || numeric <= 0) return;
-    const rounded = Math.round(numeric * 100) / 100;
-    setExperienceYears(String(rounded));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicant, recruitmentApplicant, id]);
-
-  // Pre-fill Education scoring from the applicant's form selection. Only fills
-  // when the RSP has not yet manually scored this field.
-  useEffect(() => {
-    if (!id || educationAttainment) return;
-    const stored = getStoredEducationAttainment(id);
-    if (stored) return;
-    const rawEd =
-      String((applicant as any)?.education_attainment ?? '').trim() ||
-      String((applicant as any)?.education_level ?? '').trim() ||
-      String(recruitmentApplicant?.educationAttainment ?? '').trim();
-    const mapped = formValueToEducationAttainmentValue(rawEd);
-    if (mapped) setEducationAttainment(mapped);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicant, recruitmentApplicant, id]);
-
   // Real-time subscription: refresh attachments when the applicant re-uploads a doc.
   useEffect(() => {
     if (!id) return;
@@ -1221,18 +843,8 @@ function ApplicantDetailsPageView() {
   const fullName = useMemo(() => (applicant ? getFullName(applicant) : ''), [applicant]);
   const resolvedStatus = recruitmentApplicant?.status || applicant?.status;
   const badge = statusBadge(resolvedStatus);
-  const interviewerScoreSnapshot = useMemo(
-    () => getStoredInterviewerScoreSnapshot(id, applicant?.email),
-    [applicant?.email, id]
-  );
-  const score = useMemo(() => computeScoreBreakdown(evaluation, interviewerScoreSnapshot), [evaluation, interviewerScoreSnapshot]);
-  const hasSavedEvaluation = Boolean(
-    hasInterviewScores(evaluation) || interviewerScoreSnapshot?.pcptAverage || interviewerScoreSnapshot?.oralAverage
-  );
   const isRspAdmin = location.pathname.startsWith('/admin/rsp/');
-  const showViewScoresButton = false;
   const showJobPostActionButtons = true;
-  const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
   const isForcedPromotionalAppointment = isPromotionalSource(recruitmentApplicant, applicant);
   // Resolved through the workflow module rather than by matching substrings.
   // 'Shortlisted' now means the applicant passed document screening, so the
@@ -1258,59 +870,13 @@ function ApplicantDetailsPageView() {
       setApplicantStatus(null);
     }
   }, [resolvedStatus]);
-  const selectedEducationOption = EDUCATION_ATTAINMENT_OPTIONS.find((option) => option.value === educationAttainment);
-  const modalEducationScore = selectedEducationOption?.points ?? (isScoreFinalized ? score.education : 0);
-  const isPromotionalAppointment = appointmentType === 'promotional';
-  const thirdScoreValue = isPromotionalAppointment ? score.performance : score.written;
-  const fourthScoreValue = score.oral;
-  const experienceYearsNum = parseInt(experienceYears, 10);
-  const modalExperienceScore = experienceYears !== '' && !Number.isNaN(experienceYearsNum)
-    ? experienceYearsToPoints(experienceYearsNum)
-    : (isScoreFinalized ? score.experience : 0);
-  const writtenScoreNum = parseInt(writtenScore, 10);
-  const modalWrittenScore = writtenScore !== '' && !Number.isNaN(writtenScoreNum)
-    ? Math.max(0, Math.min(30, writtenScoreNum))
-    : (isScoreFinalized ? thirdScoreValue : 0);
-  const potentialRawNum = parseInt(potentialScore, 10);
-  const potentialToPoints = (raw: number) => {
-    if (Number.isNaN(raw) || raw < 51) return 0;
-    if (raw <= 60) return 12;
-    if (raw <= 70) return 14;
-    if (raw <= 80) return 16;
-    if (raw <= 90) return 18;
-    return 20;
-  };
-  const modalPotentialScore = potentialScore !== '' && !Number.isNaN(potentialRawNum)
-    ? potentialToPoints(potentialRawNum)
-    : (isScoreFinalized ? fourthScoreValue : 0);
-  const lastOriginalAppointmentScore = score.total > 0 ? score.total : 82;
-  const modalTotalScore = Math.max(0, Math.min(100,
-    score.total
-    - score.education + modalEducationScore
-    - score.experience + modalExperienceScore
-    - thirdScoreValue + modalWrittenScore
-    - fourthScoreValue + modalPotentialScore
-  ));
-  const modalAdjective = adjectiveFromScore(modalTotalScore);
-  const scoringResponsibilityText = isPromotionalAppointment
-    ? {
-      rsp: 'Education, Experience, Performance Rating, Potential',
-      interviewer: 'PCPT (Physical Characteristics & Personality Traits)',
-    }
-    : {
-      rsp: 'Education, Experience, Written Examination',
-      interviewer: 'PCPT, Oral Examination',
-    };
 
   useEffect(() => {
     if (!id) return;
     if (!isForcedPromotionalAppointment) return;
 
-    if (appointmentType !== 'promotional') {
-      setAppointmentType('promotional');
-    }
     saveStoredAppointmentType(id, 'promotional');
-  }, [appointmentType, id, isForcedPromotionalAppointment]);
+  }, [id, isForcedPromotionalAppointment]);
 
   const handleSaveNotes = () => {
     if (!recruitmentApplicant || !notes.trim()) return;
@@ -1399,33 +965,6 @@ function ApplicantDetailsPageView() {
       setEmailError({ message: described.message, nextStep: described.nextStep });
     } finally {
       setEmailSending(false);
-    }
-  };
-
-  const handleUpdateStatus = (nextStatus: Applicant['status']) => {
-    if (!recruitmentApplicant) return;
-
-    const now = new Date().toISOString();
-    const nextApplicants = getApplicants().map((entry) => {
-      if (entry.id !== recruitmentApplicant.id) return entry;
-      return {
-        ...entry,
-        status: nextStatus,
-        timeline: [
-          ...entry.timeline,
-          { event: `Status updated to ${nextStatus}`, date: now, actor: 'RSP Staff' },
-        ],
-      };
-    });
-
-    saveApplicants(nextApplicants);
-
-    const updated = nextApplicants.find((entry) => entry.id === recruitmentApplicant.id) ?? recruitmentApplicant;
-    setRecruitmentApplicant(updated);
-    setApplicant((current) => (current ? { ...current, status: nextStatus } : current));
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
     }
   };
 
@@ -1932,94 +1471,6 @@ function ApplicantDetailsPageView() {
   };
 
 
-  const handleSaveScoreSetup = async () => {
-    if (!applicant?.id) return;
-
-    const normalizedStatus = String(resolvedStatus ?? '').toLowerCase();
-    const nextStatus: Applicant['status'] =
-      normalizedStatus.includes('recommend') ||
-        normalizedStatus.includes('qualified') ||
-        normalizedStatus.includes('hired')
-        ? 'Qualified'
-        : 'Shortlisted';
-
-    const effectiveAppointmentType: AppointmentType = isForcedPromotionalAppointment ? 'promotional' : appointmentType;
-    saveStoredAppointmentType(applicant.id, effectiveAppointmentType);
-    saveStoredEducationAttainment(applicant.id, educationAttainment);
-    saveStoredExperienceYears(applicant.id, experienceYears);
-    saveStoredWrittenScore(applicant.id, writtenScore);
-    saveStoredFinalizedState(applicant.id, true);
-    saveStoredDraftState(applicant.id, false);
-
-    // Persist score + status so Reports > Application Ranking can include this applicant.
-    const updatePayload = {
-      total_score: modalTotalScore,
-      status: nextStatus,
-    };
-
-    try {
-      const primaryUpdate = await (supabase as any).from('applicants').update(updatePayload).eq('id', applicant.id);
-      if ((primaryUpdate as any)?.error && !isMockModeEnabled) {
-        await (mockDatabase as any).from('applicants').update(updatePayload).eq('id', applicant.id);
-      }
-    } catch {
-      try {
-        await (mockDatabase as any).from('applicants').update(updatePayload).eq('id', applicant.id);
-      } catch {
-        // Best effort persistence only.
-      }
-    }
-
-    // Keep recruitment store score in sync so Reports can resolve totals even
-    // when applicant IDs differ between sources.
-    const recruitmentRows = getApplicants();
-    const updatedRecruitmentRows = recruitmentRows.map((entry) => {
-      const idMatch = recruitmentApplicant ? entry.id === recruitmentApplicant.id : entry.id === applicant.id;
-      const emailMatch = Boolean(applicant.email) && entry.personalInfo.email === applicant.email;
-      if (!idMatch && !emailMatch) return entry;
-      return {
-        ...entry,
-        qualificationScore: modalTotalScore,
-      };
-    });
-    saveApplicants(updatedRecruitmentRows);
-
-    const updatedRecruitmentApplicant = updatedRecruitmentRows.find((entry) => {
-      if (recruitmentApplicant && entry.id === recruitmentApplicant.id) return true;
-      return Boolean(applicant.email) && entry.personalInfo.email === applicant.email;
-    }) ?? recruitmentApplicant;
-
-    if (updatedRecruitmentApplicant) {
-      setRecruitmentApplicant(updatedRecruitmentApplicant);
-    }
-
-    handleUpdateStatus(nextStatus);
-    setApplicant((current) => (current ? { ...current, status: nextStatus } : current));
-
-    setIsScoreFinalized(true);
-    setIsScoreDraft(false);
-    setShowScoresModal(false);
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
-    }
-  };
-
-  const handleSaveScoreDraft = () => {
-    if (!applicant?.id || isScoreFinalized) return;
-
-    const effectiveAppointmentType: AppointmentType = isForcedPromotionalAppointment ? 'promotional' : appointmentType;
-    saveStoredAppointmentType(applicant.id, effectiveAppointmentType);
-    saveStoredEducationAttainment(applicant.id, educationAttainment);
-    saveStoredExperienceYears(applicant.id, experienceYears);
-    saveStoredWrittenScore(applicant.id, writtenScore);
-    saveStoredFinalizedState(applicant.id, false);
-    saveStoredDraftState(applicant.id, true);
-
-    setIsScoreDraft(true);
-    notifySuccess('Score draft saved', 'You can continue later.');
-  };
-
   if (loading) {
     return <div className="p-8 text-slate-600">Loading applicant details...</div>;
   }
@@ -2114,15 +1565,6 @@ function ApplicantDetailsPageView() {
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {showViewScoresButton && (
-                  <button
-                    type="button"
-                    onClick={() => setShowScoresModal(true)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
-                  >
-                    <Eye size={14} /> {scoreActionLabel}
-                  </button>
-                )}
 
                 {showJobPostActionButtons && (() => {
                   const hasResubmissionPending = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
@@ -2901,365 +2343,6 @@ function ApplicantDetailsPageView() {
           </div>
         )}
 
-        {showScoresModal && (
-          <div className="fixed inset-0 z-[260] bg-black/80 p-4" onClick={() => setShowScoresModal(false)}>
-            <div className="mx-auto h-[96vh] w-full max-w-[1450px] overflow-y-auto rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-              <div className="sticky top-0 z-10 flex items-center justify-between px-8 py-5 text-white" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
-                <div>
-                  <h2 className="scoring-modal-title text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
-                  <p className="scoring-modal-subtitle text-lg" style={{ color: 'rgba(255,255,255,0.9)' }}>{fullName} — {applicant.position || '--'}</p>
-                </div>
-                <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white/90 hover:bg-white/10">
-                  <X size={36} />
-                </button>
-              </div>
-
-              <div className="space-y-6 p-8">
-                {isScoreDraft && !isScoreFinalized && (
-                  <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
-                    <p className="text-xl font-semibold text-amber-800">Draft Saved</p>
-                    <p className="text-base text-amber-700">
-                      This evaluation is saved as draft. You can continue editing and finalize later.
-                    </p>
-                  </div>
-                )}
-
-                {isScoreFinalized && (
-                  <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
-                    <p className="text-xl font-semibold text-emerald-800">Score Finalized - View Only Mode</p>
-                    <p className="text-base text-emerald-700">
-                      This applicant's evaluation has been finalized and submitted. All fields are read-only and cannot be edited.
-                    </p>
-                  </div>
-                )}
-
-                <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-                  <p className="mb-3 text-xl font-semibold text-slate-800">Select Appointment Type</p>
-                  {isForcedPromotionalAppointment && (
-                    <p className="mb-3 rounded-xl border border-blue-300 bg-blue-100 px-4 py-3 text-sm font-semibold text-blue-800">
-                      Promotional Appointment is auto-selected for internal promotional applicants.
-                    </p>
-                  )}
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => !isScoreFinalized && !isForcedPromotionalAppointment && setAppointmentType('original')}
-                      disabled={isScoreFinalized || isForcedPromotionalAppointment}
-                      className={`rounded-2xl border p-4 text-center transition ${appointmentType === 'original'
-                          ? 'border-2 border-blue-400 bg-white shadow-sm'
-                          : 'border border-slate-300 bg-slate-100'
-                        } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
-                    >
-                      <p className={`text-xl font-semibold ${appointmentType === 'original' ? 'text-blue-700' : 'text-slate-500'}`}>Original Appointment</p>
-                      <p className="text-base text-slate-500">Education • Experience • Written Exam • Oral Exam* • PCPT*</p>
-                      <p className="text-sm text-slate-500">*Interviewer-provided</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => !isScoreFinalized && setAppointmentType('promotional')}
-                      disabled={isScoreFinalized || isForcedPromotionalAppointment}
-                      className={`rounded-2xl border p-4 text-center transition ${appointmentType === 'promotional'
-                          ? 'border-2 border-blue-400 bg-white shadow-sm'
-                          : 'border border-slate-300 bg-slate-100'
-                        } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
-                    >
-                      <p className={`text-xl font-semibold ${appointmentType === 'promotional' ? 'text-blue-700' : 'text-slate-500'}`}>Promotional Appointment</p>
-                      <p className="text-base text-slate-500">Education • Experience • Performance • PCPT* • Potential</p>
-                      <p className="text-sm text-slate-500">*Interviewer-provided</p>
-                    </button>
-                  </div>
-                </section>
-
-                {!isPromotionalAppointment && (
-                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-                    <p className="mb-3 text-lg font-semibold text-slate-800">Position Type (for Written Exam scoring)</p>
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => !isScoreFinalized && setPositionType('rank-file')}
-                        disabled={isScoreFinalized}
-                        className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${positionType === 'rank-file'
-                            ? 'border-2 border-blue-500 bg-blue-600 text-white'
-                            : 'border border-slate-300 bg-white text-slate-700'
-                          } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
-                      >
-                        Rank and File
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => !isScoreFinalized && setPositionType('executive')}
-                        disabled={isScoreFinalized}
-                        className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${positionType === 'executive'
-                            ? 'border-2 border-blue-500 bg-blue-600 text-white'
-                            : 'border border-slate-300 bg-white text-slate-700'
-                          } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
-                      >
-                        Executive / Managerial
-                      </button>
-                    </div>
-                  </section>
-                )}
-
-                <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <p className="text-lg text-slate-600">Final Numerical Score</p>
-                      <p className="text-4xl font-bold text-slate-900">{modalTotalScore.toFixed(2)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg text-slate-600">Adjectival Rating</p>
-                      <p className="text-4xl font-bold text-emerald-700">{modalAdjective}</p>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-base text-amber-900">
-                  <p className="font-semibold">Scoring Responsibility:</p>
-                  <p><strong>RSP enters:</strong> {scoringResponsibilityText.rsp}</p>
-                  <p><strong>Interviewer provides:</strong> {scoringResponsibilityText.interviewer}</p>
-                </section>
-
-                <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xl font-semibold text-slate-800">I Education (20%)</p>
-                      {educationAttainment && (
-                        <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: 'var(--color-primary-50)', color: '#363EE8' }}>
-                          Auto-filled · Editable
-                        </span>
-                      )}
-                    </div>
-                    <select
-                      value={educationAttainment}
-                      onChange={(event) => setEducationAttainment(event.target.value as EducationAttainmentValue)}
-                      disabled={isScoreFinalized}
-                      className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                    >
-                      {EDUCATION_ATTAINMENT_OPTIONS.map((option) => (
-                        <option key={option.value || 'placeholder'} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalEducationScore}</span></p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xl font-semibold text-slate-800">II Experience (20%)</p>
-                      {experienceYears && (
-                        <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: 'var(--color-primary-50)', color: '#363EE8' }}>
-                          Auto-filled · Editable
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      max={50}
-                      value={experienceYears}
-                      onChange={(event) => setExperienceYears(event.target.value)}
-                      disabled={isScoreFinalized}
-                      placeholder="Enter years of experience"
-                      className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                    />
-                    <p className="mt-1 text-sm text-slate-400">1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts</p>
-                    <p className="text-sm text-slate-400">16-20 yrs = 18 pts | 21+ yrs = 18 pts</p>
-                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalExperienceScore}</span></p>
-                    {(() => {
-                      const experienceDocs = attachments.filter((a) => {
-                        const type = String(a.document_type ?? FILE_NAME_TO_TYPE[a.file_name] ?? '').toLowerCase();
-                        const name = String(a.file_name ?? '').toLowerCase();
-                        return (
-                          type === 'curriculum_vitae' ||
-                          name.includes('cv') ||
-                          name.includes('resume') ||
-                          name.includes('experience')
-                        );
-                      });
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const docs = experienceDocs.map((doc) => applicantViewerDocument(doc));
-                            if (docs.length === 1) setPreviewDocument(docs[0]);
-                            else setDocumentCollection(docs);
-                          }}
-                          disabled={experienceDocs.length === 0}
-                          className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
-                        >
-                          <FileText size={14} /> View Experience Documents ({experienceDocs.length} {experienceDocs.length === 1 ? 'file' : 'files'})
-                        </button>
-                      );
-                    })()}
-                  </div>
-                  {isPromotionalAppointment ? (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                      <p className="mb-2 text-xl font-semibold text-slate-800">III Performance Rating (20%)</p>
-                      <select
-                        value={writtenScore}
-                        onChange={(event) => setWrittenScore(event.target.value)}
-                        disabled={isScoreFinalized}
-                        className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                      >
-                        <option value="">Select Performance Rating</option>
-                        <option value="12">Needs Improvement (12)</option>
-                        <option value="14">Fair (14)</option>
-                        <option value="16">Good (16)</option>
-                        <option value="18">Very Good (18)</option>
-                        <option value="20">Excellent (20)</option>
-                      </select>
-                      <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-amber-700">{modalWrittenScore}</span></p>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-                      <p className="mb-2 text-xl font-semibold text-slate-800">III Written Examination (20%)</p>
-                      <input
-                        type="number"
-                        min={0}
-                        max={30}
-                        value={writtenScore}
-                        onChange={(event) => setWrittenScore(event.target.value)}
-                        disabled={isScoreFinalized}
-                        placeholder="Enter score (0-30)"
-                        className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                      />
-                      <p className="mt-1 text-sm text-slate-400">10↓ = 12 pts | 11-15 = 14 pts | 16-20 = 16 pts | 21-25 = 18 pts | 26-30 = 20 pts</p>
-                      <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-green-700">{modalWrittenScore}</span></p>
-                    </div>
-                  )}
-                  {isPromotionalAppointment && (
-                    <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                      <p className="mb-2 text-xl font-semibold text-slate-800">V Potential (20%)</p>
-                      <div className="mb-3 rounded-xl border border-blue-300 bg-blue-50 p-3">
-                        <p className="text-base font-semibold text-blue-700">Auto-Fill Available</p>
-                        <p className="text-base text-blue-700">Last Original Appointment Score: <span className="font-bold">{lastOriginalAppointmentScore}</span></p>
-                        <button
-                          type="button"
-                          onClick={() => setPotentialScore(String(lastOriginalAppointmentScore))}
-                          className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
-                        >
-                          Use This Score
-                        </button>
-                      </div>
-                      <input
-                        type="number"
-                        min={51}
-                        max={100}
-                        value={potentialScore}
-                        onChange={(event) => setPotentialScore(event.target.value)}
-                        disabled={isScoreFinalized}
-                        placeholder="Enter potential score (51-100)"
-                        className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                      />
-                      <p className="mt-1 text-sm text-slate-500">51-60 = 12 pts | 61-70 = 14 pts | 71-80 = 16 pts</p>
-                      <p className="text-sm text-slate-500">81-90 = 18 pts | 91-100 = 20 pts</p>
-                      <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-orange-700">{modalPotentialScore}</span></p>
-                    </div>
-                  )}
-                </section>
-
-                <section className="rounded-2xl border border-purple-300 bg-purple-50 p-5">
-                  <div className="mb-3 flex items-center gap-2">
-                    <Users size={22} className="text-purple-600" />
-                    <p className="text-xl font-semibold text-slate-800">Interviewer-Provided Scores (Auto-Generated by System)</p>
-                  </div>
-                  <div className="mb-3 rounded-2xl border border-purple-200 bg-white p-4">
-                    <div className="flex items-center gap-2">
-                      <Lock size={16} className="text-purple-600" />
-                      <p className="text-base font-semibold text-purple-700">RSP Cannot Edit These Scores</p>
-                    </div>
-                    <p className="mt-1 text-base text-slate-700">
-                      The following scores are automatically provided by the interview panel and cannot be manually entered by RSP staff. These values are generated through the interview assessment module.
-                    </p>
-                  </div>
-                  {isPromotionalAppointment ? (
-                    <div className="rounded-2xl border border-purple-200 bg-white p-4">
-                      <div className="mb-2 flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white">IV</span>
-                        <p className="text-xl font-semibold text-slate-800">PCPT (20%)</p>
-                      </div>
-                      <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
-                        <span className="text-base text-slate-600">Raw Score:</span>
-                        <span className="float-right text-2xl font-bold text-purple-700">{score.rawPcpt > 0 ? score.rawPcpt : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
-                      </div>
-                      <p className="mt-2 text-sm text-slate-500">20-25 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts</p>
-                      <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
-                      <p className="mt-2 text-base font-semibold text-purple-700">Converted Score: {score.pcpt} / 20</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <div className="rounded-2xl border border-purple-200 bg-white p-4">
-                        <div className="mb-2 flex items-center gap-2">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white">V</span>
-                          <p className="text-xl font-semibold text-slate-800">PCPT (20%)</p>
-                        </div>
-                        <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
-                          <span className="text-base text-slate-600">Raw Score:</span>
-                          <span className="float-right text-2xl font-bold text-purple-700">{score.rawPcpt > 0 ? score.rawPcpt : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
-                        </div>
-                        <p className="mt-2 text-sm text-slate-500">20-25 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts</p>
-                        <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
-                        <p className="mt-2 text-base font-semibold text-purple-700">Converted Score: {score.pcpt} / 20</p>
-                      </div>
-                      <div className="rounded-2xl border border-blue-200 bg-white p-4">
-                        <div className="mb-2 flex items-center gap-2">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">IV</span>
-                          <p className="text-xl font-semibold text-slate-800">Oral Examination (20%)</p>
-                        </div>
-                        <div className="rounded-xl border border-blue-300 bg-blue-50 p-3">
-                          <span className="text-base text-slate-600">Raw Score:</span>
-                          <span className="float-right text-2xl font-bold text-blue-700">{score.oral > 0 ? score.oral : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
-                        </div>
-                        <p className="mt-2 text-sm text-slate-500">75↓ = 10 | 76-80 = 12 | 81-85 = 14 | 86-90 = 16</p>
-                        <p className="text-sm text-slate-500">91-95 = 18 | 96-100 = 20</p>
-                        <p className="mt-2 text-base font-semibold text-blue-700">Converted Score: {score.oral} / 20</p>
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="mb-3 text-xl font-semibold text-slate-800">Adjectival Rating Reference</p>
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    {[
-                      ['90 - 100', 'Excellent', 'text-green-700'],
-                      ['77 - 89', 'Very Good', 'text-blue-700'],
-                      ['64 - 76', 'Good', 'text-amber-700'],
-                      ['51 - 63', 'Average', 'text-orange-700'],
-                    ].map(([range, label, color]) => (
-                      <div key={range} className="rounded-xl border border-slate-200 bg-white p-3">
-                        <p className={`text-base font-semibold ${color}`}>{range}</p>
-                        <p className="text-base text-slate-600">{label}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <div className="flex justify-end gap-3 border-t border-slate-200 pt-5">
-                  <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-2xl border border-slate-300 bg-white px-8 py-3 text-base text-slate-700">
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveScoreDraft}
-                    disabled={isScoreFinalized}
-                    className="rounded-2xl border border-blue-300 bg-white px-8 py-3 text-base font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Save Draft
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveScoreSetup}
-                    disabled={isScoreFinalized}
-                    className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isScoreFinalized ? 'View Only' : 'Save Evaluation'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {confirmAction && (() => {
           const isDisqualify = confirmAction === 'disqualify';

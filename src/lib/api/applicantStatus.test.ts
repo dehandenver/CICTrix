@@ -22,7 +22,7 @@ const LIVE_VALUES: [string, number, ApplicantWorkflowStatus][] = [
   ['New Application', 14, 'Submitted'],
   ['Recommended for Hiring', 13, 'Shortlisted'],
   ['Under Review', 3, 'Under Initial Screening'],
-  ['Reviewed', 2, 'Under Initial Screening'],
+  ['Reviewed', 2, 'For Evaluation'],
   ['Pending', 1, 'Pending'],
   ['Not Qualified', 1, 'Disqualified'],
   ['Shortlisted', 1, 'Shortlisted'],

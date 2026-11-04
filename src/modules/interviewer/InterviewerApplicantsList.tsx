@@ -21,6 +21,8 @@ import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { getApplicantType, storeApplicantTypeForEval } from '../../lib/interviewerEvalNavigation';
 import { sendEmail } from '../../lib/email';
+import { canTransition, normalizeStatus, type ApplicantWorkflowStatus } from '../../lib/api/applicantStatus';
+import { transitionApplicantStatus, type StatusTransitionResult } from '../../lib/api/applicantStatusTransition';
 import { describeActionFailure } from '../../lib/friendlyErrors';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, getApplicants as getRecruitmentApplicants } from '../../lib/recruitmentData';
@@ -235,9 +237,15 @@ const formatDateTime = (dateString: string): string => {
 
 const getApplicantStatusBadgeClass = (status: string): string => {
   const value = status.toLowerCase();
+  // Closed outcomes first: 'not qualified' contains 'qualif', and a withdrawal
+  // because of a hire elsewhere contains 'hired'.
+  if (value.includes('not qualified') || value.includes('disqualif') || value.includes('not selected') || value.includes('reject')) {
+    return 'status-rejected';
+  }
+  if (value.includes('withdrawn')) return 'status-pending';
   if (value.includes('qualif') || value.includes('recommend') || value.includes('hired')) return 'status-qualified';
   if (value.includes('shortlist')) return 'status-shortlisted';
-  if (value.includes('review')) return 'status-reviewed';
+  if (value.includes('review') || value.includes('evaluat')) return 'status-reviewed';
   return 'status-pending';
 };
 
@@ -330,10 +338,31 @@ const readInterviewerScoreSnapshot = () => {
   }
 };
 
-const hasSnapshotEvaluation = (snapshotMap: Record<string, { pcptAverage?: number; oralAverage?: number }>, applicant: any) => {
-  const idKey = `id:${String(applicant?.id ?? '').trim()}`;
-  const emailKey = `email:${String(applicant?.email ?? '').trim().toLowerCase()}`;
-  const scoreSnapshot = snapshotMap[idKey] || snapshotMap[emailKey];
+const DECISION_ACTION = 'update this application';
+const EVALUATED_STATUS: ApplicantWorkflowStatus = 'For Evaluation';
+
+const EVALUATION_REQUIRED_STEP = 'Submit the evaluation first, or check the status with the RSP office.';
+const CHECK_WITH_RSP_STEP = 'Check the status with the RSP office.';
+
+const decisionFailure = (outcome: Exclude<StatusTransitionResult, { kind: 'advanced' }>, refusedStep: string) => {
+  if (outcome.kind === 'failed') return describeActionFailure(DECISION_ACTION, new Error(outcome.error));
+  if (outcome.reason === 'concurrent-change') {
+    return {
+      message: 'This application changed while you were working on it.',
+      nextStep: 'Close and reopen it to see the latest status.',
+    };
+  }
+  if (outcome.reason === 'not-found') {
+    return { message: "We couldn't find this application.", nextStep: 'Refresh the list and try again.' };
+  }
+  return {
+    message: "This application can't move to that status from where it is now.",
+    nextStep: refusedStep,
+  };
+};
+
+export const hasSnapshotEvaluation = (snapshotMap: Record<string, { pcptAverage?: number; oralAverage?: number }>, applicant: any) => {
+  const scoreSnapshot = snapshotMap[`id:${String(applicant?.id ?? '').trim()}`];
   if (!scoreSnapshot) return false;
 
   const hasPcpt = typeof scoreSnapshot.pcptAverage === 'number' && scoreSnapshot.pcptAverage > 0;
@@ -449,6 +478,8 @@ export function InterviewerApplicantsList({
   const [emailMessage, setEmailMessage] = useState('');
   const [emailSending, setEmailSending] = useState(false);
   const [emailError, setEmailError] = useState<{ message: string; nextStep: string } | null>(null);
+  const [decisionError, setDecisionError] = useState<{ message: string; nextStep: string } | null>(null);
+  const [decisionBusy, setDecisionBusy] = useState(false);
   const { success: notifySuccess } = useFeedback();
 
   const handleSendApplicantEmail = async () => {
@@ -696,31 +727,43 @@ export function InterviewerApplicantsList({
   };
 
   const closeApplicantDetails = () => {
+    setDecisionError(null);
     setShowMessageDialog(false);
     setActiveApplicant(null);
     setActiveTab('overview');
   };
 
-  const updateApplicantStatus = async (applicantId: string, status: string) => {
+  const decideApplicant = async (decided: Applicant, target: ApplicantWorkflowStatus, storedAs?: string) => {
+    const applicantId = decided.id;
+    const evaluated = decided.evaluation_status === 'Completed';
+    const refusedStep = target === 'Qualified' && !evaluated ? EVALUATION_REQUIRED_STEP : CHECK_WITH_RSP_STEP;
+    setDecisionBusy(true);
+    setDecisionError(null);
+
+    // A saved evaluation whose status step failed still sits at the interview
+    // stage. Nothing else moves it on, so qualifying has to finish that step.
+    const stored = normalizeStatus(decided.status);
+    if (target === 'Qualified' && evaluated && stored && canTransition(stored, EVALUATED_STATUS)) {
+      const advanced = await transitionApplicantStatus(applicantId, EVALUATED_STATUS);
+      if (advanced.kind === 'failed') {
+        setDecisionBusy(false);
+        setDecisionError(decisionFailure(advanced, refusedStep));
+        return;
+      }
+    }
+
+    const outcome = await transitionApplicantStatus(applicantId, target, storedAs);
+    setDecisionBusy(false);
+
+    if (outcome.kind !== 'advanced') {
+      setDecisionError(decisionFailure(outcome, refusedStep));
+      return;
+    }
+
+    const { status } = outcome;
     setApplicants((prev) => prev.map((row) => (row.id === applicantId ? { ...row, status } : row)));
     setActiveApplicant((prev) => (prev && prev.id === applicantId ? { ...prev, status } : prev));
     window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
-
-    const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
-    const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
-    const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
-
-    const persist = async (client: any) => {
-      await client.from('applicants').update({ status }).eq('id', applicantId);
-    };
-
-    try {
-      await persist(primaryClient);
-    } catch {
-      try {
-        await persist(secondaryClient);
-      } catch { /* Both data sources failed; the status change stays local and is not surfaced. */ }
-    }
   };
 
   const handleTemplateChange = (value: EmailTemplate) => {
@@ -1046,14 +1089,14 @@ export function InterviewerApplicantsList({
                     <button type="button" className="details-btn details-btn-neutral" onClick={() => setShowMessageDialog(true)}>
                       <Plane size={16} /> Send Message
                     </button>
-                    <button type="button" className="details-btn details-btn-danger" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Not Qualified')}>
+                    <button type="button" className="details-btn details-btn-danger" disabled={decisionBusy} onClick={() => void decideApplicant(activeApplicant, 'Disqualified', 'Not Qualified')}>
                       <AlertCircle size={16} /> Disqualify
                     </button>
                     {/* Shortlisting must name the documents and reason requiring
                         resubmission, which happens in the RSP "Notice of Resubmission"
                         modal on /admin/rsp/applicant/:id. That route is admin-only,
                         so there is no standalone shortlist action here. */}
-                    <button type="button" className="details-btn details-btn-success" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Qualified')}>
+                    <button type="button" className="details-btn details-btn-success" disabled={decisionBusy} onClick={() => void decideApplicant(activeApplicant, 'Qualified')}>
                       <CheckCircle2 size={16} /> Qualify
                     </button>
                   </>
@@ -1082,6 +1125,15 @@ export function InterviewerApplicantsList({
                 </button>
               ))}
             </div>
+            )}
+
+            {decisionError && (
+              <ActionFeedback
+                title="We couldn't update this application."
+                message={decisionError.message}
+                nextStep={decisionError.nextStep}
+                onDismiss={() => setDecisionError(null)}
+              />
             )}
 
             <div className={`details-content-grid ${activeTab === 'scores' ? 'scores-fullwidth' : ''}`}>

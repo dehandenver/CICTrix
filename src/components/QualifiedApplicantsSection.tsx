@@ -22,7 +22,7 @@ import { BackButton } from './BackButton';
 import { DocumentCollectionModal } from './DocumentCollectionModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import {
-  fetchLatestEvaluationForApplicantOrEmailAnySource,
+  fetchLatestEvaluationForApplicantAnySource,
   subscribeToEvaluationChanges,
   type EvaluationSnapshot,
 } from '../lib/evaluationScores';
@@ -666,7 +666,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
     let disposed = false;
 
     const refresh = async () => {
-      const latest = await fetchLatestEvaluationForApplicantOrEmailAnySource(applicant.id, applicant.email, supabase);
+      const latest = await fetchLatestEvaluationForApplicantAnySource(applicant.id, supabase);
       if (!disposed && latest) {
         setLiveEvaluation(latest);
       }
@@ -686,7 +686,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
       unsubscribe();
       window.removeEventListener('cictrix:applicants-updated', onApplicantsUpdated as EventListener);
     };
-  }, [applicant.id, applicant.email]);
+  }, [applicant.id]);
 
   useEffect(() => {
     const base = deriveInitial(applicant, savedScores);
@@ -1358,10 +1358,7 @@ const ApplicantsListView = ({
   // the Original / Promotional tab and count each track independently.
   const typed = useMemo(() =>
     folder.applicants.map(a => {
-      const evalSnapshot = evaluationsByApplicant?.[a.id]
-        ?? (a.email ? evaluationsByApplicant?.[`email:${a.email.toLowerCase().trim()}`] : null)
-        ?? (a.full_name ? evaluationsByApplicant?.[`name:${a.full_name.toLowerCase().trim()}`] : null)
-        ?? null;
+      const evalSnapshot = evaluationsByApplicant?.[a.id] ?? null;
       const posExam = examScores?.[folder.position]?.[a.id];
       const cs = deriveInitial(a, savedCatScores, evalSnapshot, posExam);
       const apptType: AppointmentType = cs.appointmentType ?? 'original';
