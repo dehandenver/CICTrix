@@ -2,10 +2,12 @@
 title: Security remediation (credentials, document encryption, authorization and public applicant flows)
 date: 2026-10-16
 status: Draft
-summary: Expanded by the October 27 review and succession scoring dependency; re-verified and critiqued 2026-11-02 against upstream main e110977 (F6/F7 corrected, F22–F25 added, Phase 1 planned in detail). Contain leaked keys, replace browser-only credentials, enforce role and office authorization, and protect applicant flows, qualification evidence, review decisions and audit history.
+summary: Expanded by the October 27 review and succession scoring dependency; re-verified and critiqued 2026-11-02 against upstream main e110977 (F6/F7 corrected, F22–F25 added, Phase 1 planned in detail). On 2026-11-05 PR 98 removed the Supabase JWTs from tracked files, but the key is not rotated and F1 stays open. Contain leaked keys, replace browser-only credentials, enforce role and office authorization, and protect applicant flows, qualification evidence, review decisions and audit history.
 ---
 
-> **Last updated 2026-11-02.** Re-verified against upstream `dehandenver/CICTrix` main (`e110977`, public) and the live project: every Critical/High finding from October 27 is still open (see [November 2 re-verification](#november-2-re-verification)). The earlier analysis was also checked claim by claim (see [November 2 critique](#november-2-critique-of-the-plan)): F6 and F7 were overstated, and F24 and F25 are new. F25, a default backend JWT secret, may be Critical. Phase 1 is now planned step by step below and awaits approval; nothing in it has been executed.
+> **Last updated 2026-11-05.** [PR 98](https://github.com/dehandenver/CICTrix/pull/98) removed the Supabase JWTs from tracked files (see [November 5 update](#november-5-update-leaked-key-files-removed)). The key isn't revoked, so F1 stays open, and nothing in Phase 1 has been executed.
+>
+> **2026-11-02.** Re-verified against upstream `dehandenver/CICTrix` main (`e110977`, public) and the live project: every Critical/High finding from October 27 is still open (see [November 2 re-verification](#november-2-re-verification)). The earlier analysis was also checked claim by claim (see [November 2 critique](#november-2-critique-of-the-plan)): F6 and F7 were overstated, and F24 and F25 are new. F25, a default backend JWT secret, may be Critical. Phase 1 is now planned step by step below and awaits approval; nothing in it has been executed.
 
 ## Goal
 
@@ -19,7 +21,7 @@ Original audit of 2026-10-15, read-only, against the repo and the live project `
 
 | Ref | Finding | Evidence |
 |---|---|---|
-| F1 | A `service_role` key with an expiry claim in 2036 was reported committed in public repos `Jayyoo07/CICTrix` and `dehandenver/CICTrix`. An active service-role key bypasses RLS and grants Auth admin access. Its expiry claim alone does not establish that it remains active. | October 27 local scan reconfirmed service-role JWTs in 25 tracked files: `VERCEL_DEPLOYMENT.md`, `.claude/settings.local.json`, 23 under `scratch/`. The leaked credential was not used to test current validity. |
+| F1 | A `service_role` key with an expiry claim in 2036 was reported committed in public repos `Jayyoo07/CICTrix` and `dehandenver/CICTrix`. An active service-role key bypasses RLS and grants Auth admin access. Its expiry claim alone does not establish that it remains active. | October 27 local scan reconfirmed service-role JWTs in 25 tracked files: `VERCEL_DEPLOYMENT.md`, `.claude/settings.local.json`, 23 under `scratch/`. The leaked credential was not used to test current validity. *Update 2026-11-05:* removed from tracked files, not revoked. See [November 5 update](#november-5-update-leaked-key-files-removed). |
 | F2 | October 27 catalog inspection found 80 public base tables with RLS off; 78 have all four anon SELECT/INSERT/UPDATE/DELETE grants. | Includes `employee_education`, `employee_history`, many `ipcr_*` tables, `succession_candidates`, `evaluations`, `supervisor_password_resets`. Original count was 76. `employee_documents` now has RLS enabled but still has open-access policies (F3). See the refreshed baseline for grant exceptions. |
 | F3 | Tables that do have RLS on use allow-all policies (`using (true)`) for anon. | `employees`, `employee_portal_accounts`, `applicants`, `applicant_attachments`, `employee_children`, `idp_submissions`. `employees` exposes TIN, SSS, GSIS, PhilHealth, Pag-IBIG, birth date, addresses, emergency contacts. |
 | F4 | Portal passwords are stored/compared as plaintext; employee and supervisor credentials are exposed to anon, and office-account passwords to authenticated callers. | Historical counts: `employee_portal_accounts.password` 78 rows, `supervisors.password` 4, `office_role_assignments.account_password` 9; no hashes in that audit. October 27 HEAD verified anonymous access to the employee password column for 130 visible rows without downloading values. Live office-password column grants still allow authenticated SELECT, not anon SELECT. |
@@ -90,7 +92,7 @@ The chosen identity architecture is **Supabase Auth for every person who signs i
 0b. *(owner)* Supabase → Authentication → Sign In / Providers: turn off "Allow new users to sign up". The frontend has no `signUp` call, and all 5 existing Auth users are staff with `user_roles` rows. Open sign-up would let anyone get the Auth session that F7, F12 and F13 need. Whether it is currently on was not checked: it isn't visible through SQL.
 1. Supabase dashboard → Project Settings → API Keys: create a new publishable key (`sb_publishable_…`) and a new secret key (`sb_secret_…`).
 2. Vercel → Project → Environment Variables (Production and Preview): set `VITE_SUPABASE_ANON_KEY` to the publishable key; set `SUPABASE_SERVICE_ROLE_KEY` to the secret key; set `SUPABASE_KEY` to the publishable key if the backend still reads it. Redeploy, then confirm every portal loads and signs in.
-3. Update every local `.env` / `backend/.env` (each collaborator). Delete local copies of the old keys.
+3. Update the GitHub Actions secrets `SUPABASE_KEY` and `SUPABASE_SERVICE_ROLE_KEY` in every repo that runs `competency-assessment-queue.yml`, and every local `.env` / `backend/.env` (each collaborator). Delete local copies of the old keys, including the untracked `scratch/` files that hold them. The [November 5 update](#november-5-update-leaked-key-files-removed) lists every consumer.
 4. Disable the legacy JWT-based `anon` and `service_role` keys. This is the step that kills the leaked key; deleting files does not.
 5. Verify: a REST request with the old service-role JWT returns 401; the app works on the new keys. Do this with a harmless `HEAD … limit=0` request, never a read of row data.
 
@@ -178,7 +180,7 @@ Export Supabase API and Auth logs as far back as retention allows, plus Vercel f
 
 ### Phase 2: Purge history
 
-1. Remove secret values from tracked files: the service-role JWT locations above and the document private key in `src/lib/crypto/_internal/keys.ts` and `supabase/migrations/20261026102622_document_encryption_keys.sql`. Untrack secret-bearing `.env` files only if tracked; keep sanitized examples. Coordinate historical migration sanitization with a new forward migration so fresh environments cannot reseed a compromised key.
+1. Remove secret values from tracked files. *The Supabase JWTs are done ([PR 98](https://github.com/dehandenver/CICTrix/pull/98), 2026-11-05).* Still to do: the document private key in `src/lib/crypto/_internal/keys.ts` and `supabase/migrations/20261026102622_document_encryption_keys.sql`. Untrack secret-bearing `.env` files only if tracked; keep sanitized examples. Coordinate historical migration sanitization with a new forward migration so fresh environments cannot reseed a compromised key.
 2. Rewrite history with `git filter-repo` on a fresh mirror clone, covering all discovered secret values and paths, including non-JWT encryption keys. Inspect the rewrite before publishing it.
 3. Coordinate history replacement with each repository owner after explicit approval. Follow this repo's remote restrictions: never push straight to `upstream` or to `Trsha11102004/CICTrix`; the upstream owner handles their repository. All collaborators re-clone; old clones must not be pushed back.
 4. Ask GitHub Support to purge cached views and pull-request refs that still hold the old commits. Forks keep their copies; this is why Phase 1 comes first.
@@ -234,7 +236,7 @@ The approved succession workflow has **no additional HR approval queue**. This s
 
 ## Risks
 
-- **Phase 1 breaks anything that hardcodes the old keys,** including the local scripts in the repo root and `scratch/`. They need the new keys from `.env`.
+- **Phase 1 breaks anything still using the old keys.** The tracked scripts read keys from `.env`, so those files need the new values. The untracked `scratch/` scripts hardcode the old key and stop working after rotation.
 - **The backend can't use the new secret key on its current client** (`supabase==2.4.2`). Upgrade it first (Phase 1.2 step 0), or the key rotation turns into a backend outage.
 - **Column revokes break `select('*')`.** Phase 1.5 has to ship its query changes before or with the revoke.
 - **Phase 4 breaks screens.** Many components read tables directly with the anon client; each table group needs its UI paths tested in every portal before it goes live.
@@ -416,7 +418,7 @@ F5, F10, F12–F14 and F16–F21 were not re-tested; nothing merged since Octobe
 
 **Impact/limits:** If production never set `JWT_SECRET_KEY`, anyone can mint a token with any role and reach every protected backend route. These tokens also ignore `user_roles.is_active` and can't be revoked (compare F16). Whether Vercel sets the variable was not checked, and no token was forged against a deployment. The October 27 review mentions "custom-JWT acceptance" in Phase 3.8 but didn't connect it to the default secret.
 
-**Remediation/check:** Phase 1.6 step 7. Remove the path, or fail closed on the default. Verify that a token signed with the default secret returns 401.
+**Remediation/check:** Phase 1.6 step 7. Remove the path, or fail closed on the default. Verify that a token signed with the default secret returns 401. *Update 2026-11-05:* `VERCEL_DEPLOYMENT.md` also published a sample `JWT_SECRET_KEY`. It is gone from the tree but stays in Git history, so if Vercel uses that value, replace it.
 
 ## November 2 critique of the plan
 
@@ -435,6 +437,42 @@ The plan was largely written by another agent (October 15–27). Each claim belo
 | K9 | Advisor counts: 79 RLS-off, 44 mutable search path | 80 and 45 (advisor); 81 RLS-off by catalog; 7 tables have policies with RLS disabled, which the plan never mentions | Counts updated. The 7 tables show policies that were written but are not enforced, so check them in Phase 4. |
 | K10 | Source line numbers | They match the `b1594a2` baseline; several moved by `e110977` (e.g. F19) | F19 updated; other references should be re-read at implementation time |
 
-Useful references: [Supabase API key rotation]
+## November 5 update: leaked key files removed
+
+**Date:** 2026-11-05. **Source:** upstream `dehandenver/CICTrix` main at `cd71e17`, merged through [PR 98](https://github.com/dehandenver/CICTrix/pull/98) and deployed to production. **Live:** read-only catalog and API-key metadata checks on `fyzdfgxaaowjzbjpwrii`. The leaked key was not used. Plan: [remove leaked key files](2026-11-05-remove-leaked-key-files.md).
+
+**What shipped.** This covers the Supabase JWT part of Phase 2 step 1, and it ran before rotation because it was cheap and independent. It doesn't replace Phase 1.
+
+- All 40 `scratch/` files and `.claude/settings.local.json` are untracked. The local copies stay on disk, and `.claude/settings.local.json` is now ignored and redacted locally. The `scratch/` copies still hold the key.
+- `VERCEL_DEPLOYMENT.md` uses placeholders for the 3 keys and the sample `JWT_SECRET_KEY`.
+
+**What is still open.** Rotation is the only thing that stops the key working. Until Phase 1.2 finishes, it stays usable from Git history, forks and clones.
+
+| Ref | Status 2026-11-05 | Evidence |
+|---|---|---|
+| F1, tracked files | Closed on `main` | A search of upstream `cd71e17` finds 0 JWTs, 0 files under `scratch/`, and no `.claude/settings.local.json`. |
+| F1, key validity | Open | The live legacy anon key matches the leaked anon key and the legacy keys are not disabled, so the leaked `service_role` key almost certainly still works. This is inferred, not tested. The key has been public since 2026-05-21. |
+| F2 | Open | 80 RLS-off tables with anon grants, including `supervisors`, which has a `password` column. |
+| F4 | Unchanged, one limit | Anon can't read the credential columns on `office_role_assignments`. |
+| F11 | Open | The document private key is still in `src/lib/crypto/_internal/keys.ts` and `supabase/migrations/20261026102622_document_encryption_keys.sql`. |
+| F25 | Open | The sample `JWT_SECRET_KEY` stays in Git history. Whether Vercel uses that value or the code default is unchecked. |
+
+**Not checked:** the contents of `Trsha11102004/CICTrix`, upstream's GitHub Actions secrets, Vercel's environment variables and the Supabase logs (Phase 1.8).
+
+**Everything that uses the keys.** Phase 1.2 has to cover each of these before step 4 disables the legacy keys.
+
+| Connection | Key | Reads it from | Rotation action |
+|---|---|---|---|
+| Frontend (`src/lib/supabase.ts`) | anon | Vercel build env `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Update Vercel, rebuild |
+| Backend on Vercel (`api/index.py`, `backend/app/core/supabase_client.py`) | anon, service role | Vercel env `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Update Vercel, after step 0 |
+| GitHub Action (`competency-assessment-queue.yml`), every 30 minutes | anon, service role | Repo secrets of the same names. They exist on the fork; upstream is unchecked. | Update each repo that runs it |
+| Local queue listener (`run-queue.bat`, `backend/run_competency_queue.py`) | service role | `backend/.env` | Update `backend/.env` |
+| About 17 `scripts/*.mjs` and the root one-off scripts | anon or service role | `.env`, `.env.seed`, `backend/.env` | Update env files |
+| Each collaborator's env files | both | `.env`, `.env.local`, `backend/.env` | Each person updates theirs |
+| Supabase Edge Functions | none | 0 deployed | Nothing |
+
+**Changes to this plan.** Phase 1.2 step 3 now covers GitHub Actions secrets, which it had missed. Phase 2 step 1, the F1 row, F25 and the first risk reflect the removal.
+
+**Next step.** Phase 1.2 step 0: upgrade `supabase==2.4.2`, then rotate.
 
 Useful references: [Supabase API key rotation](https://supabase.com/docs/guides/api/api-keys), [RLS-disabled advisor remediation](https://supabase.com/docs/guides/database/database-linter?lint=0013_rls_disabled_in_public), [mutable-search-path remediation](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), [metadata-policy remediation](https://supabase.com/docs/guides/database/database-linter?lint=0015_rls_references_user_metadata), [PostgreSQL function privileges](https://www.postgresql.org/docs/current/sql-grant.html).

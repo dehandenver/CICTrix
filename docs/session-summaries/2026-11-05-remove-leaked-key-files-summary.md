@@ -31,7 +31,7 @@ Merged to `dehandenver/CICTrix` `main` as `cd71e17` through [PR 98](https://gith
 
 - Plain `npm test` also collects tests from local `.claude/worktrees` copies: 1 failure out of 8,728, in `.claude/worktrees/supabase-db-optimization-c48f13/scripts/seed-training-attendance.test.mjs`, because that worktree has no `.env`. It isn't this branch's code.
 - Plain `npm run build` failed with `Access is denied` when esbuild removed its file from the Windows temp folder. This is the environmental failure recorded on 2026-10-26, and the build passed with the workaround above.
-- The leaked key still works until rotated, and it remains in Git history, forks and clones. Rotation is blocked until the backend's `supabase==2.4.2` is upgraded: see Phase 1.2 of the security remediation plan on `docs/security-remediation-phase1`.
+- The leaked key still works until rotated, and it remains in Git history, forks and clones. Rotation is blocked until the backend's `supabase==2.4.2` is upgraded: see Phase 1.2 of the [security remediation plan](../plans/2026-10-16-security-remediation.md), which now records this work in its November 5 update.
 - The plan's branch base was "up-to-date `main`". Upstream was the newest and is the PR target, so it was used over `origin/main`, which was 2 commits behind.
 - The PR's Vercel preview never ran: its check stayed at "Authorization required to deploy" through the merge, so the plan's preview check was replaced by the production deployment of `cd71e17`, which succeeded. `Supabase Preview` also passed on that commit.
 - Copilot did not review the PR because the requester had no remaining quota.
