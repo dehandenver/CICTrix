@@ -76,6 +76,7 @@ docs/mockups/sessions/
 
 # Local AI agent & tool workspace directories
 .claude/launch.json
+.claude/settings.local.json
 .claude/skills/
 .claude/worktrees/
 .worktrees/
