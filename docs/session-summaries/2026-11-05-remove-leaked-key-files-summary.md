@@ -2,7 +2,7 @@
 title: Remove leaked Supabase keys from tracked files
 date: 2026-11-05
 status: Done
-summary: No tracked file holds a Supabase JWT any more. The key is not revoked and stays in Git history until rotated. Nothing pushed yet.
+summary: Merged in PR 98 and deployed to production. No tracked file holds a Supabase JWT any more. The key is not revoked and stays in Git history until rotated.
 ---
 
 # Remove leaked Supabase keys from tracked files
@@ -15,7 +15,7 @@ Followed [the plan](../plans/2026-11-05-remove-leaked-key-files.md) on `fix/untr
 - Untracked `.claude/settings.local.json` and added it to `.gitignore`. Redacted 56 key occurrences in the local copy, which is still valid JSON.
 - Replaced the 3 key values and the sample `JWT_SECRET_KEY` in `VERCEL_DEPLOYMENT.md` with placeholders.
 
-Not yet done: push, PR and the Vercel preview check, which all wait on approval.
+Merged to `dehandenver/CICTrix` `main` as `cd71e17` through [PR 98](https://github.com/dehandenver/CICTrix/pull/98) on 2026-11-05. Vercel deployed that commit to production, and the commit status reports success.
 
 ## Checks run
 
@@ -33,3 +33,5 @@ Not yet done: push, PR and the Vercel preview check, which all wait on approval.
 - Plain `npm run build` failed with `Access is denied` when esbuild removed its file from the Windows temp folder. This is the environmental failure recorded on 2026-10-26, and the build passed with the workaround above.
 - The leaked key still works until rotated, and it remains in Git history, forks and clones. Rotation is blocked until the backend's `supabase==2.4.2` is upgraded: see Phase 1.2 of the security remediation plan on `docs/security-remediation-phase1`.
 - The plan's branch base was "up-to-date `main`". Upstream was the newest and is the PR target, so it was used over `origin/main`, which was 2 commits behind.
+- The PR's Vercel preview never ran: its check stayed at "Authorization required to deploy" through the merge, so the plan's preview check was replaced by the production deployment of `cd71e17`, which succeeded. `Supabase Preview` also passed on that commit.
+- Copilot did not review the PR because the requester had no remaining quota.

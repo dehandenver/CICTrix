@@ -1,7 +1,7 @@
 ---
 title: Remove leaked Supabase keys from tracked files
 date: 2026-11-05
-status: In Progress
+status: Done
 summary: Untrack scratch/ and .claude/settings.local.json and scrub VERCEL_DEPLOYMENT.md so no tracked file holds a Supabase JWT. Does not stop the key working; rotation is Phase 1.2 of the security remediation plan.
 ---
 
