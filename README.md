@@ -1,4 +1,4 @@
-# 🏛️ ABYAN
+# 🏛️ ABYAN- HRIS
 
 **A Decision Support Information System for Competency Assessment, Training Recommendations, and Data-Driven Succession Planning in Human Resource Management**
 
