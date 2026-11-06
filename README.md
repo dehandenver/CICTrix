@@ -32,17 +32,6 @@ ABYAN is a web-based Human Resource Information System (HRIS) with a Decision Su
 | 🏆 Succession Planning | WSM-based ranking of candidates for critical positions |
 | 🔐 Account and Access | Role-based access, audit logs, password reset tracking |
 
----
-
-## 🧮 Succession Ranking (Weighted Sum Model)
-
-| Criterion | Weight |
-|---|---|
-| Performance | 30% |
-| Experience | 20% |
-| Training | 20% |
-| Education | 15% |
-| Eligibility | 15% |
 
 ---
 
