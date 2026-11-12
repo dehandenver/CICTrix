@@ -1,7 +1,7 @@
 ---
 title: Fix applicant score and status writes, and the live-data seed test
 date: 2026-10-30
-status: In Progress
+status: Done
 summary: Remove the unreachable RSP score path that writes a missing `applicants.total_score` column, move evaluated applicants to For Evaluation without overwriting a newer status, guard the interviewer Qualify and Disqualify writer, keep applications that share an email independent, and stop the training-attendance seed test from depending on live data.
 spec: docs/session-summaries/2026-10-30-promotional-hiring-audit-summary.md
 ---
@@ -110,3 +110,9 @@ Not in this plan. Each item keeps its own plan and needs a fresh file list from 
 - `npx vitest run src scripts --maxWorkers 2 --exclude "**/.worktrees/**" --exclude "**/.claude/worktrees/**"`
 - `grep -rn "total_score" src/modules/interviewer src/types/database.types.ts` returns no `applicants` writes
 - The DESIGN_IDENTITY.md §16 checklist for the changed copy and badge in Steps 4–7 (no layout changes)
+
+## Status check 2026-11-12
+
+Done. The "Before Done" live interviewer session was not run by hand. The automated checks below were accepted in its place, and they cover the status-transition, EvaluationForm and InterviewerApplicantsList status tests.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

@@ -1,7 +1,7 @@
 ---
 title: Populate the Summary of Ratings competency breakdown
 date: 2026-10-27
-status: In Progress
+status: Done
 summary: Run the AI competency matcher/assessor into the mirror so Summary of Ratings shows a real per-competency breakdown, and render assessed competencies with a nullable required level so an unconfigured Competency Map no longer blanks the whole panel.
 ---
 
@@ -151,3 +151,9 @@ Two backend defects have to be fixed before any batch run, or the data will be w
 - Manual pass: PM Summary of Ratings → Office of the City Engineer → Martin, Elizabeth →
   expanded panel shows competency cards; L&D Summary of Ratings shows the same panel
 - `DESIGN_IDENTITY.md` §16 checklist for the card/empty-state copy changes
+
+## Status check 2026-11-12
+
+Done. Mirror tagging (Step 6) was dropped: 0 of 787 `ipcr_performance` rows carry a `competency_id`, and the later previous-semester plan no longer reads the mirror. See `docs/session-summaries/2026-10-27-sor-competency-breakdown-summary.md`.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

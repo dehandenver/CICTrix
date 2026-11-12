@@ -1,7 +1,7 @@
 ---
 title: Sync every IPCR surface from the authoritative record
 date: 2026-10-26
-status: In Progress
+status: Done
 summary: Make a finished Phase 1/2 IPCR land in every derived store, backfill the 272 seeded IPCRs through the same function, and fill the missing accomplishment text, so the Summary of Ratings, tracker, vault, PM dashboard, archive and RSP all read real data.
 ---
 
@@ -115,3 +115,9 @@ A forward migration fills `success_indicator_ratings.accomplishment` where it is
 - Read-only SQL after merge: `ipcr_performance` rows and distinct employee count per period; zero rows whose `employee_num` has no `employees` match; `ipcr_submissions` two rows per finalized IPCR; `locked_targets` one set per employee and period; `performance_evaluations` one row per employee and cycle; no null `accomplishment` among seeded ratings; every `rating_period` matches the derived label and appears in `CANONICAL_RATING_PERIODS`
 - Manual pass: Summary of Ratings landing and drill-in, IPCR Management 2.2, 2.3, 2.4 (each semester listed once, not twice), PM dashboard, IPCR archive, RSP promotional eligibility
 - Failure path: force an RPC error once in staging or with a bad id, and confirm `saveRatings` reports it rather than finalizing silently
+
+## Status check 2026-11-12
+
+Done. Migrations, RPC wiring and backfill are live; see `docs/session-summaries/2026-10-26-ipcr-surface-sync-summary.md`. The manual seven-screen pass and an RPC error-path test were not done.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

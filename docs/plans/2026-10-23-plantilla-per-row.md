@@ -1,7 +1,7 @@
 ---
 title: Paginated application form, one posting per plantilla, plantilla and office cleanup
 date: 2026-10-23
-status: In Progress
+status: Blocked
 summary: Split Step 2 of the application into pages with per-page validation. Split merged postings back into one posting per plantilla so each plantilla has its own status, details and delete. Soft-delete the duplicate plantillas 152, 159, 162, 163, 164, and the Legal and Information Technology postings, and deactivate those two departments.
 spec: Task brief pasted 2026-10-23; decisions confirmed in chat 2026-10-23 (split, Task 3 before Task 2, departments deactivated)
 ---
@@ -41,3 +41,9 @@ Each plantilla is its own row everywhere, with its own Open/Closed status, descr
 ## Checks to run
 
 `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run check:migrations`, browser check of the application form at mobile and desktop widths, DESIGN_IDENTITY §16 checklist.
+
+## Status check 2026-11-12
+
+Blocked. `2026-10-30-applicant-status-and-score-writes.md` says the split waits until `feat/import-employees` is reconciled and the dependency audit is rerun. Done: Step 1 (application Step 2 split into five pages, `0f8b9db`) and part of D4 (Legal and IT offices deactivated, `20261024171047`). Left: the Step 2 audit script, the Step 3–4 split migration and removal of plantillas 152, 159, 162, 163 and 164, soft-deleting the Legal and IT postings, and the Step 6 admin table.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

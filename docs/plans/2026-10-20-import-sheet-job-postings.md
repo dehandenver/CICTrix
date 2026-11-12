@@ -1,7 +1,7 @@
 ---
 title: Import the office plantilla sheet as job postings
 date: 2026-10-20
-status: In Progress
+status: Done
 summary: Turn the four-office plantilla Google Sheet into job postings, plantilla slots, a new Social Welfare office and per-office divisions, with Faker filling the qualification fields inside CSC rules, and keep divisions out of office lists.
 spec: Grilling session 2026-10-20 (decisions D1–D12 below)
 ---
@@ -50,3 +50,9 @@ Monthly salary is not generated: it is Step 1 of `salary_grades` for the row's S
 - `npx tsc --noEmit`, `npm run lint`, `npm test`.
 - Generator: row counts per office and status, no duplicate item numbers, every status/slot value inside its CHECK set, every SG has a salary.
 - After the SQL runs: read-only counts of postings, slots, departments and weighting config; spot-check the RSP job list, public vacancy list and office directory.
+
+## Status check 2026-11-12
+
+Done. Code fix, generator and live import verified; see `docs/session-summaries/2026-10-20-import-sheet-job-postings-summary.md`.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

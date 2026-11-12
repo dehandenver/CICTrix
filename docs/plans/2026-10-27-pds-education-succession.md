@@ -1,7 +1,7 @@
 ---
 title: Feed PDS education into succession readiness
 date: 2026-10-27
-status: In Progress
+status: Done
 summary: Succession reads `employee_education` directly, the way it already reads `employee_eligibility`, so an employee's PDS education edit changes their succession gate and education score. No migration, no backfill, no writes.
 # spec: none. Design follows the eligibility precedent in src/lib/api/succession.ts:1548.
 ---
@@ -62,3 +62,9 @@ Verified before planning: `employee_education` holds 110 rows for 110 distinct e
 - `npm run lint` — zero warnings
 - Manual pass on dev/staging described in Step 5
 - Regenerate the plans dashboard with `docs/plans/build-plans-index.ps1` after the plan and summary land.
+
+## Status check 2026-11-12
+
+Done. Step 5 (manual staging pass) was not run by hand. The automated checks below were accepted in its place, and they cover `educationAttainment.test.ts`, `successionAutoSuccessors.test.ts` and `successionDashboardOverview.test.ts`.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

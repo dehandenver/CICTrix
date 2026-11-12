@@ -1,7 +1,7 @@
 ---
 title: Fix application confirmation counts and position labels
 date: 2026-10-29
-status: In Progress
+status: Done
 summary: Keep the submit confirmation's wording fixed while requests run, and lead the review cards and success rows with the position title, with the plantilla as smaller text beneath it.
 ---
 
@@ -67,3 +67,9 @@ Fix: add one local helper, `positionTitleFor(key)`, returning the trimmed `formD
 - `npm test`
 - `npm run build`
 - `DESIGN_IDENTITY.md` §16 checklist for the review and success screens.
+
+## Status check 2026-11-12
+
+Done. All three steps and the four tests are on main; see `docs/session-summaries/2026-10-29-application-submission-feedback-summary.md`. The 375px manual pass was not done.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

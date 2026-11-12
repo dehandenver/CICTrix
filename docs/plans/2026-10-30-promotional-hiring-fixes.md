@@ -1,7 +1,7 @@
 ---
 title: Repair the promotional hiring pipeline
 date: 2026-10-30
-status: In Progress
+status: Done
 summary: Repair the active employee application and RSP promotion flow, including scheduled interviewer visibility, durable scores, selection visibility, appointment completion, and existing-account preservation. Security remediation and the unused PM promotion module are excluded.
 spec: docs/session-summaries/2026-10-30-promotional-hiring-audit-summary.md
 ---
@@ -477,3 +477,9 @@ Done 2026-11-03 inline. Four second-call tests (`failed`, a plain error, `not_au
 ## Plan review and execution gate
 
 Plan and exact model pair approved in chat. Follow the delegation ledger and task checkboxes for execution state; approval does not authorize live database changes, sends, pushes or deployments. Stop affected work if the required isolated database or model route is unavailable; report the precise blocker rather than substituting production access or another model.
+
+## Status check 2026-11-12
+
+Done. The open build question is settled: Vercel built `cd71e17` successfully, and both promotion smoke test files pass. Still not covered: the FastAPI external hire route, real email, and the eight live postings under the inactive IT and Legal offices (a data decision). Minor findings M2–M8 stay recorded above.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

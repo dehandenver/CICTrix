@@ -51,3 +51,9 @@ The person is identified by normalised email, since the public portal has no acc
 - SQL: apply to plantillas A and B with one email and confirm one reference. Hire on A, and B becomes Withdrawn with the saved prior status. Revert the hire, and B is restored. Apply again to C after the hire, and C stays open with the promotion tag.
 - Search the tracker by primary reference, by an old alias, and by email. All three return the same full list, and the default-open rule picks the right row.
 - `npm run build`, `applicantStatus.test.ts`, then check the RSP list in the browser: the row is dimmed, actions are disabled, it's excluded from bulk select and counts, and the popover lists all applications.
+
+## Status check 2026-11-12
+
+Still In Progress. Done: migration (applied live), the "Withdrawn - Hired Elsewhere" status, the wizard reference label, and the tracker. Left: the D8 "N apps" chip and popover on RSP lists, the wizard note that an application was "added under the same reference", and recording the Step 6 checks (migration double-run, SQL scenarios).
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

@@ -1,7 +1,7 @@
 ---
 title: RSP dashboard succession section — ranked successors, drill-in, View all
 date: 2026-10-25
-status: In Progress
+status: Done
 summary: The dashboard's succession section becomes one table (Key position, Incumbent leaves, Successors) whose counts come from the Succession Planning page's ranking engine; rows open the position on that page and a View all modal lists every key position.
 spec: docs/mockups/2026-10-25-rsp-dashboard-succession.html
 ---
@@ -47,3 +47,9 @@ So `getSuccessionDashboardOverview()` now counts each position's ranked pool wit
 - `npm run lint`
 - `npm test`
 - Browser: dashboard → row → Succession page opens the right office and position; Back returns to the dashboard; View all → search, paginate, Esc and Back close it; mobile full-screen sheet; successor counts match the Succession Planning page.
+
+## Status check 2026-11-12
+
+Done. The concurrency cap was later replaced by a batched engine call (`2514d8f`), now recorded in the summary.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.
