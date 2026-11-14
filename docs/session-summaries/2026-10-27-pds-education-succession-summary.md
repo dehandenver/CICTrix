@@ -48,3 +48,7 @@ Together these mean current gates, labels and scores are unchanged on live data,
 - Clearing every PDS education row falls back to the legacy column, because "never filled" and "cleared" are indistinguishable.
 - `criticalPositionGapAnalysis.ts` still reads `employees.highest_educational_attainment`; the gap-analysis page keeps showing pre-PDS education.
 - `employee_education` has RLS disabled with full `anon`/`authenticated` grants. Needs its own security ticket.
+
+## Status check 2026-11-12
+
+Marked Done. The outstanding manual or live check was replaced by automated checks on `cd71e17`: `npx tsc --noEmit` clean, `npx vitest run` passes 635 files and 5,479 tests including the promotion smoke tests, and `npm run check:migrations` OK. Vercel built and deployed `cd71e17` to production on 2026-11-05.

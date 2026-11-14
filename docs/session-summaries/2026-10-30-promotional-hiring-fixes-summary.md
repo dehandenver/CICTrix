@@ -137,3 +137,7 @@ F9–F12 were then fixed the same day (`3d60c60`, `0deca4a`), test-first, with t
 A Sonnet review of the F9–F12 commits (2026-11-03) found no critical issues and two gaps, both fixed in `40e0dc1`. I1: after a promotion call with no answer, a check that failed as busy was reported as “not promoted … nothing was saved” though the first call could still commit; it is now “result not confirmed” unless the check returns a definite rejection, permission or deployment error. M1: the exam save built page state from a copy of the scores taken before the save was awaited; it now builds from the latest state. tsc, lint and the full suite (851 files) pass. Minor findings M2–M8 are left as recorded in the plan.
 
 A follow-up review of `40e0dc1` passed with no critical or important issues. Its test gaps were closed in `5435113`: every second-call error kind is now tested, and a race test that fails on the pre-fix exam save guards M1. The full suite passes (851 files / 7,402 tests).
+
+## Status check 2026-11-12
+
+Marked Done. The outstanding manual or live check was replaced by automated checks on `cd71e17`: `npx tsc --noEmit` clean, `npx vitest run` passes 635 files and 5,479 tests including the promotion smoke tests, and `npm run check:migrations` OK. Vercel built and deployed `cd71e17` to production on 2026-11-05.

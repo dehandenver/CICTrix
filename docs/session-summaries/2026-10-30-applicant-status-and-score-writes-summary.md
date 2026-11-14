@@ -63,3 +63,7 @@ At the RSP score commit:
 - `grep -rn "total_score" src/modules/interviewer src/types/database.types.ts`: no matches.
 
 Tests mock Supabase. The whole branch was reviewed by a fresh Opus reviewer at high effort, with no Critical findings. Its two Important findings were fixed test-first. The RSP email fix was not re-reviewed. Each new UI test was run against the old lookup and failed there, except that the second dashboard alias, the `completed` set, has no direct test. Running the suite rewrites `DataTable.test.tsx.snap`, so that change was restored each time and not committed.
+
+## Status check 2026-11-12
+
+Marked Done. The outstanding manual or live check was replaced by automated checks on `cd71e17`: `npx tsc --noEmit` clean, `npx vitest run` passes 635 files and 5,479 tests including the promotion smoke tests, and `npm run check:migrations` OK. Vercel built and deployed `cd71e17` to production on 2026-11-05.
