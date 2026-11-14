@@ -1,7 +1,7 @@
 ---
 title: Make token shadow classes render a real box-shadow
 date: 2026-11-14
-status: In Progress
+status: Done
 summary: Seven Tailwind classes write shadow-[var(--token)], which Tailwind 3.4.17 compiles to a shadow colour, so no shadow renders. Switch them to the shadow-[shadow:var(--token)] hint form.
 ---
 
