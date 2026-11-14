@@ -17,10 +17,11 @@ import {
   Search,
   Send,
   Users,
-  X,
 } from 'lucide-react';
 import { BackButton } from '../../../components/BackButton';
 import { Dialog } from '../../../components/Dialog';
+import { ConfirmModal, Modal } from '../../../components/modal';
+import { useAsyncAction, useFeedback } from '../../../components/action-feedback';
 import { useDepartmentNames } from '../../../hooks/useDepartmentOptions';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import { type IpcrStage, stagePillStyle } from '../../../lib/api/ipcrStages';
@@ -34,7 +35,7 @@ import { OfficeWeightingPanel } from './OfficeWeightingPanel';
 import { RatingScalePanel } from '../../../components/RatingScalePanel';
 import { getCurrentAdminEmail } from '../moduleUi';
 import { supabase as supabaseClient } from '../../../lib/supabase';
-import { getSystemPhaseStates, openPhase, closePhase } from '../../../lib/api/ipcrPhaseControl';
+import { getSystemPhaseStates, openPhase, closePhase, type PhaseChangeResult } from '../../../lib/api/ipcrPhaseControl';
 import { getActiveCyclePeriod } from '../../../lib/api/compliance';
 import type { EffectiveState } from '../../../lib/api/phaseSchedules';
 import { SkeletonList, useDelayedLoading, useTableLoading } from '../../../components/table-loading';
@@ -1065,9 +1066,11 @@ const PhaseConfirmModal = ({
   onClose: () => void;
   onConfirmed: () => Promise<void>;
 }) => {
-  const [busy, setBusy] = useState(false);
+  const feedback = useFeedback();
+  const change = useAsyncAction<PhaseChangeResult>();
   const isOpenAction = action === 'open';
   const isPhase1 = phase === 'phase1';
+  const phaseName = isPhase1 ? 'Phase 1' : 'Phase 2';
 
   const title = isOpenAction
     ? isPhase1 ? 'Open Phase 1?' : 'Open Phase 2?'
@@ -1082,66 +1085,39 @@ const PhaseConfirmModal = ({
       : 'This closes Accomplishment Rating system-wide and locks the submission window for all regular and probationary employees.';
 
   const handleConfirm = async () => {
-    setBusy(true);
-    try {
-      const email = getCurrentAdminEmail();
-      const res = isOpenAction
-        ? await openPhase({ phase, openedBy: email })
-        : await closePhase({ phase, closedBy: email });
-      setBusy(false);
-      onClose();
-      await onConfirmed();
-      if (res.ok === false) alert(res.error);
-      else if (res.warning) alert(res.warning);
-    } catch (err) {
-      setBusy(false);
-      onClose();
-      alert(err instanceof Error ? err.message : 'Action failed');
-    }
+    const changed = isOpenAction ? 'opened' : 'closed';
+    await change.run({
+      action: `${isOpenAction ? 'open' : 'close'} ${phaseName}`,
+      failureChannel: 'toast',
+      run: () => {
+        const email = getCurrentAdminEmail();
+        return isOpenAction
+          ? openPhase({ phase, openedBy: email })
+          : closePhase({ phase, closedBy: email });
+      },
+      onSuccess: (res) => {
+        const warning = res.ok ? res.warning : undefined;
+        if (warning) feedback.warning(`${phaseName} ${changed}, with a warning`, warning);
+        else feedback.success(`${phaseName} ${changed}`);
+      },
+    });
+    // The phase state is reloaded whatever the outcome, as before.
+    onClose();
+    await onConfirmed();
   };
 
   return (
-    <Dialog open={open} onClose={onClose}>
-      <div className="w-[460px] max-w-full space-y-5 p-1">
-        <div className="flex items-center justify-between pr-8">
-          <div className="flex items-center gap-3.5">
-            <div
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-                isOpenAction ? 'bg-indigo-100/70 text-indigo-600' : 'bg-rose-100/70 text-rose-600'
-              }`}
-            >
-              {isOpenAction ? <Unlock className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
-            </div>
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight">{title}</h2>
-          </div>
-        </div>
-
-        <p className="text-sm text-slate-600 leading-relaxed">{description}</p>
-
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="px-5 py-2 text-sm font-bold border border-slate-200 text-slate-700 bg-white rounded-xl hover:bg-slate-50 transition active:scale-95 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={busy}
-            className={`px-5 py-2 text-sm font-bold text-white rounded-xl shadow-xs transition active:scale-95 disabled:opacity-50 ${
-              isOpenAction
-                ? 'bg-[#363EE8] hover:bg-[#2931c5]'
-                : 'bg-[#e11d48] hover:bg-[#be123c]'
-            }`}
-          >
-            {busy ? (isOpenAction ? 'Opening…' : 'Closing…') : isOpenAction ? 'Confirm open' : 'Confirm close'}
-          </button>
-        </div>
-      </div>
-    </Dialog>
+    <ConfirmModal
+      open={open}
+      title={title}
+      icon={isOpenAction ? <Unlock size={20} /> : <Lock size={20} />}
+      message={description}
+      confirmLabel={isOpenAction ? 'Confirm open' : 'Confirm close'}
+      tone={isOpenAction ? 'primary' : 'destructive'}
+      loading={change.pending}
+      onConfirm={() => void handleConfirm()}
+      onCancel={onClose}
+    />
   );
 };
 
@@ -1969,51 +1945,28 @@ export const PMIPCRManagement = () => {
         />
       )}
 
-      {/* IPCR Weighting popup — a wide custom overlay rather than the shared
-          Dialog, whose 500px cap is too narrow for the per-office table. */}
-      {showWeighting && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm sm:p-8"
-          onClick={() => setShowWeighting(false)}
-        >
-          <div
-            className="relative w-full max-w-5xl rounded-2xl bg-white p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={() => setShowWeighting(false)}
-              className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              title="Close"
-            >
-              <X size={18} />
-            </button>
-            <OfficeWeightingPanel />
-          </div>
-        </div>
-      )}
+      {/* IPCR Weighting popup: xl, since the per-office table needs the width. */}
+      <Modal
+        open={showWeighting}
+        onClose={() => setShowWeighting(false)}
+        size="xl"
+        icon={<Scale size={20} />}
+        title="IPCR Weighting"
+        subtitle="How Core, Strategic and Support ratings combine into an overall score, per office"
+      >
+        <OfficeWeightingPanel />
+      </Modal>
 
-      {showRatingScale && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm sm:p-8"
-          onClick={() => setShowRatingScale(false)}
-        >
-          <div
-            className="relative w-full max-w-5xl rounded-2xl bg-white p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={() => setShowRatingScale(false)}
-              className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              title="Close"
-            >
-              <X size={18} />
-            </button>
-            <RatingScalePanel />
-          </div>
-        </div>
-      )}
+      <Modal
+        open={showRatingScale}
+        onClose={() => setShowRatingScale(false)}
+        size="xl"
+        icon={<ListChecks size={20} />}
+        title="IPCR Rating Scale"
+        subtitle="What each rating means. Employees see this while rating their accomplishments in Phase 2."
+      >
+        <RatingScalePanel />
+      </Modal>
     </div>
   );
 };

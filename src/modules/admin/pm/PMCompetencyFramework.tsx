@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ErrorBanner } from '../../../components/ErrorBanner';
 import { BookOpen, Check, Grid3x3, Loader2, RefreshCw, Search, Trash2, X } from 'lucide-react';
 
-import { Dialog } from '../../../components/Dialog';
+import { ConfirmModal } from '../../../components/modal';
 import {
   listAllRequirements,
   listCompetencyStandards,
@@ -718,33 +718,22 @@ const CompetencyMapPanel = ({
       )}
 
       {/* Deleting drops a real requirement, so confirm rather than fire on click. */}
-      <Dialog open={Boolean(pendingDelete)} onClose={() => setPendingDelete(null)}>
-        <div className="w-[400px] max-w-full space-y-3 p-1">
-          <h3 className="text-lg font-bold text-slate-900">Delete competency record?</h3>
-          <p className="text-sm text-slate-600">
+      <ConfirmModal
+        open={Boolean(pendingDelete)}
+        title="Delete competency record?"
+        message={
+          <>
             <strong>{pendingDelete?.competencyName}</strong> will no longer be required for{' '}
             <strong>{pendingDelete?.positionTitle}</strong>. This also removes it from that position's
             requirements and from any eligibility check that uses them.
-          </p>
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setPendingDelete(null)}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={deleting}
-              onClick={() => void confirmDelete()}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete
-            </button>
-          </div>
-        </div>
-      </Dialog>
+          </>
+        }
+        confirmLabel="Delete"
+        tone="destructive"
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPendingDelete(null)}
+      />
 
       <div className="flex flex-wrap items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
         <span className="font-semibold text-slate-700">Legend:</span>

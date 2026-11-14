@@ -150,7 +150,7 @@ export const Phase2RatingPanel: React.FC<{
     });
 
     if (incomplete) {
-      alert('Please score every indicator on Quality, Efficiency, and Timeliness before completing.');
+      setNotice({ tone: 'err', text: 'Score every indicator on Quality, Efficiency and Timeliness before completing.' });
       setApprovalBusyId(null);
       return;
     }

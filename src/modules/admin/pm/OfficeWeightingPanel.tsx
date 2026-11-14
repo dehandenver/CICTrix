@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Building2, Check, Scale } from 'lucide-react';
+import { AlertTriangle, Building2, Check } from 'lucide-react';
 import {
   describeSplit,
   listWeightingConfigs,
@@ -63,16 +63,6 @@ export const OfficeWeightingPanel = () => {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2.5">
-        <Scale className="h-6 w-6 text-blue-600" />
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">IPCR Weighting</h2>
-          <p className="text-sm text-slate-500">
-            How Core, Strategic and Support ratings combine into an overall score, per office
-          </p>
-        </div>
-      </div>
-
       <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
         <p className="text-xs text-amber-800">
