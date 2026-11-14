@@ -239,7 +239,7 @@ describe('applicationStatusVariant (DESIGN_IDENTITY §10 application status map)
     ['Pending', 'warning'],
     ['Interview/Exam Scheduled', 'warning'],
     ['For Evaluation', 'warning'],
-    ['For Contract Signing', 'warning'],
+    ['For Contract Signing', 'success'],
     ['Qualified', 'success'],
     ['Selected', 'success'],
     ['Disqualified', 'error'],
@@ -260,5 +260,12 @@ describe('applicationStatusVariant (DESIGN_IDENTITY §10 application status map)
     expect(applicationStatusVariant('rejected')).toBe('error');
     expect(applicationStatusVariant('something new')).toBe('neutral');
     expect(applicationStatusVariant(null)).toBe('neutral');
+  });
+
+  it('colours hire values older paths still write', () => {
+    expect(applicationStatusVariant('Accepted')).toBe('success');
+    expect(applicationStatusVariant('Hired')).toBe('success');
+    expect(applicationStatusVariant('For Hiring')).toBe('success');
+    expect(applicationStatusVariant('Received')).toBe('info');
   });
 });

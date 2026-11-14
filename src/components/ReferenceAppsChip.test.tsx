@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../lib/supabase', () => ({ supabase: {} }));
@@ -36,7 +36,7 @@ describe('ReferenceAppsChip', () => {
 
   it('counts the applications and lists them all when opened', () => {
     renderChip([hire, withdrawn]);
-    const chip = screen.getByRole('button', { name: 'Show all 2 applications under ABYAN-731-052' });
+    const chip = screen.getByRole('button', { name: '2 apps: show all applications under ABYAN-731-052' });
     expect(chip).toHaveTextContent('2 apps');
     expect(chip).toHaveAttribute('aria-expanded', 'false');
 
@@ -49,7 +49,7 @@ describe('ReferenceAppsChip', () => {
 
   it('shows a hired-elsewhere application as a neutral badge naming the hire plantilla', () => {
     renderChip([hire, withdrawn]);
-    fireEvent.click(screen.getByRole('button', { name: /Show all 2 applications/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^2 apps/ }));
     const label = screen.getByText('Withdrawn: hired on Plantilla 5');
     expect(label.closest('.badge')).toHaveClass('badge-neutral');
     expect(screen.getByText('Selected').closest('.badge')).toHaveClass('badge-success');
@@ -57,7 +57,7 @@ describe('ReferenceAppsChip', () => {
 
   it('closes on Escape and returns focus to the chip', () => {
     renderChip([hire, withdrawn]);
-    const chip = screen.getByRole('button', { name: /Show all 2 applications/ });
+    const chip = screen.getByRole('button', { name: /^2 apps/ });
     fireEvent.click(chip);
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -66,7 +66,7 @@ describe('ReferenceAppsChip', () => {
 
   it('closes on an outside click and on a second click of the chip', () => {
     renderChip([hire, withdrawn]);
-    const chip = screen.getByRole('button', { name: /Show all 2 applications/ });
+    const chip = screen.getByRole('button', { name: /^2 apps/ });
     fireEvent.click(chip);
     fireEvent.mouseDown(document.body);
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -84,8 +84,42 @@ describe('ReferenceAppsChip', () => {
         <ReferenceAppsChip applicantName="Juan Dela Cruz" referenceNo="ABYAN-731-052" applications={[hire, withdrawn]} />
       </td></tr></tbody></table>,
     );
-    fireEvent.click(screen.getByRole('button', { name: /Show all 2 applications/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^2 apps/ }));
     fireEvent.click(screen.getByText('Records Officer I'));
     expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('moves focus into the popover so its list can be read and scrolled', () => {
+    renderChip([hire, withdrawn]);
+    fireEvent.click(screen.getByRole('button', { name: /^2 apps/ }));
+    expect(screen.getByRole('dialog')).toHaveFocus();
+  });
+
+  it('closes when focus moves elsewhere on the page', () => {
+    render(
+      <>
+        <ReferenceAppsChip applicantName="Juan Dela Cruz" referenceNo="ABYAN-731-052" applications={[hire, withdrawn]} />
+        <button type="button">Next row action</button>
+      </>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^2 apps/ }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    act(() => screen.getByRole('button', { name: 'Next row action' }).focus());
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('marks its Esc as handled without stopping it, so an enclosing Modal stays open', () => {
+    const outer = vi.fn((event: KeyboardEvent) => event.defaultPrevented);
+    document.addEventListener('keydown', outer);
+    try {
+      renderChip([hire, withdrawn]);
+      fireEvent.click(screen.getByRole('button', { name: /^2 apps/ }));
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+      expect(outer).toHaveBeenCalledTimes(1);
+      expect(outer.mock.results[0].value).toBe(true);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    } finally {
+      document.removeEventListener('keydown', outer);
+    }
   });
 });

@@ -11,6 +11,8 @@ interface ReferenceAppsChipProps {
   applications: ReferenceApplication[];
   /** The row the chip sits on, marked in the list. */
   currentApplicationId?: string;
+  /** Spacing from the call site; the chip itself carries no margin. */
+  className?: string;
 }
 
 /** Gap between the chip and the popover, and the minimum edge margin (§5.1). */
@@ -24,8 +26,10 @@ const VIEWPORT_MARGIN = 16;
  * application.
  *
  * The popover is portalled to the body because table containers clip overflow.
+ * Focus moves into it on open, and it closes when focus leaves it, so it is
+ * never left open behind another layer such as a Modal.
  */
-export function ReferenceAppsChip({ applicantName, referenceNo, applications, currentApplicationId }: ReferenceAppsChipProps) {
+export function ReferenceAppsChip({ applicantName, referenceNo, applications, currentApplicationId, className }: ReferenceAppsChipProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const chipRef = useRef<HTMLButtonElement>(null);
@@ -34,10 +38,15 @@ export function ReferenceAppsChip({ applicantName, referenceNo, applications, cu
 
   const close = useCallback((restoreFocus: boolean) => {
     setOpen(false);
+    setPosition(null);
     if (restoreFocus) chipRef.current?.focus();
   }, []);
 
-  // Place below the chip, flipping above it and staying inside the viewport.
+  const isInside = useCallback((target: EventTarget | null) =>
+    target instanceof Node && Boolean(chipRef.current?.contains(target) || popoverRef.current?.contains(target)), []);
+
+  // Place below the chip, flip above it when only that fits, and always stay
+  // inside the viewport. Re-measured when the list changes while open.
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
@@ -47,11 +56,12 @@ export function ReferenceAppsChip({ applicantName, referenceNo, applications, cu
       const height = pop?.height ?? 0;
       const width = pop?.width ?? 0;
       const below = chip.bottom + POPOVER_GAP;
-      const top = below + height + VIEWPORT_MARGIN > window.innerHeight && chip.top - POPOVER_GAP - height >= VIEWPORT_MARGIN
-        ? chip.top - POPOVER_GAP - height
-        : below;
+      const above = chip.top - POPOVER_GAP - height;
+      const fitsBelow = below + height + VIEWPORT_MARGIN <= window.innerHeight;
+      const preferred = !fitsBelow && above >= VIEWPORT_MARGIN ? above : below;
+      const top = Math.max(VIEWPORT_MARGIN, Math.min(preferred, window.innerHeight - height - VIEWPORT_MARGIN));
       const left = Math.max(VIEWPORT_MARGIN, Math.min(chip.left, window.innerWidth - width - VIEWPORT_MARGIN));
-      setPosition({ top, left });
+      setPosition((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
     };
     place();
     window.addEventListener('resize', place);
@@ -60,41 +70,52 @@ export function ReferenceAppsChip({ applicantName, referenceNo, applications, cu
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
     };
-  }, [open]);
+  }, [open, applications.length]);
+
+  // Once placed (it renders hidden until then), move focus into the popover so
+  // its list is read and can be scrolled from the keyboard.
+  const placed = position !== null;
+  useEffect(() => {
+    if (open && placed) popoverRef.current?.focus({ preventScroll: true });
+  }, [open, placed]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        close(true);
-      }
+      if (event.key !== 'Escape' || event.defaultPrevented || !isInside(document.activeElement)) return;
+      // preventDefault, not stopPropagation: an enclosing Modal skips an Esc
+      // that something inside it already handled.
+      event.preventDefault();
+      close(true);
     };
     const onPointer = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (chipRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
-      close(false);
+      if (!isInside(event.target)) close(false);
+    };
+    const onFocus = (event: FocusEvent) => {
+      if (!isInside(event.target)) close(false);
     };
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('mousedown', onPointer);
+    document.addEventListener('focusin', onFocus);
     return () => {
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('focusin', onFocus);
     };
-  }, [open, close]);
+  }, [open, close, isInside]);
 
   if (applications.length <= 1) return null;
 
   const count = applications.length;
   return (
-    <span className="abyan-ds" onClick={(event) => event.stopPropagation()}>
+    <span className={className ? `abyan-ds ${className}` : 'abyan-ds'} onClick={(event) => event.stopPropagation()}>
       <button
         ref={chipRef}
         type="button"
         className="ref-apps-chip"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Show all ${count} applications under ${referenceNo}`}
+        aria-label={`${count} apps: show all applications under ${referenceNo}`}
         onClick={() => (open ? close(false) : setOpen(true))}
       >
         {count} apps
@@ -104,6 +125,7 @@ export function ReferenceAppsChip({ applicantName, referenceNo, applications, cu
           <div
             ref={popoverRef}
             role="dialog"
+            tabIndex={-1}
             aria-labelledby={titleId}
             className="ref-apps-popover"
             style={position ? { top: position.top, left: position.left } : { visibility: 'hidden', top: 0, left: 0 }}

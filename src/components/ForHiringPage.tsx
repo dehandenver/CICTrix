@@ -447,8 +447,12 @@ export const ForHiringPage = () => {
         });
 
         // Which plantilla each application is for, its reservation, and any
-        // revoked selection.
-        const context = await fetchHiringContext(Array.from(mergedMap.keys()));
+        // revoked selection. The "N apps" groups load alongside: the rows kept
+        // below are a subset of these, so their references are all covered.
+        const [context, references] = await Promise.all([
+          fetchHiringContext(Array.from(mergedMap.keys())),
+          fetchApplicationsByReference(Array.from(mergedMap.values(), (row) => row.referenceNo)),
+        ]);
         mergedMap.forEach((row, id) => {
           row.slot = context.slotByApplicant.get(id) ?? null;
           row.selectionRevokedAt = context.revokedAt.get(id) ?? null;
@@ -462,7 +466,6 @@ export const ForHiringPage = () => {
           (a.department || 'zzz').localeCompare(b.department || 'zzz') ||
           (a.position   || 'zzz').localeCompare(b.position   || 'zzz')
         );
-        const references = await fetchApplicationsByReference(all.map((row) => row.referenceNo));
         if (references.error) console.warn('[ForHiringPage] applications by reference failed to load:', references.error);
         setReferenceGroups(references.data ?? new Map());
         setRows(all);

@@ -185,9 +185,11 @@ export function normalizeStatus(raw: string | null | undefined): ApplicantWorkfl
 export type StatusBadgeVariant = 'success' | 'warning' | 'error' | 'info' | 'neutral';
 
 /**
- * The §10 application status colour. Withdrawn - Hired Elsewhere is Neutral, so
- * green stays on the application that was actually hired. Unknown values are
- * Neutral too: a colour should never suggest an outcome the status doesn't have.
+ * The §10 application status colour, the one map every screen uses (RSP
+ * Archives included). Withdrawn - Hired Elsewhere is Neutral, so green stays on
+ * the application that was actually hired. Not Selected is a rejection, so
+ * Error. Unknown values are Neutral: a colour should never suggest an outcome
+ * the status doesn't have.
  */
 const STATUS_VARIANT: Record<ApplicantWorkflowStatus, StatusBadgeVariant> = {
   Submitted: 'info',
@@ -197,14 +199,27 @@ const STATUS_VARIANT: Record<ApplicantWorkflowStatus, StatusBadgeVariant> = {
   'Interview/Exam Scheduled': 'warning',
   'For Evaluation': 'warning',
   Qualified: 'success',
-  'For Contract Signing': 'warning',
+  'For Contract Signing': 'success',
   Selected: 'success',
   Disqualified: 'error',
   'Not Selected': 'error',
   'Withdrawn - Hired Elsewhere': 'neutral',
 };
 
+/**
+ * Raw values older write paths still store that normalizeStatus leaves
+ * unmapped. Kept here, not in LEGACY_MAP, so other screens' workflow logic is
+ * unchanged. The hire trigger (20261021200000) counts 'Accepted' as a hire.
+ */
+const RAW_VARIANT: Record<string, StatusBadgeVariant> = {
+  accepted: 'success',
+  'for hiring': 'success',
+  received: 'info',
+};
+
 export function applicationStatusVariant(raw: string | null | undefined): StatusBadgeVariant {
+  const alias = RAW_VARIANT[String(raw ?? '').trim().toLowerCase()];
+  if (alias) return alias;
   const status = normalizeStatus(raw);
   return status ? STATUS_VARIANT[status] : 'neutral';
 }

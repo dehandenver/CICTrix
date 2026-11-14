@@ -3,6 +3,8 @@
  * No React and no Supabase, so Vitest covers it directly.
  */
 
+import { APPLICANT_STATUSES, applicationStatusVariant } from '../../../../lib/api/applicantStatus';
+
 export type ArchiveGroup = 'employees' | 'applicants' | 'jobs' | 'evaluations';
 
 export type ArchiveAction =
@@ -79,24 +81,13 @@ export const CATEGORY_TYPES = new Set(['Promoted', 'Transferred', 'Ranking', 'As
 
 export type BadgeVariant = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'tint';
 
-/** §10 application-status map; everything else (employee endings, closed posts) is neutral. */
-const STATUS_VARIANT: Record<string, BadgeVariant> = {
-  Submitted: 'info',
-  Shortlisted: 'info',
-  'Under Initial Screening': 'warning',
-  Pending: 'warning',
-  'Interview/Exam Scheduled': 'warning',
-  'For Evaluation': 'warning',
-  Qualified: 'success',
-  'For Contract Signing': 'success',
-  Selected: 'success',
-  Disqualified: 'error',
-};
 
 /** §10 badge variant for a status type. */
 export const badgeVariant = (type: string): BadgeVariant => {
   if (CATEGORY_TYPES.has(type)) return 'tint';
-  return STATUS_VARIANT[type] ?? 'neutral';
+  // Application statuses use the shared §10 map; everything else (employee
+  // endings, deleted posts) is neutral.
+  return (APPLICANT_STATUSES as readonly string[]).includes(type) ? applicationStatusVariant(type) : 'neutral';
 };
 
 /** Display form: en dash for the hyphenated DB value. */

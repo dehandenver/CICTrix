@@ -64,6 +64,8 @@ export async function fetchApplicationsByReference(
       .is('deleted_at', null);
     if (error) return { data: null, error: error.message ?? 'Failed to load applications by reference.' };
     const rows: any[] = data ?? [];
+    // An empty id list would make the slot-link read fetch every link.
+    if (rows.length === 0) return { data: new Map() };
 
     // Plantilla labels: the same two reads the Applications tab uses.
     const links = await fetchApplicantSlotLinksChecked(rows.map((row) => String(row.id ?? '')));

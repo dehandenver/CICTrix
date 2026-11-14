@@ -1,11 +1,13 @@
 /* "N apps" chip on a Reference No. and its popover (one-reference plan, D8a).
-   Tokens come from the .abyan-ds scope the component renders in. */
+   Tokens come from the .abyan-ds scope the component renders in. Selectors
+   repeat their class so they outrank `.abyan-ds :where(...)` and the shared
+   `.badge` rules whatever order the stylesheets load in. */
 
-.ref-apps-chip {
+.ref-apps-chip.ref-apps-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   height: 22px;
-  margin-left: 8px;
   padding: 0 8px;
   border: 1px solid var(--color-primary-200);
   border-radius: var(--radius-pill);
@@ -17,9 +19,11 @@
   cursor: pointer;
   transition: background 150ms ease-out, border-color 150ms ease-out;
 }
-.ref-apps-chip:hover { border-color: var(--color-primary); }
-.ref-apps-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-.ref-apps-chip[aria-expanded='true'] { border-color: var(--color-primary); background: var(--color-primary-200); }
+.ref-apps-chip.ref-apps-chip:hover { border-color: var(--color-primary); }
+.ref-apps-chip.ref-apps-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.ref-apps-chip.ref-apps-chip[aria-expanded='true'] { border-color: var(--color-primary); background: var(--color-primary-200); }
+/* §13 target size: a 30px hit area around the 22px chip. */
+.ref-apps-chip.ref-apps-chip::before { content: ''; position: absolute; inset: -4px 0; }
 
 .ref-apps-popover {
   position: fixed;
@@ -37,8 +41,10 @@
   text-align: left;
   cursor: default;
 }
-.ref-apps-popover-title { margin: 0 0 12px; font: 600 14px/20px var(--font-sans); color: var(--color-primary-900); }
-.ref-apps-popover-title .ref { font-weight: 500; color: var(--neutral-600); }
+.ref-apps-popover:focus { outline: none; }
+.ref-apps-popover:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.ref-apps-popover-title.ref-apps-popover-title { margin: 0 0 12px; font: 600 14px/20px var(--font-sans); color: var(--color-primary-900); }
+.ref-apps-popover-title.ref-apps-popover-title .ref { font-weight: 500; color: var(--neutral-600); }
 
 .ref-apps-table { width: 100%; border-collapse: collapse; }
 .ref-apps-table th {
@@ -57,8 +63,8 @@
 }
 .ref-apps-table tr:last-child td { border-bottom: 0; }
 .ref-apps-table .current td:first-child { font-weight: 600; color: var(--color-primary-900); }
-.ref-apps-table .badge { height: auto; min-height: 22px; white-space: normal; }
+.ref-apps-table.ref-apps-table .badge { height: auto; min-height: 22px; white-space: normal; }
 
 @media (prefers-reduced-motion: reduce) {
-  .ref-apps-chip { transition: none; }
+  .ref-apps-chip.ref-apps-chip { transition: none; }
 }

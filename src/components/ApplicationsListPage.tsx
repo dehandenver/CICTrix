@@ -498,7 +498,7 @@ export const ApplicationsListPage = () => {
                       <td className="px-5 py-4 whitespace-nowrap">
                         <span className="font-mono text-xs text-slate-600">{a.reference_no || '—'}</span>
                         <ReferenceAppsChip applicantName={a.full_name} referenceNo={a.reference_no}
-                          applications={referenceApps(a)} currentApplicationId={a.id} />
+                          applications={referenceApps(a)} currentApplicationId={a.id} className="ml-2" />
                       </td>
 
                       {/* Position */}
@@ -626,7 +626,7 @@ export const ApplicationsListPage = () => {
                         <td className="px-5 py-4 whitespace-nowrap">
                           <span className="font-mono text-xs text-slate-600">{a.reference_no || '—'}</span>
                           <ReferenceAppsChip applicantName={a.full_name} referenceNo={a.reference_no}
-                            applications={referenceApps(a)} currentApplicationId={a.id} />
+                            applications={referenceApps(a)} currentApplicationId={a.id} className="ml-2" />
                         </td>
                         <td className="px-5 py-4 text-sm text-slate-700">
                           {a.position || '—'}

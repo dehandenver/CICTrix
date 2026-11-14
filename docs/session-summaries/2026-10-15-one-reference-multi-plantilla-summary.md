@@ -26,6 +26,22 @@ Covers the whole plan. Steps 1–4 shipped in October; this summary was written 
 - **Neutral, not green.** The withdrawn application uses the §10 Neutral badge ("Withdrawn: hired on <plantilla>"). The mockup's green pill is not used, so green stays on the actual hire.
 - **D7** is covered by the existing Original/Promotional type tag; no separate "Current employee – promotion" tag was built.
 - **For Hiring loads the reference groups inside its loader.** An effect that loaded them after the rows caused an extra render, which made the existing For Hiring tests flaky.
+- **One status colour map (code review, 2026-11-14).** `applicationStatusVariant` is now the single §10 map, and RSP Archives uses it for application statuses. Decided with the user:
+  - Not Selected → red (a rejection; Archives previously showed it gray).
+  - For Contract Signing → green.
+  - Raw values older paths still write are coloured too: Accepted → green, Received → blue.
+- **Popover focus (code review).**
+  - Focus moves into the popover on open, so its list is announced and can be scrolled from the keyboard.
+  - It closes when focus leaves it.
+  - Esc is marked handled with `preventDefault` instead of `stopPropagation`, so it can't take the Esc away from an enclosing Modal.
+- **Other review fixes.**
+  - The chip's accessible name starts with its visible text.
+  - It has a 30px hit area.
+  - Spacing moved to the Applications call site.
+  - Positioning clamps to the viewport and re-measures when the list changes.
+  - Selectors are doubled so they don't depend on stylesheet order.
+  - The service skips the slot-link read when nothing matches.
+  - For Hiring loads the groups in parallel with its hiring context.
 - **Not changed:** `isQualifiedStatus` matches the "hired" in "Withdrawn - Hired Elsewhere". That match is why the Applications tab hides those rows. Hiding them is the intended behaviour now, but the matcher is still wrong in principle and affects other tabs, so it was left alone.
 
 ## Checks run
@@ -36,4 +52,9 @@ Covers the whole plan. Steps 1–4 shipped in October; this summary was written 
 - The 2026-11-12 full-suite counts (635 files) also included repo copies under `.worktrees/`. This run's count covers this repo only.
 - Live data (read-only): 1 hired-elsewhere application, and 5 references with 2 applications each.
 - **Not run:** the Step 6 migration double-run and the SQL hire/undo scenarios. Running them needs a copy of live data, and the migration has been applied since October.
+- **Code review** (Opus 5.5, high effort): no Critical issues, 3 Important (all fixed), 11 Minor.
+  - Fixed: M1–M7, M9 and M10.
+  - Not fixed: M8, where the legacy `withdrawn` value shows as red "Disqualified". That mapping predates this work.
+  - Not fixed: M11, the unrun plan checks, which this summary records.
+  - Tests added: `applicants.reference.test.ts`, plus chip tests for focus moving in, closing on focus leaving, and Esc staying available to a Modal.
 - **Browser check skipped** at the user's choice. The chip and popover have not been seen in a browser; the component tests cover opening, closing, Esc focus return, the withdrawn badge and row-click isolation.
