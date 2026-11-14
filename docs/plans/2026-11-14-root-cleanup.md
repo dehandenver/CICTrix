@@ -39,6 +39,7 @@ Every file below was checked on 2026-11-14: its size and last commit, and a `git
 3. Delete the empty files, one-off scripts, dumps and the purge SQL with `git rm`. Commit: `chore: remove stray debug scripts and empty files from repo root`.
 4. `git mv` the troubleshooting docs to `docs/archive/` and the `.ps1` helpers to `scripts/windows/`, and update the paths inside them. Commit: `chore: archive old troubleshooting docs and move PowerShell helpers`.
 5. `git rm -r --cached scratch`. Commit: `chore: stop tracking scratch/`.
+   *Superseded:* upstream `main` already untracked `scratch/` and scrubbed `VERCEL_DEPLOYMENT.md` (`docs/plans/2026-11-05-remove-leaked-key-files.md`). After rebasing onto it, this commit was empty and was dropped.
 6. Run the checks below, write the session summary, regenerate the plans dashboard.
 
 ## Risks
