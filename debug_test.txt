@@ -1,1 +1,0 @@
-test_write_$(date /t)  
