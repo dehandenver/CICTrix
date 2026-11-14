@@ -192,7 +192,7 @@ export function JobPortalPage() {
 
   return (
     <div
-      className="min-h-screen bg-[#F8FAFC] text-[#050D65] flex flex-col justify-between"
+      className="ds-remap abyan-tokens min-h-screen bg-[#F8FAFC] text-[var(--color-primary-900)] flex flex-col justify-between"
       style={{ fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
     >
       {/* ─── Top Navbar ─────────────────────────────────────────────── */}
@@ -231,30 +231,30 @@ export function JobPortalPage() {
 
             {/* Login Dropdown */}
             <div className="relative group">
-              <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]">
+              <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[var(--color-primary-50)]">
                 <Users size={18} />
                 <span>Login</span>
               </button>
               <div className="absolute right-0 top-full mt-2 w-52 bg-white text-slate-900 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2 border border-slate-100">
                 <a
                   href="/employee/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
                   <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#059669] text-white"><Users size={15} /></span>
                   Employee Portal
                 </a>
                 <a
                   href="/interviewer/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
                   <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#7C3AED] text-white"><ClipboardCheck size={15} /></span>
                   Interviewer Portal
                 </a>
                 <a
                   href="/admin/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
-                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#050D65] text-white"><ShieldCheck size={15} /></span>
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[var(--color-primary-900)] text-white"><ShieldCheck size={15} /></span>
                   HR Administration
                 </a>
               </div>
@@ -264,7 +264,7 @@ export function JobPortalPage() {
       </header>
 
       {/* ─── Hero Banner ─────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-[#363EE8] to-[#050D65] py-12 text-white">
+      <section className="relative overflow-hidden bg-gradient-to-br from-[#363EE8] to-[var(--color-primary-900)] py-12 text-white">
         <div className="absolute -right-24 -top-28 h-80 w-80 rounded-full border border-white/10" />
         <div className="absolute -bottom-32 -left-20 h-96 w-96 rounded-full border border-white/10" />
         <div className="relative mx-auto max-w-6xl px-6 text-center">
@@ -292,7 +292,7 @@ export function JobPortalPage() {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-sm text-[#050D65] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30 focus:border-[#363EE8]"
+              className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-sm text-[var(--color-primary-900)] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30 focus:border-[#363EE8]"
             />
           </div>
 
@@ -307,7 +307,7 @@ export function JobPortalPage() {
                   setSelectedDept(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-[#050D65] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-[var(--color-primary-900)] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
               >
                 {departments.map((dept) => {
                   const count = deptCounts.get(dept) ?? 0;
@@ -317,7 +317,7 @@ export function JobPortalPage() {
                       key={dept}
                       value={dept}
                       disabled={empty}
-                      style={empty ? { color: '#9ca3af' } : undefined}
+                      style={empty ? { color: 'var(--neutral-400)' } : undefined}
                     >
                       {dept} ({count})
                     </option>
@@ -335,7 +335,7 @@ export function JobPortalPage() {
                   setSelectedType(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-[#050D65] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-[var(--color-primary-900)] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
               >
                 {employmentTypes.map((type) => {
                   const count = typeCounts.get(type) ?? 0;
@@ -345,7 +345,7 @@ export function JobPortalPage() {
                       key={type}
                       value={type}
                       disabled={empty}
-                      style={empty ? { color: '#9ca3af' } : undefined}
+                      style={empty ? { color: 'var(--neutral-400)' } : undefined}
                     >
                       {type} ({count})
                     </option>
@@ -394,7 +394,7 @@ export function JobPortalPage() {
         ) : !vacanciesLoad.initialLoading && activeVacancies.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 shadow-sm px-6">
             <Briefcase className="mx-auto text-slate-300 mb-4" size={48} />
-            <h3 className="text-lg font-bold text-[#050D65]">No Vacancies Found</h3>
+            <h3 className="text-lg font-bold text-[var(--color-primary-900)]">No Vacancies Found</h3>
             <p className="mt-2 text-slate-500 max-w-md mx-auto">
               There are currently no active job vacancies matching your filters or keywords. Please check back later.
             </p>
@@ -419,7 +419,7 @@ export function JobPortalPage() {
                     </span>
                   </div>
                   
-                  <h3 className="text-lg font-bold text-[#050D65] line-clamp-2 mb-2">
+                  <h3 className="text-lg font-bold text-[var(--color-primary-900)] line-clamp-2 mb-2">
                     {job.title}
                   </h3>
                   {job.plantillaText && (
@@ -475,13 +475,13 @@ export function JobPortalPage() {
             <table className="abyan-table w-full text-left">
               <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-4 font-semibold text-[#050D65]">Position Title</th>
-                  <th className="px-6 py-4 font-semibold text-[#050D65]">Department</th>
-                  <th className="px-6 py-4 font-semibold text-[#050D65]">Employment Type</th>
-                  <th className="px-6 py-4 font-semibold text-[#050D65]">Monthly Salary</th>
-                  <th className="px-6 py-4 font-semibold text-[#050D65]">Application Deadline</th>
-                  <th className="px-6 py-4 text-center font-semibold text-[#050D65]">Status</th>
-                  <th className="px-6 py-4 text-center font-semibold text-[#050D65]">Actions</th>
+                  <th className="px-6 py-4 font-semibold text-[var(--color-primary-900)]">Position Title</th>
+                  <th className="px-6 py-4 font-semibold text-[var(--color-primary-900)]">Department</th>
+                  <th className="px-6 py-4 font-semibold text-[var(--color-primary-900)]">Employment Type</th>
+                  <th className="px-6 py-4 font-semibold text-[var(--color-primary-900)]">Monthly Salary</th>
+                  <th className="px-6 py-4 font-semibold text-[var(--color-primary-900)]">Application Deadline</th>
+                  <th className="px-6 py-4 text-center font-semibold text-[var(--color-primary-900)]">Status</th>
+                  <th className="px-6 py-4 text-center font-semibold text-[var(--color-primary-900)]">Actions</th>
                 </tr>
               </thead>
               <tbody className={`divide-y divide-slate-100 ${tableBodyClass(false)}`}>
@@ -490,7 +490,7 @@ export function JobPortalPage() {
                     columns={['text', 'text', 'text', 'text', 'text', 'badge', 'button']} label="Loading vacant positions…" />
                 ) : paginatedVacancies.map((job) => (
                   <tr key={job.id} className="transition hover:bg-slate-50/50">
-                    <td className="px-6 py-4 font-bold text-[#050D65]">
+                    <td className="px-6 py-4 font-bold text-[var(--color-primary-900)]">
                       {job.title}
                       {job.plantillaText && (
                         <div className="mt-0.5 text-xs font-medium text-slate-500">{job.plantillaText}</div>

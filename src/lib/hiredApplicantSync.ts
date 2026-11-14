@@ -3,13 +3,99 @@ import { supabase } from './supabase';
 const SYNC_FLAG_KEY = 'cictrix_hired_applicant_sync_done';
 const EMPLOYEE_SYNC_FLAG_KEY = 'cictrix_newly_hired_employee_sync_done';
 
+type PersistedApplicationType = 'job' | 'promotion';
+
+interface ApplicantClassification {
+  externalIds: string[];
+  promotionCount: number;
+  unresolvedCount: number;
+}
+
+const normalizePersistedApplicationType = (value: unknown): PersistedApplicationType | null => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'job') return 'job';
+  if (normalized === 'promotion') return 'promotion';
+  return null;
+};
+
+/**
+ * Legacy rows are only actionable when the persisted application resolves to
+ * exactly one external job. Promotions, missing rows, duplicate rows and
+ * unknown types stay out of the old backfills instead of receiving an
+ * identity from the newly_hired snapshot.
+ */
+const classifyApplicantLinks = (
+  requestedIds: string[],
+  applicantRows: any[],
+): ApplicantClassification => {
+  const rowsById = new Map<string, any>();
+  const duplicateRowIds = new Set<string>();
+  for (const row of applicantRows) {
+    const id = String(row?.id ?? '').trim();
+    if (!id) continue;
+    if (rowsById.has(id)) {
+      duplicateRowIds.add(id);
+      continue;
+    }
+    rowsById.set(id, row);
+  }
+
+  const requestedCounts = new Map<string, number>();
+  for (const rawId of requestedIds) {
+    const id = String(rawId ?? '').trim();
+    if (!id) continue;
+    requestedCounts.set(id, (requestedCounts.get(id) ?? 0) + 1);
+  }
+
+  const externalIds: string[] = [];
+  let promotionCount = 0;
+  let unresolvedCount = 0;
+
+  for (const [id, count] of requestedCounts) {
+    if (count > 1 || duplicateRowIds.has(id) || !rowsById.has(id)) {
+      unresolvedCount++;
+      continue;
+    }
+
+    const applicationType = normalizePersistedApplicationType(
+      rowsById.get(id)?.application_type,
+    );
+    if (applicationType === 'promotion') {
+      promotionCount++;
+    } else if (applicationType === 'job') {
+      externalIds.push(id);
+    } else {
+      unresolvedCount++;
+    }
+  }
+
+  return { externalIds, promotionCount, unresolvedCount };
+};
+
+const reportApplicantClassification = (
+  scope: string,
+  classification: ApplicantClassification,
+): void => {
+  if (classification.promotionCount > 0) {
+    console.info(
+      `[hiredApplicantSync] ${scope}: skipped ${classification.promotionCount} promotional application(s).`,
+    );
+  }
+  if (classification.unresolvedCount > 0) {
+    console.warn(
+      `[hiredApplicantSync] ${scope}: skipped ${classification.unresolvedCount} unresolved or ambiguous application link(s).`,
+    );
+  }
+};
+
 /**
  * Backfill: ensure every applicant with a row in `newly_hired` has
  * `applicants.status = 'Hired'`. Older hires (before the FastAPI status-flip
  * fallback at commit a7e3ad9) only wrote to newly_hired, leaving the
  * applicant's status stuck on 'New Application' — which made the
  * Application Status Tracker show only stage 1 done for already-hired
- * candidates.
+ * candidates. Promotion applications are excluded: their stored status is
+ * owned by the appointment workflow, not this external-hire backfill.
  *
  * Runs once per tab session (sessionStorage flag). Safe to call on every
  * page load; the gate skips it on subsequent calls.
@@ -31,15 +117,38 @@ export const syncHiredApplicantStatus = async (): Promise<void> => {
       return;
     }
 
-    const applicantIds = Array.from(
-      new Set(
-        ((hiredRows ?? []) as Array<{ applicant_id?: string | null }>)
-          .map((r) => String(r?.applicant_id ?? '').trim())
-          .filter(Boolean),
-      ),
-    );
+    // Keep the source multiplicity so the classifier can reject duplicate
+    // newly_hired links; only the database query needs a unique ID list.
+    const sourceApplicantIds = ((hiredRows ?? []) as Array<{ applicant_id?: string | null }>)
+      .map((r) => String(r?.applicant_id ?? '').trim())
+      .filter(Boolean);
+    const uniqueApplicantIds = Array.from(new Set(sourceApplicantIds));
 
-    if (applicantIds.length === 0) {
+    if (uniqueApplicantIds.length === 0) {
+      try { sessionStorage.setItem(SYNC_FLAG_KEY, '1'); } catch { /* ignore */ }
+      return;
+    }
+
+    // Classify from the persisted application before touching statuses: a
+    // newly_hired row can belong to a promotion, which must never be flipped
+    // to a hire status by this legacy external-hire backfill.
+    const { data: applicantRows, error: classificationErr } = await (supabase as any)
+      .from('applicants')
+      .select('id, application_type')
+      .in('id', uniqueApplicantIds);
+
+    if (classificationErr) {
+      console.warn('[hiredApplicantSync] applicant classification fetch failed:', classificationErr);
+      return;
+    }
+
+    const classification = classifyApplicantLinks(
+      sourceApplicantIds,
+      (applicantRows ?? []) as any[],
+    );
+    reportApplicantClassification('status backfill', classification);
+
+    if (classification.externalIds.length === 0) {
       try { sessionStorage.setItem(SYNC_FLAG_KEY, '1'); } catch { /* ignore */ }
       return;
     }
@@ -49,7 +158,7 @@ export const syncHiredApplicantStatus = async (): Promise<void> => {
     const { data: updated, error: updateErr } = await (supabase as any)
       .from('applicants')
       .update({ status: 'Hired' })
-      .in('id', applicantIds)
+      .in('id', classification.externalIds)
       .neq('status', 'Hired')
       .select('id');
 
@@ -115,11 +224,59 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
     const existingIdSet = new Set((existingEmployees ?? []).map((e: any) => String(e.id)));
     const existingNumSet = new Set((existingEmployees ?? []).map((e: any) => String(e.employee_number)));
 
+    // Multiple credential-bearing newly_hired rows for one applicant are an
+    // ambiguous identity link. Skip them all rather than choosing a row.
+    const linkedHireCounts = new Map<string, number>();
+    for (const h of hires) {
+      const applicantId = String(h.applicant_id ?? '').trim();
+      const employeeId = String(h.employee_id ?? '').trim();
+      if (!applicantId || !employeeId) continue;
+      linkedHireCounts.set(applicantId, (linkedHireCounts.get(applicantId) ?? 0) + 1);
+    }
+    const duplicateApplicantIds = new Set(
+      Array.from(linkedHireCounts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([applicantId]) => applicantId),
+    );
+    if (duplicateApplicantIds.size > 0) {
+      console.warn(
+        `[hiredApplicantSync] employee backfill: skipped ${duplicateApplicantIds.size} applicant(s) with duplicate newly_hired links.`,
+      );
+    }
+
+    // A credential-bearing employee number claimed by more than one applicant
+    // UUID is a conflicting identity link. Skip every claimant rather than
+    // choosing a winner, even when the number is not in employees yet.
+    const employeeNumberClaimants = new Map<string, Set<string>>();
+    for (const h of hires) {
+      const applicantId = String(h.applicant_id ?? '').trim();
+      const employeeId = String(h.employee_id ?? '').trim();
+      if (!applicantId || !employeeId) continue;
+      const claimants = employeeNumberClaimants.get(employeeId) ?? new Set<string>();
+      claimants.add(applicantId);
+      employeeNumberClaimants.set(employeeId, claimants);
+    }
+    const conflictingApplicantIds = new Set<string>();
+    for (const claimants of employeeNumberClaimants.values()) {
+      if (claimants.size < 2) continue;
+      for (const applicantId of claimants) conflictingApplicantIds.add(applicantId);
+    }
+    if (conflictingApplicantIds.size > 0) {
+      console.warn(
+        `[hiredApplicantSync] employee backfill: skipped ${conflictingApplicantIds.size} applicant(s) with conflicting employee_number links.`,
+      );
+    }
+
     // Filter to hires that are missing in BOTH UUID and employee number
     const missingHires = hires.filter((h) => {
       const applicantId = String(h.applicant_id ?? '').trim();
       const employeeId = String(h.employee_id ?? '').trim();
-      return applicantId && employeeId && !existingIdSet.has(applicantId) && !existingNumSet.has(employeeId);
+      return applicantId
+        && employeeId
+        && !duplicateApplicantIds.has(applicantId)
+        && !conflictingApplicantIds.has(applicantId)
+        && !existingIdSet.has(applicantId)
+        && !existingNumSet.has(employeeId);
     });
 
     if (missingHires.length === 0) {
@@ -131,28 +288,46 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
     // department when the hire was recorded from a stale UI row). The source
     // applicant record is authoritative — look it up so the employees insert
     // keeps the full split name and the actual applied position/office instead
-    // of falling back to 'Staff'/'Operations'.
+    // of falling back to 'Staff'/'Operations'. Its persisted application_type
+    // is the gate: only unique external jobs may be inserted here.
     const applicantById = new Map<string, any>();
+    let eligibleHires = missingHires;
     {
       const missingIds = missingHires
         .map((h) => String(h.applicant_id ?? '').trim())
         .filter(Boolean);
       const { data: applicantRows, error: appErr } = await (supabase as any)
         .from('applicants')
-        .select('id, first_name, middle_name, last_name, position, office, contact_number')
+        .select('id, first_name, middle_name, last_name, position, office, contact_number, application_type')
         .in('id', missingIds);
       if (appErr) {
-        console.warn('[hiredApplicantSync] applicants lookup failed:', appErr);
-      } else {
-        for (const a of (applicantRows ?? []) as any[]) {
-          applicantById.set(String(a.id), a);
-        }
+        console.warn('[hiredApplicantSync] applicants lookup/classification failed:', appErr);
+        return;
+      }
+
+      const classification = classifyApplicantLinks(
+        missingIds,
+        (applicantRows ?? []) as any[],
+      );
+      reportApplicantClassification('employee backfill', classification);
+      const externalIdSet = new Set(classification.externalIds);
+      eligibleHires = missingHires.filter((h) => (
+        externalIdSet.has(String(h.applicant_id ?? '').trim())
+      ));
+
+      if (eligibleHires.length === 0) {
+        try { sessionStorage.setItem(EMPLOYEE_SYNC_FLAG_KEY, '1'); } catch { /* Storage unavailable (private mode or quota); this flag is only an optimization. */ }
+        return;
+      }
+
+      for (const a of (applicantRows ?? []) as any[]) {
+        applicantById.set(String(a.id), a);
       }
     }
 
     // 3. Construct and insert the missing employees
     const toInsert = [];
-    for (const h of missingHires) {
+    for (const h of eligibleHires) {
       const applicant = applicantById.get(String(h.applicant_id ?? '').trim());
       // Applicant names win: newly_hired names come from naive full-name
       // splitting in the hire UI and can misplace middle names.
@@ -219,9 +394,10 @@ const EMPLOYEE_REPAIR_FLAG_KEY = 'cictrix_employee_defaults_repair_done';
  * Specialist" under "Information Technology" surfaced in IPCR Management as
  * "Staff" under "Operations"). Restore those fields from the applicant.
  *
- * Only rows positively linked to a hired applicant (employees.id equals the
- * applicant id — how the backfill keys its inserts) with the literal 'Staff'
- * default are touched; manually created employee records are left alone.
+ * Only rows positively linked to a hired external job applicant (employees.id
+ * equals the applicant id — how the backfill keys its inserts) with the
+ * literal 'Staff' default are touched; promotions, ambiguous links and
+ * manually created employee records are left alone.
  *
  * Runs once per tab session.
  */
@@ -260,13 +436,24 @@ export const repairDefaultedEmployeeRecords = async (): Promise<void> => {
       return;
     }
 
+    const employeeIds = rows.map((r) => String(r.id));
+    const classification = classifyApplicantLinks(
+      employeeIds,
+      (applicants ?? []) as any[],
+    );
+    reportApplicantClassification('employee defaults repair', classification);
+
     const applicantById = new Map(((applicants ?? []) as any[]).map((a) => [String(a.id), a]));
+    const externalIdSet = new Set(classification.externalIds);
     let repaired = 0;
 
     for (const emp of rows) {
-      const applicant = applicantById.get(String(emp.id));
-      // Promotions legitimately change position — don't rewind those.
-      if (!applicant || applicant.application_type === 'promotion') continue;
+      const employeeId = String(emp.id);
+      // Promotions legitimately change position — don't rewind those. Missing,
+      // duplicate and unknown-type links are left alone for the same reason.
+      if (!externalIdSet.has(employeeId)) continue;
+      const applicant = applicantById.get(employeeId);
+      if (!applicant) continue;
 
       const patch: Record<string, unknown> = {};
       const appPosition = String(applicant.position ?? '').trim();

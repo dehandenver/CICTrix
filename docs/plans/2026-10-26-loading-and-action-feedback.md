@@ -107,3 +107,13 @@ Sweep by portal, one commit each:
 - Reduced motion: no spinner or toast animation; the notice still appears.
 - Screen reader: errors announced assertively, successes politely, focus moves to inline failures.
 - Mobile width: toast stack does not cover the primary action or the header.
+
+## Status check 2026-11-12
+
+Still In Progress. Done: Step 1 (action-feedback module, `describeActionFailure`), Step 2 (auth, applicant, employee, interviewer) and Step 3 (RSP, `f216229`). Left: Step 4, the L&D and PM sweep (`alert()` remains in PMDashboard, PMIPCRManagement, OfficeTrainingCourses, OfficeAccountConsole, Phase2RatingPanel, AttendanceGrid, TrainingCalendar and ChangePositionModal); the rest of the Step 5 read-failure pass; Step 6, where the audit lives at `docs/ux-feedback-audit.md`, not the planned `docs/audits/` path; and the final summary.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.
+
+## Status check 2026-11-14
+
+Step 4, PM part, is done in `ad157e3` (PMDashboard cycles, PMIPCRManagement, OfficeTrainingCourses, OfficeAccountConsole, Phase2RatingPanel); see `docs/plans/2026-11-14-pm-modals-and-feedback.md`. Still left in Step 4: the L&D sweep (`alert()` remains in AttendanceGrid, TrainingCalendar and ChangePositionModal), plus Steps 5 and 6.

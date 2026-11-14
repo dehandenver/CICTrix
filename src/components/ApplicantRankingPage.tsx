@@ -4,9 +4,11 @@ import { Building2, CheckCircle2, ChevronRight, Printer, Trophy, UserCheck, User
 import { AdminHeader } from './AdminHeader';
 import { BackButton } from './BackButton';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
+import { ErrorBanner } from './ErrorBanner';
 import { Sidebar } from './Sidebar';
 import { supabase } from '../lib/supabase';
 import { getApplicants, saveApplicants } from '../lib/recruitmentData';
+import { fetchApplicantScoreSummaries, isUuid } from '../lib/api/applicantScores';
 import { LoadingStatus, Skeleton, useDelayedLoading } from './table-loading';
 import { TableStateRows, TopScorerBadge, topScorerIds, topScorerRowClass } from './data-table';
 
@@ -17,8 +19,11 @@ interface Applicant {
   position: string;
   office: string;
   status: string;
+  /** Legacy stored total, kept only for original applicants without a summary. */
   total_score: number | null;
-  application_type?: string | null;
+  applicationType: 'original' | 'promotional';
+  /** Durable saved assessment total; null when the required categories are incomplete. */
+  assessmentTotal: number | null;
 }
 
 interface PositionGroup {
@@ -55,6 +60,8 @@ export const ApplicantRankingPage = () => {
   const [hiring, setHiring]           = useState(false);
   const [toast, setToast]             = useState('');
 
+  const [loadError, setLoadError] = useState<unknown>(null);
+
   const mapRow = (r: any): Applicant => ({
     id:               String(r.id ?? ''),
     full_name:        [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
@@ -64,7 +71,8 @@ export const ApplicantRankingPage = () => {
     office:           String(r.office ?? ''),
     status:           String(r.status ?? ''),
     total_score:      r.total_score != null ? Number(r.total_score) : null,
-    application_type: r.application_type ?? null,
+    applicationType:  String(r.application_type ?? '').toLowerCase().includes('promot') ? 'promotional' : 'original',
+    assessmentTotal:  null,
   });
 
   useEffect(() => {
@@ -76,9 +84,33 @@ export const ApplicantRankingPage = () => {
         if (error) throw error;
         rows = (data ?? []).map(mapRow);
 
-        setApplicants(rows);
-      } catch {
+        const summaryRes = await fetchApplicantScoreSummaries(
+          rows.map((row) => row.id).filter(isUuid),
+        );
+        const summaries = summaryRes.data;
+
+        setApplicants(rows.map((row) => {
+          const summary = summaries.get(row.id);
+          const applicationType = row.applicationType === 'promotional' || summary?.appointmentType === 'promotional'
+            ? 'promotional'
+            : 'original';
+          return {
+            ...row,
+            applicationType,
+            // A mismatched score row is not evidence for this application's
+            // track; never use an original three-category total for a promotion.
+            assessmentTotal: summary?.appointmentType === applicationType
+              ? summary.assessmentTotal
+              : null,
+          };
+        }));
+
+        setLoadError(summaryRes.ok
+          ? null
+          : summaryRes.error ?? new Error('Failed to load saved assessment scores'));
+      } catch (error) {
         setApplicants([]);
+        setLoadError(error);
       } finally {
         setLoading(false);
       }
@@ -87,6 +119,16 @@ export const ApplicantRankingPage = () => {
     window.addEventListener('cictrix:applicants-updated', load);
     return () => window.removeEventListener('cictrix:applicants-updated', load);
   }, []);
+
+  /**
+   * The saved assessment total is authoritative. A promotion never falls back
+   * to the legacy `applicants.total_score`; an original may, for old rows whose
+   * durable summary predates the score table.
+   */
+  const scoreOf = (a: Applicant): number | null =>
+    a.applicationType === 'promotional'
+      ? a.assessmentTotal
+      : a.assessmentTotal ?? a.total_score;
 
   // Build position groups sorted by position name
   const groups: PositionGroup[] = Object.entries(
@@ -98,8 +140,8 @@ export const ApplicantRankingPage = () => {
     }, {})
   )
     .map(([position, members]) => {
-      const sorted  = [...members].sort((a, b) => (b.total_score ?? -1) - (a.total_score ?? -1));
-      const scores  = members.map(m => m.total_score).filter((s): s is number => s !== null);
+      const sorted  = [...members].sort((a, b) => (scoreOf(b) ?? -1) - (scoreOf(a) ?? -1));
+      const scores  = members.map(scoreOf).filter((s): s is number => s !== null);
       const office  = members.find(m => m.office)?.office ?? '—';
       return {
         position,
@@ -116,7 +158,7 @@ export const ApplicantRankingPage = () => {
   // Highest total score per position, across every applicant for it (Task 5).
   const topIds = topScorerIds(applicants, {
     idOf: (a) => a.id,
-    scoreOf: (a) => a.total_score,
+    scoreOf,
     groupOf: (a) => a.position || 'Unassigned',
   });
 
@@ -279,8 +321,8 @@ export const ApplicantRankingPage = () => {
                 <td class="center" style="font-weight:700">${i + 1}</td>
                 <td><strong>${escapeHtml(a.full_name)}</strong>${topIds.has(a.id) ? '<span class="top-badge">&#9733; Top scorer</span>' : ''}<br/><span style="font-size:8pt;color:#555">${escapeHtml(a.email)}</span></td>
                 <td>${a.office ? escapeHtml(a.office) : '&mdash;'}</td>
-                <td>${(a.application_type ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original'}</td>
-                <td class="center" style="font-weight:700">${fmtScore(a.total_score)}</td>
+                <td>${a.applicationType === 'promotional' ? 'Promotional' : 'Original'}</td>
+                <td class="center" style="font-weight:700">${fmtScore(scoreOf(a))}</td>
                 <td>${escapeHtml(a.status || 'Pending')}</td>
               </tr>`).join('')}
           </tbody>
@@ -300,6 +342,15 @@ export const ApplicantRankingPage = () => {
           <Sidebar activeModule="RSP" userRole="rsp" />
           <main className="admin-content bg-slate-50 !p-0">
             <ApplicantsTabBar />
+            {loadError ? (
+              <div className="px-6 pt-6">
+                <ErrorBanner
+                  error={loadError}
+                  action="load the applicant ranking"
+                  onRetry={() => window.dispatchEvent(new Event('cictrix:applicants-updated'))}
+                />
+              </div>
+            ) : null}
             {children}
           </main>
         </div>
@@ -361,7 +412,7 @@ export const ApplicantRankingPage = () => {
               <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-blue-600" />
             </button>
           ))}
-          {!pending && departmentGroups.length === 0 && (
+          {!pending && !loadError && departmentGroups.length === 0 && (
             <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white py-12 text-center text-slate-400">
               <Trophy className="mx-auto mb-2 h-9 w-9 text-slate-300" />
               <p className="font-medium">No applicant data yet.</p>
@@ -541,13 +592,13 @@ export const ApplicantRankingPage = () => {
                     </td>
                     <td className="px-4 py-3.5 text-sm text-slate-600">{a.office || '—'}</td>
                     <td className="px-4 py-3.5">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${(a.application_type ?? '').toLowerCase().includes('promot') ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'}`}>
-                        {(a.application_type ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original'}
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${a.applicationType === 'promotional' ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'}`}>
+                        {a.applicationType === 'promotional' ? 'Promotional' : 'Original'}
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-center">
-                      <span className={`text-lg font-bold ${a.total_score !== null ? 'text-slate-900' : 'text-slate-300'}`}>
-                        {fmtScore(a.total_score)}
+                      <span className={`text-lg font-bold ${scoreOf(a) !== null ? 'text-slate-900' : 'text-slate-300'}`}>
+                        {fmtScore(scoreOf(a))}
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-center">

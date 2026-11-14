@@ -109,7 +109,7 @@ export const SuperAdminDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800">
+    <div className="min-h-screen bg-slate-100 text-slate-800 ds-remap abyan-tokens">
       <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
       <div className="flex flex-col md:flex-row">
       <Sidebar />

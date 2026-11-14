@@ -41,5 +41,7 @@ describe('hiringFlow applicant reads', () => {
     expect(selected.some((cols) => cols.includes('archived_at'))).toBe(true);
     const requested = selected.flatMap((cols) => cols.split(',').map((c) => c.trim()));
     expect(requested.filter((c) => MISSING_COLUMNS.includes(c))).toEqual([]);
+    // Promotions are told apart by these two real columns.
+    expect(requested).toEqual(expect.arrayContaining(['application_type', 'employee_id']));
   });
 });

@@ -1,7 +1,7 @@
 ---
 title: Real vacancies only, per-plantilla salary, reference numbers in RSP
 date: 2026-10-06
-status: In Progress
+status: Done
 summary: The landing page lists only open RSP postings; the Create Job form drops shared salary fields and reorder arrows; the applicant detail view shows the reference number. Database work (demo rebuild, atomic save) waits for approval.
 spec: docs/mockups/2026-10-06-plantilla-slots-form.html
 ---
@@ -57,3 +57,9 @@ is the recommendation given in chat and can be revisited:
 - `npx tsc --noEmit`, `npx vitest run`, `npm run build`
 - Landing page against production data (read-only); Create Job form opened, not
   submitted.
+
+## Status check 2026-11-12
+
+Done. Steps 1–4 shipped. Steps 5–6 (atomic-save RPC, demo rebuild and end-to-end tests) were dropped after `20261021100000_merge_postings_per_plantilla` changed the posting model.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

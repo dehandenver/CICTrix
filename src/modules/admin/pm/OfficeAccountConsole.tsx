@@ -24,6 +24,8 @@ import {
   GitCompare
 } from 'lucide-react';
 import { PortalHeader } from '../../../components/portal-header';
+import { ActionFeedback, useFeedback } from '../../../components/action-feedback';
+import { describeActionFailure } from '../../../lib/friendlyErrors';
 import { readEmployeeSession } from '../../../lib/employeeSession';
 import { supabase } from '../../../lib/supabase';
 import {
@@ -39,6 +41,7 @@ import {
   type PendingApproval,
 } from '../../../lib/api/ipcrApproval';
 import { listNotifications, type IpcrNotification } from '../../../lib/api/ipcrSubmissions';
+import { withAuditNote } from '../../../lib/api/ipcrAudit';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import {
   listOfficeTrainingRequests,
@@ -48,6 +51,7 @@ import {
 } from '../../../lib/api/trainingRequests';
 import { listPipeline, type PipelineRec } from '../../../lib/api/trainingRecommendations';
 import { Phase2RatingPanel } from './Phase2RatingPanel';
+import { IpcrHistory } from './IpcrHistory';
 import { OfficeTrainingCourses } from './OfficeTrainingCourses';
 import { CriticalPositionPage } from '../../../components/CriticalPositionPage';
 import { CriticalPositionGapAnalysisPage } from '../../../components/CriticalPositionGapAnalysisPage';
@@ -306,7 +310,7 @@ export const OfficeAccountConsole: React.FC = () => {
     });
     setSavingEdits(false);
     if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
-    setApprovalNotice({ tone: 'ok', text: `Saved your edits to ${p.employeeName}'s targets.` });
+    setApprovalNotice({ tone: 'ok', text: withAuditNote(`Saved your edits to ${p.employeeName}'s targets.`, res) });
     setEditingId(null);
     void refreshPendingApprovals();
   };
@@ -331,7 +335,7 @@ export const OfficeAccountConsole: React.FC = () => {
     });
     setApprovalBusyId(null);
     if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
-    setApprovalNotice({ tone: 'ok', text: `Approved and frozen: ${p.employeeName}'s targets.` });
+    setApprovalNotice({ tone: 'ok', text: withAuditNote(`Approved and frozen: ${p.employeeName}'s targets.`, res) });
     void refreshPendingApprovals();
   };
 
@@ -346,7 +350,7 @@ export const OfficeAccountConsole: React.FC = () => {
     });
     setApprovalBusyId(null);
     if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
-    setApprovalNotice({ tone: 'ok', text: `Returned to ${p.employeeName} for revision.` });
+    setApprovalNotice({ tone: 'ok', text: withAuditNote(`Returned to ${p.employeeName} for revision.`, res) });
     setReturnDraftId(null);
     setReturnComment('');
     void refreshPendingApprovals();
@@ -356,10 +360,10 @@ export const OfficeAccountConsole: React.FC = () => {
   const [ipcrSubtab, setIpcrSubtab] = useState<'targets' | 'ratings'>('targets');
 
   // Subtabs
-  const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal'>('verify');
+  const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal' | 'history'>('verify');
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   useBackClosesView(selectedTargetId !== null, () => setSelectedTargetId(null), 'office-console-target');
-  const [ratingsSubtab, setRatingsSubtab] = useState<'review' | 'dpcr' | 'opcr'>('review');
+  const [ratingsSubtab, setRatingsSubtab] = useState<'review' | 'dpcr' | 'opcr' | 'history'>('review');
 
   // State arrays
   const [ratings, setRatings] = useState<EmployeeRating[]>(INITIAL_RATINGS);
@@ -458,16 +462,25 @@ export const OfficeAccountConsole: React.FC = () => {
     void refreshOfficeRecs();
   }, [officeRoleLoading, refreshRequests, refreshOfficeRecs]);
 
+  const [requestFormError, setRequestFormError] = useState<string | null>(null);
+  const feedback = useFeedback();
+  /** Same toast shape as useAsyncAction's failure channel: what failed, then the next step. */
+  const reportFailure = (action: string, error: unknown) => {
+    const failure = describeActionFailure(action, error);
+    feedback.error(failure.title, `${failure.message} ${failure.nextStep}`);
+  };
+
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!topic.trim()) {
-      alert('Please give the recommended training a topic.');
+      setRequestFormError('Give the recommended training a topic.');
       return;
     }
     if (!reasoning.trim()) {
-      alert('Please explain the reasoning for this recommendation.');
+      setRequestFormError('Explain the reasoning for this recommendation.');
       return;
     }
+    setRequestFormError(null);
 
     setIsSubmittingRequest(true);
     const result = await createTrainingRequest({
@@ -492,7 +505,7 @@ export const OfficeAccountConsole: React.FC = () => {
       // Re-fetch
       await refreshRequests();
     } else {
-      alert(`Error submitting training request: ${result.error}`);
+      reportFailure('send the training request to L&D', result.error);
     }
   };
 
@@ -526,6 +539,7 @@ export const OfficeAccountConsole: React.FC = () => {
   const [activeOverrideId, setActiveOverrideId] = useState<string | null>(null);
   const [overrideScore, setOverrideScore] = useState<number>(4.0);
   const [overrideRationale, setOverrideRationale] = useState('');
+  const [overrideError, setOverrideError] = useState<string | null>(null);
 
   // DPCR & OPCR compiling simulation state
   const [dpcrCompiled, setDpcrCompiled] = useState(false);
@@ -542,13 +556,15 @@ export const OfficeAccountConsole: React.FC = () => {
     setActiveOverrideId(rating.id);
     setOverrideScore(rating.supervisorRating);
     setOverrideRationale('');
+    setOverrideError(null);
   };
 
   const submitOverride = (id: string) => {
     if (!overrideRationale.trim()) {
-      alert('Please enter a justification for overriding the rating.');
+      setOverrideError('Enter a justification for overriding the rating.');
       return;
     }
+    setOverrideError(null);
 
     setRatings(prev => prev.map(r => {
       if (r.id === id) {
@@ -859,6 +875,13 @@ export const OfficeAccountConsole: React.FC = () => {
                   >
                     PM Transmittal Log
                   </button>
+                  <button
+                    onClick={() => setTargetsSubtab('history')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${targetsSubtab === 'history' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                  >
+                    History
+                  </button>
                 </div>
 
                 <div className="p-6">
@@ -1076,6 +1099,10 @@ export const OfficeAccountConsole: React.FC = () => {
                     </div>
                   )}
 
+                  {targetsSubtab === 'history' && (
+                    <IpcrHistory phase="target" scope={officeRole ? { officeId: officeRole.officeId, officeName: officeRole.officeName } : null} />
+                  )}
+
                   {targetsSubtab === 'transmittal' && (
                     <div className="space-y-4">
                       <div>
@@ -1142,6 +1169,13 @@ export const OfficeAccountConsole: React.FC = () => {
                   >
                     OPCR Master Generation
                   </button>
+                  <button
+                    onClick={() => setRatingsSubtab('history')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${ratingsSubtab === 'history' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                  >
+                    History
+                  </button>
                 </div>
 
                 <div className="p-6">
@@ -1156,6 +1190,10 @@ export const OfficeAccountConsole: React.FC = () => {
                     />
                   )}
 
+                  {ratingsSubtab === 'history' && (
+                    <IpcrHistory phase="rating" scope={officeRole ? { officeId: officeRole.officeId, officeName: officeRole.officeName } : null} />
+                  )}
+
                   {/* Legacy mock override table — superseded by Phase2RatingPanel above. */}
                   {false && ratingsSubtab === 'review' && (
                     <div className="space-y-4">
@@ -1167,6 +1205,14 @@ export const OfficeAccountConsole: React.FC = () => {
                       {activeOverrideId && (
                         <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 space-y-3 text-xs">
                           <p className="font-bold text-slate-800">Override Rating for: {ratings.find(r => r.id === activeOverrideId)?.name}</p>
+                          {overrideError && (
+                            <ActionFeedback
+                              tone="warning"
+                              title="A justification is required"
+                              message={overrideError}
+                              onDismiss={() => setOverrideError(null)}
+                            />
+                          )}
                           <div className="flex items-center gap-4">
                             <div>
                               <label className="block text-slate-500 mb-0.5">Override Score (1.0 - 5.0)</label>
@@ -1382,6 +1428,14 @@ export const OfficeAccountConsole: React.FC = () => {
                 </div>
 
                 <form onSubmit={handleSubmitRequest} className="space-y-6 max-w-4xl bg-slate-50/50 p-6 rounded-xl border border-slate-200">
+                  {requestFormError && (
+                    <ActionFeedback
+                      tone="warning"
+                      title="Some details are missing"
+                      message={requestFormError}
+                      onDismiss={() => setRequestFormError(null)}
+                    />
+                  )}
                   {/* Recommended Topic */}
                   <div className="space-y-2">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">

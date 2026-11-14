@@ -86,3 +86,13 @@ Each file's `fixed inset-0` / `role="dialog"` markup is checked before migrating
   - the header's white text checked as a rendered colour, not just in code
   - focus trap, Esc, focus return and body scroll
 - The DESIGN_IDENTITY §16 checklist.
+
+## Status check 2026-11-12
+
+Still In Progress. Phases 1–3 are done (foundation, shared and RSP, L&D and Super Admin). Left: Phase 4 PM (hand-rolled overlays in PMDashboard, PMIPCRManagement and OfficeTrainingCourses), Phase 5 Interviewer and Applicant (ApplicantDetailsPage, EditApplicantDetailsModal), the 14 untitled legacy `Dialog` calls, and a decision on the Salary Grades drawer.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.
+
+## Status check 2026-11-14
+
+Phase 4 (PM) is done in `ad157e3`; see `docs/plans/2026-11-14-pm-modals-and-feedback.md`. Unreachable PMDashboard modals (Request Document, Bulk Request, document review) were left as they were. Still left: Phase 5 (Interviewer and Applicant), the remaining untitled `Dialog` calls outside PM, and a decision on the Salary Grades drawer.

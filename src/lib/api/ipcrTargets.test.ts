@@ -1,14 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   blankMfo,
   emptyTargets,
   flattenForWorkspace,
   hasSubmittableTarget,
   saveTargetSetting,
+  statusForSave,
   type TargetsByFunction,
 } from './ipcrTargets';
 
-const { loadEffectiveSchedulesMock } = vi.hoisted(() => ({ loadEffectiveSchedulesMock: vi.fn() }));
+const STUB_ERROR = { data: null, error: { message: 'stubbed supabase' } };
+const { loadEffectiveSchedulesMock, stub } = vi.hoisted(() => ({
+  loadEffectiveSchedulesMock: vi.fn(),
+  stub: { result: null as unknown },
+}));
 
 vi.mock('./phaseSchedules', async (importActual) => ({
   ...(await importActual<typeof import('./phaseSchedules')>()),
@@ -18,11 +23,15 @@ vi.mock('./phaseSchedules', async (importActual) => ({
 // Every query resolves to "no row / query error", so anything past the submit
 // guard fails fast instead of touching a database.
 vi.mock('../supabase', () => {
-  const result = { data: null, error: { message: 'stubbed supabase' } };
   const chain: any = new Proxy(() => chain, {
-    get: (_t, prop) => (prop === 'then' ? (resolve: any) => resolve(result) : chain),
+    get: (_t, prop) => (prop === 'then' ? (resolve: any) => resolve(stub.result ?? STUB_ERROR) : chain),
   });
   return { supabase: chain };
+});
+
+afterEach(() => {
+  stub.result = null;
+  loadEffectiveSchedulesMock.mockReset();
 });
 
 describe('emptyTargets', () => {
@@ -135,5 +144,33 @@ describe('saveTargetSetting submit guard', () => {
   it('blocks submit when the resolved target schedule is Closed', async () => {
     loadEffectiveSchedulesMock.mockResolvedValue({ target: { mode: 'Closed' }, rating: null });
     expect(await submit()).toEqual({ ok: false, error: PHASE_CLOSED_ERROR });
+  });
+
+  it('does not apply the window to a record the supervisor returned for revision', async () => {
+    loadEffectiveSchedulesMock.mockResolvedValue({ target: { mode: 'Closed' }, rating: null });
+    stub.result = { data: { status: 'returned_for_revision' }, error: null };
+    const res = await submit();
+    expect(loadEffectiveSchedulesMock).not.toHaveBeenCalled();
+    expect(res.ok === false && res.error).not.toBe(PHASE_CLOSED_ERROR);
+  });
+});
+
+describe('statusForSave', () => {
+  it('keeps a returned record returned when the employee saves a draft', () => {
+    expect(statusForSave('returned_for_revision', false)).toBe('returned_for_revision');
+  });
+
+  it('keeps a returned record returned while a resubmit is being written', () => {
+    expect(statusForSave('returned_for_revision', true)).toBe('returned_for_revision');
+  });
+
+  it('saves any other record as a draft', () => {
+    expect(statusForSave(undefined, false)).toBe('draft');
+    expect(statusForSave('draft', false)).toBe('draft');
+  });
+
+  it('keeps a new or draft record a draft until the final submit update', () => {
+    expect(statusForSave(undefined, true)).toBe('draft');
+    expect(statusForSave('draft', true)).toBe('draft');
   });
 });

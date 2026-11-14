@@ -1,7 +1,7 @@
 ---
 title: Job Posts — two tabs, Open/Closed status, manual and automatic vacancy closing
 date: 2026-10-22
-status: In Progress
+status: Done
 summary: Remove the Filled Positions tab and the Filled posting status. Job Positions shows every position as Open or Closed (derived). Job Vacancies lists only open vacancies, opened through Open Vacant Job Position and closed early through a Close Vacancy confirmation with a reason. Each opening is a job_vacancies row; RPCs enforce the RSP role, one active vacancy per position, and the audit trail. pg_cron and the application insert trigger close vacancies at the Manila deadline.
 spec: docs/mockups/2026-10-19-job-post-split.html (layout); task brief pasted 2026-10-22
 ---
@@ -54,3 +54,9 @@ RSP sees two views: every position, and the positions open for application right
 
 1. Remove **Edit Deadline** from Job Vacancies (the brief lists only Details, Applicants, Close Vacancy)? Plan assumes yes.
 2. D8: keep hiding filled plantillas on the public table, and show fully filled postings in Job Vacancies until closed? Plan assumes yes.
+
+## Status check 2026-11-12
+
+Done. Everything in `docs/session-summaries/2026-10-22-vacancy-open-close-summary.md` is on main. Still not exercised: pg_cron and a browser pass.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

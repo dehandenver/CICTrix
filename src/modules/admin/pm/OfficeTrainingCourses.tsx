@@ -27,6 +27,9 @@ import { supabase as supabaseClient } from '../../../lib/supabase';
 import { CATEGORY_COLORS } from '../trainingCategories';
 import type { LifecycleStatus } from '../../../lib/api/trainingLifecycle';
 import { TableSkeletonRows, tableBodyClass, useTableLoading } from '../../../components/table-loading';
+import { ConfirmModal, Modal } from '../../../components/modal';
+import { ActionFeedback, useFeedback } from '../../../components/action-feedback';
+import { describeActionFailure, type ActionFailure } from '../../../lib/friendlyErrors';
 
 const supabase = supabaseClient as any;
 const POLL_MS = 12000;
@@ -121,6 +124,8 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
   const [pipeline, setPipeline] = useState<PipelineRecFull[]>([]);
   const [removeTarget, setRemoveTarget] = useState<PipelineRecFull | null>(null);
   const [removeReason, setRemoveReason] = useState('');
+  // Shown inside the Remove dialog: a toast would sit under the modal overlay.
+  const [removeError, setRemoveError] = useState<ActionFailure | null>(null);
   const [employees, setEmployees] = useState<EmployeePick[]>([]);
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [empSearch, setEmpSearch] = useState('');
@@ -187,6 +192,13 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
   const recGroups = useMemo(() => reviewBatches.flatMap((b) => b.courses), [reviewBatches]);
   const pendingGroups = useMemo(() => groupRecs(pipeline.filter((r) => r.status === 'OFFICE_FINALIZED')), [pipeline]);
 
+  const feedback = useFeedback();
+  /** Same toast shape as useAsyncAction's failure channel: what failed, then the next step. */
+  const reportFailure = (action: string, error: unknown) => {
+    const failure = describeActionFailure(action, error);
+    feedback.error(failure.title, `${failure.message} ${failure.nextStep}`);
+  };
+
   const addCandidate = async (sessionId: string, employeeId: string, batchId: string | null) => {
     setBusySession(sessionId);
     const res = await officeAddCandidateAudited({
@@ -197,9 +209,10 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
       batchId,
     });
     setBusySession(null);
-    if (!res.ok) { alert(res.error); return; }
+    if (!res.ok) { reportFailure('add the employee', res.error); return; }
     setAddingTo(null);
     setEmpSearch('');
+    feedback.success('Employee added', 'They are on the list you send back to L&D.');
     await reloadPipeline();
   };
 
@@ -208,8 +221,9 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
    * rejects a blank one. Hence the modal rather than a bare button.
    */
   const confirmRemove = async () => {
-    if (!removeTarget) return;
-    if (!removeReason.trim()) { alert('Please give a reason for removing this employee.'); return; }
+    // The Remove button stays disabled until a reason is entered.
+    if (!removeTarget || !removeReason.trim()) return;
+    const removedName = removeTarget.employeeName;
     setBusySession(removeTarget.sessionId);
     const res = await officeRemoveCandidate({
       recommendationId: removeTarget.id,
@@ -220,19 +234,28 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
       actorDepartment: officeName,
     });
     setBusySession(null);
-    if (!res.ok) { alert(res.error); return; }
+    if (!res.ok) { setRemoveError(describeActionFailure('remove the employee', res.error)); return; }
+    setRemoveError(null);
     setRemoveTarget(null);
     setRemoveReason('');
+    feedback.success(`${removedName} removed`, 'L&D will see your reason when the batch comes back.');
     await reloadPipeline();
   };
 
   /** The office returns a whole batch at once, which is how L&D sent it. */
   const sendBatchBack = async (batchId: string | null, sessionIds: string[]) => {
-    if (!batchId) { alert('This list has no batch reference and cannot be returned automatically.'); return; }
+    if (!batchId) {
+      feedback.warning(
+        "This list can't be sent back",
+        'It has no batch reference, so it cannot be returned automatically. Ask L&D to resend it.',
+      );
+      return;
+    }
     setBusySession(sessionIds[0] ?? batchId);
     const res = await returnBatchToLnd(batchId, OFFICE_ACTOR);
     setBusySession(null);
-    if (!res.ok) { alert(res.error); return; }
+    if (!res.ok) { reportFailure('send the list back to L&D', res.error); return; }
+    feedback.success('List sent back to L&D', 'It now waits for L&D to enroll the attendees.');
     await reloadPipeline();
   };
 
@@ -404,7 +427,7 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => { setRemoveTarget(r); setRemoveReason(''); }}
+                                  onClick={() => { setRemoveTarget(r); setRemoveReason(''); setRemoveError(null); }}
                                   className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:border-rose-400 hover:text-rose-600"
                                 >
                                   <X className="h-3 w-3" /> Remove
@@ -423,44 +446,43 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
 
           {/* Removal needs a recorded reason — the audit trail is the whole point,
               and the database rejects a blank one. */}
-          {removeTarget && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-              <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
-                <h3 className="text-sm font-bold text-slate-900">Remove {removeTarget.employeeName}?</h3>
-                <p className="mt-1 text-xs text-slate-500">
-                  From <strong>{removeTarget.sessionTitle}</strong>. L&amp;D will see this removal and
-                  your reason when the batch comes back.
-                </p>
-                <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Reason (required)
-                </label>
-                <textarea
-                  rows={3}
-                  value={removeReason}
-                  onChange={(e) => setRemoveReason(e.target.value)}
-                  placeholder="e.g. On extended leave during the training dates."
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+          <ConfirmModal
+            open={Boolean(removeTarget)}
+            title={removeTarget ? `Remove ${removeTarget.employeeName}?` : 'Remove employee?'}
+            message={removeTarget && (
+              <>
+                From <strong>{removeTarget.sessionTitle}</strong>. L&amp;D will see this removal and
+                your reason when the batch comes back.
+              </>
+            )}
+            confirmLabel="Remove"
+            tone="destructive"
+            loading={Boolean(removeTarget) && busySession === removeTarget?.sessionId}
+            confirmDisabled={!removeReason.trim()}
+            onConfirm={() => void confirmRemove()}
+            onCancel={() => { setRemoveTarget(null); setRemoveReason(''); setRemoveError(null); }}
+          >
+            {removeError && (
+              <div className="mt-4">
+                <ActionFeedback
+                  {...removeError}
+                  onRetry={() => void confirmRemove()}
+                  onDismiss={() => setRemoveError(null)}
                 />
-                <div className="mt-4 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setRemoveTarget(null); setRemoveReason(''); }}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!removeReason.trim() || busySession === removeTarget.sessionId}
-                    onClick={() => void confirmRemove()}
-                    className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
-                </div>
               </div>
-            </div>
-          )}
+            )}
+            <label htmlFor="office-remove-reason" className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Reason (required)
+            </label>
+            <textarea
+              id="office-remove-reason"
+              rows={3}
+              value={removeReason}
+              onChange={(e) => setRemoveReason(e.target.value)}
+              placeholder="e.g. On extended leave during the training dates."
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            />
+          </ConfirmModal>
         </div>
       ) : subtab === 'pending' ? (
         <div className="space-y-4 p-4">
@@ -612,22 +634,19 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
       )}
 
       {/* Read-only detail drawer */}
-      {detail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setDetail(null)}>
-          <div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 flex items-start justify-between bg-white px-6 pt-6 pb-3">
-              <div className="min-w-0 pr-3">
-                <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <CategoryTag category={detail.category} />
-                  <StatusBadge status={detail.status} />
-                  {detail.updatedByLnd && <UpdatedTag />}
-                </div>
-                <h2 className="text-xl font-bold text-slate-900">{detail.title}</h2>
-                <p className="mt-0.5 text-sm text-slate-500">{fmtRange(detail)}</p>
+      <Modal
+        open={Boolean(detail)}
+        onClose={() => setDetail(null)}
+        title={detail?.title}
+        subtitle={detail ? fmtRange(detail) : undefined}
+      >
+        {detail && (
+            <div className="space-y-4 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <CategoryTag category={detail.category} />
+                <StatusBadge status={detail.status} />
+                {detail.updatedByLnd && <UpdatedTag />}
               </div>
-              <button type="button" onClick={() => setDetail(null)} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="space-y-4 px-6 pb-6 pt-2 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div><p className="text-xs font-medium text-slate-400">Facilitator</p><p className="text-slate-800">{detail.speaker || '—'}</p></div>
                 <div><p className="text-xs font-medium text-slate-400">Venue</p><p className="text-slate-800">{detail.location || '—'}</p></div>
@@ -664,9 +683,8 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
               )}
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-400">Read-only — trainings are managed by L&D.</p>
             </div>
-          </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };

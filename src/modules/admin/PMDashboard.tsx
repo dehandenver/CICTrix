@@ -35,6 +35,7 @@ import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
+import { ActionFeedback, useAsyncAction } from '../../components/action-feedback';
 import { AdminHeader } from '../../components/AdminHeader';
 import { RailNav } from '../../components/RailNav';
 import { Sidebar } from '../../components/Sidebar';
@@ -138,6 +139,9 @@ export const PMDashboard = ({
   const [cycles, setCycles] = useState<EvaluationCycle[]>([]);
   const [showCycleDialog, setShowCycleDialog] = useState(false);
   const [editingCycle, setEditingCycle] = useState<EvaluationCycle | null>(null);
+  const [cycleFormError, setCycleFormError] = useState<string | null>(null);
+  const saveCycle = useAsyncAction();
+  const removeCycle = useAsyncAction();
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
@@ -856,50 +860,65 @@ export const PMDashboard = ({
     }
   };
 
+  const closeCycleDialog = () => {
+    setShowCycleDialog(false);
+    setEditingCycle(null);
+    setNewCycle({ title: '', start_date: '', end_date: '', status: 'Planned' });
+    setCycleFormError(null);
+    saveCycle.clearFailure();
+  };
+
   const handleAddCycle = async () => {
     if (!newCycle.title || !newCycle.start_date || !newCycle.end_date) {
-      alert('Please fill in all fields');
+      setCycleFormError('Enter a cycle name, a start date and an end date.');
       return;
     }
+    setCycleFormError(null);
+    const isEdit = Boolean(editingCycle);
 
-    try {
-      if (editingCycle) {
-        const { error } = await (supabase as any)
-          .from('performance_cycles')
-          .update(newCycle)
-          .eq('id', editingCycle.id);
-        if (error) throw error;
-      } else {
-        const { error } = await (supabase as any)
-          .from('performance_cycles')
-          .insert([newCycle]);
-        if (error) throw error;
-      }
-
-      await fetchCycles();
-      setShowCycleDialog(false);
-      setEditingCycle(null);
-      setNewCycle({ title: '', start_date: '', end_date: '', status: 'Planned' });
-    } catch (error) {
-      console.error('Error saving evaluation cycle:', error);
-      alert('Failed to save evaluation cycle');
-    }
+    await saveCycle.run({
+      action: isEdit ? 'update the evaluation cycle' : 'create the evaluation cycle',
+      run: async () => {
+        if (editingCycle) {
+          const { error } = await (supabase as any)
+            .from('performance_cycles')
+            .update(newCycle)
+            .eq('id', editingCycle.id);
+          if (error) throw error;
+        } else {
+          const { error } = await (supabase as any)
+            .from('performance_cycles')
+            .insert([newCycle]);
+          if (error) throw error;
+        }
+      },
+      success: {
+        title: isEdit ? 'Evaluation cycle updated' : 'Evaluation cycle created',
+        message: newCycle.title,
+      },
+      onSuccess: () => {
+        closeCycleDialog();
+        void fetchCycles();
+      },
+    });
   };
 
   const handleDeleteCycle = async (id: number) => {
     if (!confirm('Are you sure you want to delete this evaluation cycle?')) return;
 
-    try {
-      const { error } = await supabase
-        .from('performance_cycles')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      await fetchCycles();
-    } catch (error) {
-      console.error('Error deleting evaluation cycle:', error);
-      alert('Failed to delete evaluation cycle');
-    }
+    await removeCycle.run({
+      action: 'delete the evaluation cycle',
+      failureChannel: 'toast',
+      run: async () => {
+        const { error } = await supabase
+          .from('performance_cycles')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+      },
+      success: { title: 'Evaluation cycle deleted' },
+      onSuccess: () => void fetchCycles(),
+    });
   };
 
   const handleEditCycle = (cycle: EvaluationCycle) => {
@@ -926,7 +945,7 @@ export const PMDashboard = ({
     ] as const;
 
     return (
-      <div className="brand-text min-h-screen bg-slate-100 font-sans text-[#040E6B]">
+      <div className="brand-text ds-remap abyan-tokens min-h-screen bg-slate-100 font-sans text-[#040E6B]">
         <AdminHeader userName="PM Admin" divisionLabel="PM Division" />
 
         <div className="flex">
@@ -1832,14 +1851,25 @@ export const PMDashboard = ({
       {/* Create/Edit Evaluation Cycle Dialog */}
       <Dialog
         open={showCycleDialog}
-        onClose={() => {
-          setShowCycleDialog(false);
-          setEditingCycle(null);
-          setNewCycle({ title: '', start_date: '', end_date: '', status: 'Planned' });
-        }}
+        onClose={() => { if (!saveCycle.pending) closeCycleDialog(); }}
         title={editingCycle ? 'Edit Evaluation Cycle' : 'Create New Evaluation Cycle'}
       >
         <div className="space-y-4">
+          {cycleFormError && (
+            <ActionFeedback
+              tone="warning"
+              title="Some details are missing"
+              message={cycleFormError}
+              onDismiss={() => setCycleFormError(null)}
+            />
+          )}
+          {saveCycle.failure && (
+            <ActionFeedback
+              {...saveCycle.failure}
+              onRetry={() => void handleAddCycle()}
+              onDismiss={saveCycle.clearFailure}
+            />
+          )}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Cycle Name *</label>
             <Input
@@ -1884,16 +1914,14 @@ export const PMDashboard = ({
           <div className="flex gap-3 pt-4">
             <Button
               onClick={handleAddCycle}
+              loading={saveCycle.pending}
               className="flex-1 bg-blue-900 text-white"
             >
               {editingCycle ? 'Update Cycle' : 'Create Cycle'}
             </Button>
             <Button
-              onClick={() => {
-                setShowCycleDialog(false);
-                setEditingCycle(null);
-                setNewCycle({ title: '', start_date: '', end_date: '', status: 'Planned' });
-              }}
+              onClick={closeCycleDialog}
+              disabled={saveCycle.pending}
               className="flex-1 bg-slate-300 text-slate-900"
             >
               Cancel

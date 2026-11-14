@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,6 +17,7 @@ const {
   realtimeOptions,
   departmentEnabled,
   plantillaEnabled,
+  overviewProps,
 } = vi.hoisted(() => {
   const fromCalls: string[] = [];
   const queryState = {
@@ -78,6 +79,7 @@ const {
     realtimeOptions: [] as Array<{ channel: string; enabled?: boolean }>,
     departmentEnabled: [] as boolean[],
     plantillaEnabled: [] as boolean[],
+    overviewProps: { evaluatedApplicantIds: new Set<string>() },
   };
 });
 
@@ -128,7 +130,12 @@ vi.mock('../../components/SuccessionPlanningPage', () => ({
 vi.mock('../../components/EligibilityPointsPanel', () => ({
   EligibilityPointsPanel: () => <p>points view</p>,
 }));
-vi.mock('./RspDashboardOverview', () => ({ RspDashboardOverview: () => null }));
+vi.mock('./RspDashboardOverview', () => ({
+  RspDashboardOverview: ({ evaluatedApplicantIds }: { evaluatedApplicantIds: Set<string> }) => {
+    overviewProps.evaluatedApplicantIds = evaluatedApplicantIds;
+    return null;
+  },
+}));
 vi.mock('../../components/QualifiedApplicantsSection', () => ({
   QualifiedApplicantsSection: () => null,
 }));
@@ -172,6 +179,7 @@ beforeEach(() => {
   queryState.applicantsRows = [];
   queryState.evaluationsRows = [];
   queryState.applicantsGate = null;
+  overviewProps.evaluatedApplicantIds = new Set();
   delete (window as any).__evaluationsByApplicantId;
   invalidateCacheKey('rsp-dashboard:recruitment:primary');
   invalidateCacheKey('rsp-dashboard:recruitment:secondary');
@@ -216,6 +224,24 @@ describe('RSPDashboard route-specific loading', () => {
     expect(loaderMocks.getOfficeDirectory).not.toHaveBeenCalled();
     expect(realtimeOptions.every((option) => option.enabled === true)).toBe(true);
     expect(departmentEnabled[departmentEnabled.length - 1]).toBe(false);
+  });
+
+  it('keeps an evaluation on its own application when two share an email', async () => {
+    const EVALUATED_ID = '09e72c95-0e64-4199-8324-49e8dde07bc7';
+    const SIBLING_ID = '3f0a7a56-2a3c-4f7e-9d7b-0b1f3c9a1111';
+    queryState.applicantsRows = [
+      { id: EVALUATED_ID, email: 'shared@example.com', status: 'Hired' },
+      { id: SIBLING_ID, email: 'shared@example.com', status: 'Hired' },
+    ];
+    queryState.evaluationsRows = [{ applicant_id: EVALUATED_ID, personality_score: 4, overall_impression_score: 4 }];
+
+    await renderAt('/admin?module=rsp');
+
+    await waitFor(() => expect(overviewProps.evaluatedApplicantIds.has(EVALUATED_ID)).toBe(true));
+    expect(overviewProps.evaluatedApplicantIds.has(SIBLING_ID)).toBe(false);
+    const evaluations = (window as any).__evaluationsByApplicantId as Map<string, unknown>;
+    expect(evaluations.has(EVALUATED_ID)).toBe(true);
+    expect(evaluations.has(SIBLING_ID)).toBe(false);
   });
 
   it('loads rater data on Rater Management', async () => {

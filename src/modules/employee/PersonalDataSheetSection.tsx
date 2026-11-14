@@ -906,7 +906,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
               type="button"
               onClick={addChild}
               className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
-              style={{ borderColor: BRAND.line, color: BRAND.blue, background: '#EEF0FD' }}
+              style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
             >
               <Plus className="h-3 w-3" /> Add child
             </button>
@@ -995,7 +995,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             type="button"
             onClick={addEligibility}
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
-            style={{ borderColor: BRAND.line, color: BRAND.blue, background: '#EEF0FD' }}
+            style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
           >
             <Plus className="h-3 w-3" /> Add eligibility
           </button>
@@ -1038,7 +1038,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             type="button"
             onClick={addWorkExperience}
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
-            style={{ borderColor: BRAND.line, color: BRAND.blue, background: '#EEF0FD' }}
+            style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
           >
             <Plus className="h-3 w-3" /> Add work experience
           </button>
@@ -1081,7 +1081,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             type="button"
             onClick={addVoluntaryWork}
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
-            style={{ borderColor: BRAND.line, color: BRAND.blue, background: '#EEF0FD' }}
+            style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
           >
             <Plus className="h-3 w-3" /> Add voluntary work
           </button>
@@ -1121,7 +1121,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             type="button"
             onClick={addLdIntervention}
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
-            style={{ borderColor: BRAND.line, color: BRAND.blue, background: '#EEF0FD' }}
+            style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
           >
             <Plus className="h-3 w-3" /> Add training
           </button>
@@ -1272,7 +1272,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
               type="button"
               onClick={addReference}
               className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
-              style={{ borderColor: BRAND.line, color: BRAND.blue, background: '#EEF0FD' }}
+              style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
             >
               <Plus className="h-3 w-3" /> Add reference
             </button>

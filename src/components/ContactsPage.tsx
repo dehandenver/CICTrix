@@ -5,7 +5,7 @@ import { Users, ClipboardCheck, ShieldCheck } from 'lucide-react';
 export function ContactsPage() {
   return (
     <div
-      className="min-h-screen bg-[#F8FAFC] text-[#050D65]"
+      className="ds-remap abyan-tokens min-h-screen bg-[#F8FAFC] text-[var(--color-primary-900)]"
       style={{ fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
     >
       {/* ─── Navbar ─────────────────────────────────────────────── */}
@@ -45,30 +45,30 @@ export function ContactsPage() {
 
             {/* Login Dropdown */}
             <div className="relative group">
-              <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]">
+              <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[var(--color-primary-50)]">
                 <Users size={18} />
                 <span>Login</span>
               </button>
               <div className="absolute right-0 top-full mt-2 w-52 bg-white text-slate-900 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2 border border-slate-100">
                 <a
                   href="/employee/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
                   <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#059669] text-white"><Users size={15} /></span>
                   Employee Portal
                 </a>
                 <a
                   href="/interviewer/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
                   <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#7C3AED] text-white"><ClipboardCheck size={15} /></span>
                   Interviewer Portal
                 </a>
                 <a
                   href="/admin/login"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-primary-50)] font-medium text-sm text-[var(--color-primary-900)] transition-colors"
                 >
-                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#050D65] text-white"><ShieldCheck size={15} /></span>
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[var(--color-primary-900)] text-white"><ShieldCheck size={15} /></span>
                   HR Administration
                 </a>
               </div>
@@ -78,7 +78,7 @@ export function ContactsPage() {
       </header>
 
       {/* ─── Hero Banner ─────────────────────────────────────────── */}
-      <section className="bg-gradient-to-br from-[#363EE8] to-[#050D65] py-16 text-white text-center">
+      <section className="bg-gradient-to-br from-[#363EE8] to-[var(--color-primary-900)] py-16 text-white text-center">
         <p className="text-sm font-semibold uppercase tracking-widest text-indigo-200">Get in Touch</p>
         <h1 className="mt-3 text-4xl font-bold tracking-tight text-white sm:text-5xl">Contact Us</h1>
         <p className="mt-4 text-indigo-200 text-base">We'd love to hear from you.</p>
@@ -92,7 +92,7 @@ export function ContactsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-[#050D65]">Email Us</h2>
+          <h2 className="text-xl font-bold text-[var(--color-primary-900)]">Email Us</h2>
           <p className="mt-2 text-sm text-slate-500">
             Have questions about ABYAN HRIS? Our team is ready to help.
           </p>

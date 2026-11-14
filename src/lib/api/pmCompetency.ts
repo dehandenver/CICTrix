@@ -11,6 +11,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { fetchAllRows } from './fetchAllRows';
 
 const supabase = supabaseClient as any;
 
@@ -86,13 +87,29 @@ export async function listCompetencyStandards(): Promise<Result<CompetencyStanda
   }
 }
 
+/**
+ * Every requirement row, for reads of the whole table. The table is near the
+ * API's row limit, so a plain select would start losing rows without an error.
+ *
+ * The order is part of the contract, not just a paging key: titles that differ
+ * only by case or a parenthetical collapse to one key in the Summary of Ratings
+ * maps, where the last row wins. Ordering by id changes those required levels.
+ */
+export function readAllRequirementRows(columns: string) {
+  return fetchAllRows<any>((from, to) =>
+    supabase
+      .from('position_competency_requirements')
+      .select(columns)
+      .order('position_title', { ascending: true })
+      .order('competency_id', { ascending: true })
+      .range(from, to),
+  );
+}
+
 /** Every requirement across all positions — powers the Competency Map. */
 export async function listAllRequirements(): Promise<Result<PositionRequirement[]>> {
   try {
-    const { data, error } = await supabase
-      .from('position_competency_requirements')
-      .select('*')
-      .order('position_title', { ascending: true });
+    const { data, error } = await readAllRequirementRows('*');
     if (error) return fail('listAllRequirements', error);
     return { ok: true, data: (data ?? []) as PositionRequirement[] };
   } catch (err) {
@@ -213,7 +230,7 @@ export async function listPositions(): Promise<Result<string[]>> {
   try {
     const [empRes, reqRes] = await Promise.all([
       supabase.from('employees_with_department').select('current_position'),
-      supabase.from('position_competency_requirements').select('position_title'),
+      readAllRequirementRows('position_title'),
     ]);
 
     const fromEmployees: string[] = (empRes.error ? [] : empRes.data ?? [])

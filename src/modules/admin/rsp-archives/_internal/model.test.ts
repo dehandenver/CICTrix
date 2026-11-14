@@ -70,7 +70,11 @@ describe('toPositionRows', () => {
 describe('labels and badges', () => {
   it('maps §10 variants and keeps categories as tint', () => {
     expect(badgeVariant('Disqualified')).toBe('error');
-    expect(badgeVariant('Not Selected')).toBe('neutral');
+    // §10: the shared application map. Not Selected is a rejection.
+    expect(badgeVariant('Not Selected')).toBe('error');
+    expect(badgeVariant('Withdrawn - Hired Elsewhere')).toBe('neutral');
+    expect(badgeVariant('For Contract Signing')).toBe('success');
+    expect(badgeVariant('Resigned')).toBe('neutral');
     expect(badgeVariant('Promoted')).toBe('tint');
     expect(badgeVariant('Qualified')).toBe('success');
     expect(badgeVariant('Submitted')).toBe('info');

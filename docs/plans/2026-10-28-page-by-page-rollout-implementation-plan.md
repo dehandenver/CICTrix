@@ -1,7 +1,7 @@
 ---
 title: Page-by-Page System Rollout Implementation Plan
 date: 2026-10-28
-status: Approved
+status: Done
 summary: Multi-agent sanity, smoke, and Vitest test audit certifying all 51 page surfaces across all 7 CICTrix HRIS portals on the main branch.
 ---
 
@@ -99,3 +99,7 @@ The system was audited through a three-tier test regimen and partitioned across 
 - `npm run build:verify` (Passed: 3,142 modules transformed, 0 bundle errors)
 - `npx vitest run` (Passed: 120 / 120 application suites, 1,085 passed tests)
 - `powershell -NoProfile -ExecutionPolicy Bypass -File docs/plans/build-plans-index.ps1`
+
+## Status check 2026-11-14
+
+Done, as a record of what passed on 2026-10-28 (`3b00d53`), not a current certification. Many merges have landed since. The pass counts above were not reproduced. The 2026-11-12 audit ran the checks again on `cd71e17`: `npx tsc --noEmit` clean, and `npx vitest run` passed 635 files and 5,479 tests. The open risk above still stands: `scripts/seed-training-attendance.test.mjs` opens a live network connection with no skip guard. It passed on 2026-11-12 but failed in another worktree. See `docs/session-summaries/2026-10-28-page-by-page-rollout-summary.md`.

@@ -1,7 +1,7 @@
 ---
 title: Loading states and error handling across the system
 date: 2026-10-26
-status: In Progress
+status: Done
 summary: Audit every fetch/action site, extend the shared loading/error building blocks, and fix every site module by module so failures say what went wrong, whether it completed, and what to do next.
 ---
 
@@ -29,3 +29,9 @@ Users always see that the system is working, and every failed action is explaine
 ## Checks to run
 
 `npx tsc --noEmit`, `npm run lint`, `npm test` before each module commit.
+
+## Status check 2026-11-12
+
+Done, folded into `2026-10-26-loading-and-action-feedback.md`. The remaining PM, L&D and Department Head passes are tracked there.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

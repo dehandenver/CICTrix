@@ -171,7 +171,7 @@ export default function SuccessionReadinessEngine() {
     <div
       style={{
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-        background: '#f3f4f6',
+        background: 'var(--bg-page, #F1F5F9)',
         minHeight: '100vh',
         padding: '24px 16px',
       }}
@@ -313,7 +313,7 @@ export default function SuccessionReadinessEngine() {
             ))}
           </div>
 
-          <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: '24px 28px', marginBottom: 20 }}>
+          <div style={{ border: '1px solid var(--neutral-200, #E2E8F0)', borderRadius: 12, padding: '24px 28px', marginBottom: 20 }}>
             <h3
               style={{
                 fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",

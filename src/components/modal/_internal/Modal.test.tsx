@@ -63,6 +63,24 @@ describe('Modal', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toBeDisabled();
   });
 
+  it('focuses the first enabled button when not dismissible and the body has no fields', () => {
+    render(
+      <Modal open onClose={() => {}} title="Nothing Was Completed" dismissible={false} footer={<button type="button">Done</button>}>
+        <p>Rowena Bautista: not hired.</p>
+      </Modal>,
+    );
+    expect(screen.getByRole('button', { name: 'Done' })).toHaveFocus();
+  });
+
+  it('focuses the panel itself when nothing inside can take focus', () => {
+    render(
+      <Modal open onClose={() => {}} title="Saving" dismissible={false}>
+        <p>Please wait.</p>
+      </Modal>,
+    );
+    expect(screen.getByRole('dialog')).toHaveFocus();
+  });
+
   it('traps Tab inside the panel', () => {
     render(<Harness />);
     fireEvent.click(screen.getByText('Open'));

@@ -33,6 +33,8 @@ export interface CandidateRow {
   recommendation: string;
   rating: number | null;
   appType: ApplicantEvalType;
+  /** Promotional applicants only: the position they hold now. */
+  currentPosition: string;
 }
 
 export const normalizeText = (value: string) => value.trim().toLowerCase();
@@ -146,6 +148,7 @@ export const buildCandidateRows = (
       recommendation: String(shown?.recommendation ?? '').trim(),
       rating: Number.isFinite(rating) && rating > 0 ? rating : null,
       appType: getApplicantType(applicant ?? {}),
+      currentPosition: String(applicant?.current_position ?? '').trim(),
     };
   });
 };

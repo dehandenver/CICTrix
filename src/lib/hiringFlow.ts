@@ -1,5 +1,8 @@
 import { supabase } from './supabase';
-import { hireApplicant } from './api/employeesApi';
+import { ExternalHireError, hireApplicantWithOutcome } from './api/employeesApi';
+import { normalizeApplicationType } from './api/applicantScores';
+import { completePromotionalAppointment, PromotionalAppointmentError } from './api/promotionalHiring';
+import type { PromotionalAppointmentResult } from './api/promotionalHiring';
 import { getApplicants, saveApplicants, saveNewlyHired } from './recruitmentData';
 import { assignApplicantToSlot, fetchApplicantSlotLinks, fetchSlotsByJobPosting } from './plantillaSlots';
 import { plantillaLabel, normalizeApplicantEmail } from './plantillaRules';
@@ -160,6 +163,9 @@ export interface ReservedApplicant {
   slotNumber?: number;
   signingDeadline: string | null;
   interviewScore: number | null;
+  applicationType: 'job' | 'promotion';
+  /** The applicant's existing employee number for promotions; null for external applicants. */
+  employeeNumber: string | null;
 }
 
 /** Reserved applicants awaiting credentials. Throws when the read fails, so the page can say so instead of showing "none". */
@@ -174,7 +180,7 @@ export const fetchReservedApplicants = async (): Promise<ReservedApplicant[]> =>
         // full_name, department and total_score are not columns of this
         // table. fullNameOf already builds the name from the parts, and
         // `office` carries the department.
-        .select('id, first_name, middle_name, last_name, email, reference_no, position, office, plantilla_slot_id, signing_deadline, deleted_at')
+        .select('id, first_name, middle_name, last_name, email, reference_no, position, office, plantilla_slot_id, signing_deadline, application_type, employee_id, deleted_at')
         .eq('status', RESERVED_STATUS),
       slotIndex(),
     ]);
@@ -189,6 +195,7 @@ export const fetchReservedApplicants = async (): Promise<ReservedApplicant[]> =>
       .map((row: any) => {
         const id = String(row.id);
         const slot = slotByHolder.get(id) ?? (row.plantilla_slot_id ? slots.get(String(row.plantilla_slot_id)) : undefined);
+        const isPromotion = normalizeApplicationType(row.application_type) === 'promotional';
         return {
           id,
           fullName: fullNameOf(row),
@@ -205,6 +212,8 @@ export const fetchReservedApplicants = async (): Promise<ReservedApplicant[]> =>
           // and ForHiringPage resolves it from the score snapshot; this page
           // only lists who is awaiting credentials, so it does not read it.
           interviewScore: null,
+          applicationType: isPromotion ? 'promotion' as const : 'job' as const,
+          employeeNumber: isPromotion ? String(row.employee_id ?? '').trim() || null : null,
         };
       });
   } catch (err) {
@@ -271,30 +280,136 @@ export interface CredentialResult {
   plantilla: string;
 }
 
-export interface GenerateOutcome {
-  credentials: CredentialResult[];
-  /** "<name>: <reason>" for each applicant that could not be fully processed. */
-  failures: string[];
+/** A promotion the database completed. The employee keeps their account, so there is no password. */
+export interface PromotionOutcome extends PromotionalAppointmentResult {
+  fullName: string;
+  position: string;
+  department: string;
+  plantilla: string;
 }
 
+export interface GenerateOutcome {
+  /** Only newly issued external credentials. */
+  credentials: CredentialResult[];
+  /** Completed promotions, including replays of ones already completed. */
+  promotions: PromotionOutcome[];
+  /** "<name>: <reason>" for each applicant that could not be fully processed. */
+  failures: string[];
+  /** Promotions in `failures` whose result is unknown: they may have completed. */
+  unconfirmed: number;
+}
+
+const isUncertain = (err: unknown): boolean =>
+  err instanceof PromotionalAppointmentError && err.kind === 'uncertain';
+
+/** Failures that prove nothing was saved, even after a first call with no answer. */
+const DEFINITE_KINDS: readonly string[] = ['rejected', 'not_authorized', 'not_deployed'];
+
 /**
- * Hire each signed applicant: employee record, plantilla filled (which
+ * Complete a promotion, checking once more when the first call got no answer.
+ * A replay of a committed promotion returns `already_completed` and writes
+ * nothing, so the second call only settles what happened.
+ */
+const completeOrConfirmPromotion = async (applicantId: string): Promise<PromotionalAppointmentResult> => {
+  try {
+    return await completePromotionalAppointment(applicantId);
+  } catch (err) {
+    if (!isUncertain(err)) throw err;
+    try {
+      return await completePromotionalAppointment(applicantId);
+    } catch (checkErr) {
+      // The first call may still commit, so only a definite answer settles it.
+      // Anything else (busy while waiting on its locks, a failed read) is
+      // reported as not confirmed.
+      if (checkErr instanceof PromotionalAppointmentError && DEFINITE_KINDS.includes(checkErr.kind)) throw checkErr;
+      console.error(`[hiringFlow] promotion check failed for ${applicantId}:`, checkErr);
+      throw err;
+    }
+  }
+};
+
+/**
+ * Plain next step for a promotion that did not complete. A retryable
+ * PromotionalAppointmentError already says in its own message that retrying is
+ * safe, so it is not repeated here.
+ */
+const promotionFailureMessage = (fullName: string, err: unknown): string => {
+  if (isUncertain(err)) {
+    // The transaction may have committed and taken the row off this page, so
+    // "not promoted" could be false and "retry" impossible.
+    return `${fullName}: result not confirmed. We couldn't confirm whether this promotion finished, even after checking again. Reload this page: if they are no longer listed, the promotion is complete; if they are, select them and generate again. Repeating it will not promote them twice.`;
+  }
+  if (err instanceof PromotionalAppointmentError) {
+    return `${fullName}: not promoted. ${err.message}`;
+  }
+  return `${fullName}: not promoted. Something went wrong before the promotion finished. It is safe to try again; a repeat will not promote them twice.`;
+};
+
+/**
+ * Process each signed applicant.
+ *
+ * External applicants are hired: employee record, plantilla filled (which
  * archives everyone else on it in the database), portal account, Newly Hired
  * row and the credentials email.
+ *
+ * Promotions go through one database transaction (completePromotionalAppointment)
+ * that moves the employee into the plantilla and fills it. They get no new
+ * account, password, email or Newly Hired row, so the employee's original hire
+ * information and sign-in stay as they were. A promotion failure is reported
+ * per row; only a call that got no answer is checked once more.
  */
 export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Promise<GenerateOutcome> => {
   const credentials: CredentialResult[] = [];
+  const promotions: PromotionOutcome[] = [];
   const failures: string[] = [];
+  let unconfirmed = 0;
   const newlyHiredRecords: NewlyHired[] = [];
   const hiredAt = new Date().toISOString();
 
   for (const row of rows) {
+    if (row.applicationType === 'promotion') {
+      try {
+        const result = await completeOrConfirmPromotion(row.id);
+        promotions.push({
+          ...result,
+          fullName: row.fullName,
+          position: row.position,
+          department: row.department,
+          plantilla: row.plantilla,
+        });
+      } catch (err) {
+        console.error(`[hiringFlow] promotion failed for ${row.id}:`, err);
+        if (isUncertain(err)) unconfirmed += 1;
+        failures.push(promotionFailureMessage(row.fullName, err));
+        continue;
+      }
+      // The transaction already marked it Hired; this only keeps the local cache
+      // in step, so a cache failure must not report the promotion as failed.
+      try {
+        saveApplicants(getApplicants().map((a) => (a.id === row.id ? { ...a, status: 'Hired' as any } : a)));
+      } catch (err) {
+        console.warn(`[hiringFlow] applicants cache update failed for ${row.id}:`, err);
+      }
+      continue;
+    }
+
     let employeeId = '';
     try {
-      const employeeRow = await hireApplicant(row.id);
-      employeeId = employeeRow?.employee_id || '';
+      const { employee, promotion } = await hireApplicantWithOutcome(row.id);
+      if (promotion) {
+        // The cached type said external, but the saved application is a
+        // promotion and the transaction already completed it. Stop here: the
+        // steps below would reset the employee's password and hire record.
+        promotions.push({ ...promotion, fullName: row.fullName, position: row.position, department: row.department, plantilla: row.plantilla });
+        continue;
+      }
+      employeeId = employee?.employee_id || '';
     } catch (err: any) {
       console.error(`[hiringFlow] hire failed for ${row.id}:`, err);
+      if (err instanceof ExternalHireError) {
+        failures.push(`${row.fullName}: not hired. ${err.message}`);
+        continue;
+      }
       const failure = describeActionFailure('hire this applicant', err);
       failures.push(`${row.fullName}: not hired. ${failure.message} ${failure.nextStep}`);
       continue;
@@ -413,7 +528,7 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
   }
 
   window.dispatchEvent(new Event('cictrix:applicants-updated'));
-  return { credentials, failures };
+  return { credentials, promotions, failures, unconfirmed };
 };
 
 // ─── Printout: cut-out cards (option A, docs/mockups/2026-10-21-hire-reservation-flow.html) ───

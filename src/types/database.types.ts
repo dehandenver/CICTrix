@@ -18,7 +18,6 @@ export interface Database {
           created_at: string;
           updated_at: string;
           disqualification_reason: string | null;
-          total_score: number | null;
           gender: string | null;
           application_type: string | null;
         };
@@ -38,7 +37,6 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           disqualification_reason?: string | null;
-          total_score?: number | null;
           gender?: string | null;
           application_type?: string | null;
         };
@@ -58,7 +56,6 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           disqualification_reason?: string | null;
-          total_score?: number | null;
           gender?: string | null;
           application_type?: string | null;
         };

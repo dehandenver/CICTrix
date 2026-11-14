@@ -138,7 +138,7 @@
 .login-header h1 {
   margin: 0 0 0.35rem;
   font-size: 2rem;
-  color: #0f172a;
+  color: var(--neutral-900, #101E29);
 }
 
 .login-header p {
@@ -171,7 +171,7 @@
 
 .interviewer-login-page .form-field label {
   font-weight: 600;
-  color: #1e293b;
+  color: var(--neutral-800, #28343D);
   font-size: 0.92rem;
 }
 
@@ -368,7 +368,7 @@
   max-width: none;
   margin: 0;
   padding: 2rem;
-  background: #e5e7eb;
+  background: var(--neutral-200, #E2E8F0);
   min-height: 100vh;
   display: block;
   visibility: visible;
@@ -420,7 +420,7 @@
 .search-icon {
   position: absolute;
   left: 1rem;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   pointer-events: none;
 }
 
@@ -456,11 +456,11 @@
 
 .filter-select {
   padding: 0.75rem 1rem;
-  border: 1px solid #E0E0E0;
+  border: 1px solid var(--neutral-200, #E2E8F0);
   border-radius: 8px;
   font-size: 0.938rem;
   background: white;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
 }
 
 .stats-section {
@@ -474,13 +474,13 @@
   background: white;
   padding: 1.5rem;
   border-radius: 8px;
-  border: 1px solid #E0E0E0;
+  border: 1px solid var(--neutral-200, #E2E8F0);
 }
 
 .stat-label {
   display: block;
   font-size: 0.813rem;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 0.5rem;
@@ -518,7 +518,7 @@
 .search-input {
   width: 100%;
   padding: 0.75rem 1rem 0.75rem 2.75rem;
-  border: 1px solid #E0E0E0;
+  border: 1px solid var(--neutral-200, #E2E8F0);
   border-radius: 8px;
   font-size: 0.9375rem;
   background: white;
@@ -562,7 +562,7 @@
 
 .filter-select:hover,
 .filter-select:focus {
-  color: #212121;
+  color: var(--neutral-800, #28343D);
 }
 
 /* Jobs Table */
@@ -582,7 +582,7 @@
 
 .jobs-table thead {
   background: #FAFAFA;
-  border-bottom: 1px solid #E0E0E0;
+  border-bottom: 1px solid var(--neutral-200, #E2E8F0);
 }
 
 .jobs-table th {
@@ -596,7 +596,7 @@
 }
 
 .jobs-table tbody tr {
-  border-bottom: 1px solid #E0E0E0;
+  border-bottom: 1px solid var(--neutral-200, #E2E8F0);
   transition: background 0.2s ease;
 }
 
@@ -615,7 +615,7 @@
 
 .job-title {
   font-weight: 600;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
   display: block;
 }
 
@@ -627,12 +627,12 @@
 
 .office-name {
   font-weight: 500;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
 }
 
 .department {
   font-size: 0.875rem;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
 }
 
 .applicant-count {
@@ -646,7 +646,7 @@
 }
 
 .interview-date {
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   font-size: 0.9375rem;
 }
 
@@ -670,7 +670,7 @@
 
 .empty-message {
   text-align: center;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   padding: 2rem !important;
   font-size: 0.9375rem;
 }
@@ -730,19 +730,19 @@
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid #E0E0E0;
+  border-bottom: 1px solid var(--neutral-200, #E2E8F0);
 }
 
 .modal-title {
   font-size: 1.5rem;
   font-weight: 600;
   margin: 0;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
 }
 
 .modal-subtitle {
   font-size: 0.875rem;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   margin: 0.25rem 0 0 0;
 }
 
@@ -750,7 +750,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   padding: 0.5rem;
   display: flex;
   align-items: center;
@@ -761,7 +761,7 @@
 
 .modal-close-btn:hover {
   background: #F5F5F5;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
 }
 
 .modal-content {
@@ -783,7 +783,7 @@
   padding: 1rem;
   background: #FAFAFA;
   border-radius: 8px;
-  border: 1px solid #E0E0E0;
+  border: 1px solid var(--neutral-200, #E2E8F0);
   transition: all 0.2s ease;
 }
 
@@ -801,13 +801,13 @@
   margin: 0 0 0.25rem 0;
   font-size: 1rem;
   font-weight: 600;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
 }
 
 .applicant-meta {
   margin: 0 0 0.25rem 0;
   font-size: 0.875rem;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
 }
 
 .applicant-contact {
@@ -825,7 +825,7 @@
 .delete-applicant-btn {
   background: none;
   border: none;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   cursor: pointer;
   padding: 0.5rem;
   display: flex;
@@ -837,7 +837,7 @@
 
 .delete-applicant-btn:hover {
   background: #FFEBEE;
-  color: #C62828;
+  color: var(--error-700, #B42323);
 }
 
 /* Applicants Table Styles */
@@ -853,8 +853,8 @@
 }
 
 .applicants-table thead {
-  background: #F8F9FA;
-  border-bottom: 2px solid #E0E0E0;
+  background: var(--bg-page, #F1F5F9);
+  border-bottom: 2px solid var(--neutral-200, #E2E8F0);
 }
 
 .applicants-table th {
@@ -865,11 +865,11 @@
   color: #616161;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  border-bottom: 2px solid #E0E0E0;
+  border-bottom: 2px solid var(--neutral-200, #E2E8F0);
 }
 
 .applicants-table tbody tr {
-  border-bottom: 1px solid #F0F0F0;
+  border-bottom: 1px solid var(--neutral-200, #E2E8F0);
   transition: background-color 0.15s ease;
 }
 
@@ -884,13 +884,13 @@
 .applicants-table td {
   padding: 1.5rem 1.5rem;
   font-size: 0.938rem;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
   vertical-align: middle;
 }
 
 .applicants-table td:first-child {
   font-weight: 500;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
 }
 
 .evaluation-status {
@@ -958,17 +958,17 @@
 
 .delete-warning-text {
   font-size: 1rem;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
   margin: 0 0 0.5rem 0;
 }
 
 .delete-warning-text strong {
-  color: #C62828;
+  color: var(--error-700, #B42323);
 }
 
 .delete-warning-subtext {
   font-size: 0.875rem;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   margin: 0 0 1.5rem 0;
 }
 
@@ -998,7 +998,7 @@
 }
 
 .cancel-delete-btn:hover:not(:disabled) {
-  background: #E0E0E0;
+  background: var(--neutral-200, #E2E8F0);
 }
 
 .confirm-delete-btn {
@@ -1007,7 +1007,7 @@
 }
 
 .confirm-delete-btn:hover:not(:disabled) {
-  background: #C62828;
+  background: var(--error-500, #E05252);
   box-shadow: 0 4px 12px rgba(211, 47, 47, 0.3);
 }
 
@@ -1037,7 +1037,7 @@
 
 .status-badge.status-rejected {
   background: #FFEBEE;
-  color: #C62828;
+  color: var(--error-700, #B42323);
 }
 
 .status-badge.status-shortlisted {
@@ -1052,8 +1052,8 @@
   padding: 3rem 1rem;
   background: white;
   border-radius: 8px;
-  border: 1px solid #E0E0E0;
-  color: #757575;
+  border: 1px solid var(--neutral-200, #E2E8F0);
+  color: var(--neutral-600, #515F69);
 }
 
 .error-state button {
@@ -1123,12 +1123,12 @@
 .evaluation-title {
   font-size: 2rem;
   font-weight: 600;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
   margin: 0 0 0.5rem 0;
 }
 
 .evaluation-subtitle {
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   font-size: 1rem;
   margin: 0;
 }
@@ -1418,7 +1418,7 @@
 .applicant-details-header h3 {
   margin: 0;
   font-size: 2rem;
-  color: #0f172a;
+  color: var(--neutral-900, #101E29);
 }
 
 .details-actions {
@@ -1534,7 +1534,7 @@
   margin: 0;
   text-align: center;
   font-size: 1.9rem;
-  color: #0f172a;
+  color: var(--neutral-900, #101E29);
 }
 
 .applicant-summary-card .applicant-status-pill {
@@ -2108,7 +2108,7 @@
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--neutral-800, #28343D);
 }
 
 .evaluation-date {
@@ -2161,7 +2161,7 @@
 }
 
 .evaluation-remarks p:first-child {
-  color: #1f2937;
+  color: var(--neutral-800, #28343D);
   font-weight: 600;
 }
 
@@ -2220,7 +2220,7 @@
 
 .applicants-page-header {
   background: white;
-  border-bottom: 1px solid #E0E0E0;
+  border-bottom: 1px solid var(--neutral-200, #E2E8F0);
   padding: 1.5rem 2rem;
   display: flex;
   align-items: center;
@@ -2230,7 +2230,7 @@
 
 .back-button {
   background: none;
-  border: 1px solid #E0E0E0;
+  border: 1px solid var(--neutral-200, #E2E8F0);
   cursor: pointer;
   color: #616161;
   padding: 0.5rem;
@@ -2244,7 +2244,7 @@
 
 .back-button:hover {
   background: #F5F5F5;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
   border-color: #616161;
 }
 
@@ -2256,7 +2256,7 @@
   margin: 0 0 0.25rem 0;
   font-size: 1.375rem;
   font-weight: 600;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
 }
 
 .header-details {
@@ -2264,7 +2264,7 @@
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
   margin: 0;
   flex-wrap: wrap;
 }
@@ -2301,13 +2301,13 @@
   margin: 0 0 0.5rem 0;
   font-size: 1.75rem;
   font-weight: 600;
-  color: #212121;
+  color: var(--neutral-800, #28343D);
 }
 
 .applicants-page-subtitle {
   margin: 0;
   font-size: 0.875rem;
-  color: #757575;
+  color: var(--neutral-600, #515F69);
 }
 
 .empty-state,
@@ -2315,7 +2315,7 @@
 .error-state {
   background: white;
   border-radius: 8px;
-  border: 1px solid #E0E0E0;
+  border: 1px solid var(--neutral-200, #E2E8F0);
   padding: 2rem;
   text-align: center;
   color: #616161;
@@ -2324,7 +2324,7 @@
 .error-state {
   background: #FFEBEE;
   border-color: #EF5350;
-  color: #C62828;
+  color: var(--error-700, #B42323);
 }
 
 .error-state button {
@@ -2350,7 +2350,7 @@
 .pcpt-title {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   margin: 0 0 0.5rem 0;
   letter-spacing: 0.5px;
 }
@@ -2358,7 +2358,7 @@
 .pcpt-subtitle {
   font-size: 1rem;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   margin: 0;
 }
 
@@ -2399,7 +2399,7 @@
 
 .pcpt-label {
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   display: block;
   margin-bottom: 0;
   font-size: 0.938rem;
@@ -2409,9 +2409,9 @@
 
 .pcpt-value {
   display: block;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   padding: 0 0 0.5rem 0;
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: 1px solid var(--neutral-800, #28343D);
   font-size: 0.938rem;
   flex: 1;
   text-decoration: none;
@@ -2421,7 +2421,7 @@
   flex: 1;
   padding: 0 0 0.5rem 0;
   border: none;
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: 1px solid var(--neutral-800, #28343D);
   border-radius: 0;
   font-size: 0.938rem;
   font-family: inherit;
@@ -2516,7 +2516,7 @@
   background: #ffebee;
   border: 1px solid #ef5350;
   border-radius: 4px;
-  color: #c62828;
+  color: var(--error-700, #B42323);
   margin-bottom: 1rem;
   font-weight: 500;
 }
@@ -2563,7 +2563,7 @@
 .oral-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   margin: 0 0 0.5rem 0;
   letter-spacing: 0.5px;
 }
@@ -2611,7 +2611,7 @@
 
 .oral-label {
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   display: block;
   margin-bottom: 0;
   font-size: 0.938rem;
@@ -2621,9 +2621,9 @@
 
 .oral-value {
   display: block;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   padding: 0 0 0.5rem 0;
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: 1px solid var(--neutral-800, #28343D);
   font-size: 0.938rem;
   flex: 1;
 }
@@ -2632,7 +2632,7 @@
   flex: 1;
   padding: 0 0 0.5rem 0;
   border: none;
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: 1px solid var(--neutral-800, #28343D);
   border-radius: 0;
   font-size: 0.938rem;
   font-family: inherit;
@@ -2757,7 +2757,7 @@
 }
 
 .score-value {
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   font-weight: 600;
   font-size: 0.938rem;
   margin-left: 0.5rem;
@@ -2806,7 +2806,7 @@
   display: block;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--neutral-800, #28343D);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 0.75rem;
@@ -2839,7 +2839,7 @@
 
 .qualification-status.not-qualified {
   background: #ffcdd2;
-  color: #c62828;
+  color: var(--error-700, #B42323);
 }
 
 /* Interview Notes Group */

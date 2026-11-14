@@ -21,19 +21,19 @@ Add all of these as **Environment Variables** (apply to both Production and Prev
 #### Frontend Variables (VITE_* prefix)
 ```
 VITE_SUPABASE_URL = https://fyzdfgxaaowjzbjpwrii.supabase.co
-VITE_SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5emRmZ3hhYW93anpianB3cmlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2OTU3MDcsImV4cCI6MjA4NTI3MTcwN30.icGGfTLcjZjm_Gowkb0zD-E-axXhZR-uNLW3MXAhfIU
+VITE_SUPABASE_ANON_KEY = <your Supabase anon key>
 ```
 
 #### Backend Variables (for `/api/index.py`)
 ```
 SUPABASE_URL = https://fyzdfgxaaowjzbjpwrii.supabase.co
-SUPABASE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5emRmZ3hhYW93anpianB3cmlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2OTU3MDcsImV4cCI6MjA4NTI3MTcwN30.icGGfTLcjZjm_Gowkb0zD-E-axXhZR-uNLW3MXAhfIU
-SUPABASE_SERVICE_ROLE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5emRmZ3hhYW93anpianB3cmlpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY5NTcwNywiZXhwIjoyMDg1MjcxNzA3fQ.ZK7i_oUHgJj2cEmDy5UDhLp50BaD_4xo6TJlLJ_iX60
+SUPABASE_KEY = <your Supabase anon key>
+SUPABASE_SERVICE_ROLE_KEY = <your Supabase service role key>
 ```
 
 #### JWT Configuration
 ```
-JWT_SECRET_KEY = cictrix-production-secret-key-change-this-to-random-value-min-32-chars
+JWT_SECRET_KEY = <random string of 32+ characters>
 ```
 
 #### Email Configuration (Optional but Recommended)

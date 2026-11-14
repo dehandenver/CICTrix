@@ -28,6 +28,7 @@ interface PortalAccountRow {
   mobile_number: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 const portalAccountFromRow = (row: PortalAccountRow): EmployeePortalAccount => ({
@@ -148,6 +149,108 @@ export const findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail = async (
   } catch (err) {
     console.error('[employeePortalData] Supabase find by employeeId/email threw:', err);
     return null;
+  }
+};
+
+/** Why a promotional login could not be resolved. */
+export const PROMOTIONAL_AUTH_ERROR = {
+  INVALID_CREDENTIALS: 'invalid_credentials',
+  AMBIGUOUS_ACCOUNT: 'ambiguous_account',
+  MISSING_EMPLOYEE_NUMBER: 'missing_employee_number',
+  LOOKUP_UNAVAILABLE: 'lookup_unavailable',
+} as const;
+
+// PostgREST's `ilike` accepts `*` as a wildcard alias for SQL `%`, and SQL
+// itself treats `_` as a single-character wildcard. These identifiers are not
+// legitimate portal usernames/employee numbers, so reject them before a remote
+// read rather than letting them broaden a sensitive account lookup.
+const UNSUPPORTED_IDENTIFIER_WILDCARDS = /[%*\\]/;
+
+const escapeIlikeLiteral = (value: string) => value.replace(/_/g, '\\_');
+
+const readPortalAccountsForIdentifier = async (
+  column: 'username' | 'employee_id',
+  identifier: string,
+): Promise<PortalAccountRow[]> => {
+  // Narrow the read to the entered identifier. The legacy account table stores
+  // plaintext passwords, so never download the roster for a browser comparison.
+  // Soft-deleted rows are excluded explicitly, not left to RLS.
+  const { data, error } = await (supabase as any)
+    .from('employee_portal_accounts')
+    .select('*')
+    .is('deleted_at', null)
+    .ilike(column, escapeIlikeLiteral(identifier));
+  if (error) throw error;
+  return Array.isArray(data) ? (data as PortalAccountRow[]) : [];
+};
+
+/**
+ * Authenticate an existing employee for a promotional application against the
+ * current remote account table. The browser cache is never consulted: it can
+ * belong to another browser and can hold a password that has since changed.
+ *
+ * A username and an employee number are both accepted; only the identifier is
+ * normalized (trimmed and case-folded). The password must match the remote
+ * value exactly.
+ */
+export const authenticatePromotionalEmployee = async (
+  identifier: string,
+  password: string,
+): Promise<{ ok: boolean; account?: EmployeePortalAccount; error?: string }> => {
+  const identifierKey = String(identifier ?? '').trim().toLowerCase();
+  if (
+    !identifierKey ||
+    String(password ?? '').length === 0 ||
+    UNSUPPORTED_IDENTIFIER_WILDCARDS.test(identifierKey)
+  ) {
+    return { ok: false, error: PROMOTIONAL_AUTH_ERROR.INVALID_CREDENTIALS };
+  }
+
+  try {
+    // Two targeted reads keep the match explicit and let us detect an
+    // identifier that resolves to more than one account.
+    const [byUsername, byEmployeeNumber] = await Promise.all([
+      readPortalAccountsForIdentifier('username', identifierKey),
+      readPortalAccountsForIdentifier('employee_id', identifierKey),
+    ]);
+
+    const matches = new Map<string, PortalAccountRow>();
+    [...byUsername, ...byEmployeeNumber].forEach((row) => {
+      // A permissive policy can still return a soft-deleted row. Ignore it
+      // rather than authenticating or treating it as an active duplicate.
+      if (row.deleted_at != null) return;
+      const usernameMatches =
+        String(row.username ?? '').trim().toLowerCase() === identifierKey;
+      const employeeNumberMatches =
+        String(row.employee_id ?? '').trim().toLowerCase() === identifierKey;
+      if (!usernameMatches && !employeeNumberMatches) return;
+      const key = String(row.id ?? '');
+      if (!matches.has(key)) matches.set(key, row);
+    });
+
+    if (matches.size === 0) {
+      return { ok: false, error: PROMOTIONAL_AUTH_ERROR.INVALID_CREDENTIALS };
+    }
+    if (matches.size > 1) {
+      return { ok: false, error: PROMOTIONAL_AUTH_ERROR.AMBIGUOUS_ACCOUNT };
+    }
+
+    const [accountRow] = [...matches.values()];
+    if (String(accountRow.password ?? '') !== password) {
+      return { ok: false, error: PROMOTIONAL_AUTH_ERROR.INVALID_CREDENTIALS };
+    }
+    if (!String(accountRow.employee_id ?? '').trim()) {
+      return { ok: false, error: PROMOTIONAL_AUTH_ERROR.MISSING_EMPLOYEE_NUMBER };
+    }
+    return { ok: true, account: portalAccountFromRow(accountRow) };
+  } catch (err) {
+    // Do not include the submitted password or account row in the diagnostic.
+    const lookupError = err as { code?: unknown; message?: unknown } | null;
+    console.warn('[employeePortalData] Promotional credential lookup unavailable:', {
+      code: lookupError?.code ?? null,
+      message: lookupError?.message ?? 'remote read failed',
+    });
+    return { ok: false, error: PROMOTIONAL_AUTH_ERROR.LOOKUP_UNAVAILABLE };
   }
 };
 

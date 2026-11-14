@@ -28,7 +28,7 @@ import type { IPCRRatingRecord } from '../../modules/admin/pm/SummaryOfRatings';
 import { supabase as supabaseClient } from '../supabase';
 import { getTransitionState } from './semesterTransition';
 import { getActiveOfficeNameSet } from './departments';
-import { listCompetencyStandards, PROFICIENCY_NUMERIC, type ProficiencyLevel } from './pmCompetency';
+import { listCompetencyStandards, PROFICIENCY_NUMERIC, readAllRequirementRows, type ProficiencyLevel } from './pmCompetency';
 
 const supabase = supabaseClient as any;
 
@@ -87,9 +87,7 @@ type RequiredMap = Map<string, Map<string, { name: string; required: number }>>;
  */
 async function buildRequiredMap(): Promise<RequiredMap> {
   const [reqRes, stdRes] = await Promise.all([
-    supabase
-      .from('position_competency_requirements')
-      .select('position_title, competency_id, proficiency_level'),
+    readAllRequirementRows('position_title, competency_id, proficiency_level'),
     listCompetencyStandards(),
   ]);
 

@@ -460,8 +460,17 @@ export function CandidateListModal({
               ) : (
                 pageItems.map((row) => (
                   <tr key={row.id}>
-                    <td className="ivd-cell-primary"><span className="ivd-job-title" title={row.name}>{row.name}</span></td>
-                    <td data-label="Position">{row.position}</td>
+                    <td className="ivd-cell-primary">
+                      <span className="ivd-job-title" title={row.name}>{row.name}</span>
+                      {/* §10: application type is a category, so it takes the brand tint */}
+                      {row.appType === 'Promotional' && <span className="badge badge-tint ivd-type-tag">Promotional</span>}
+                    </td>
+                    <td data-label="Position">
+                      {row.position}
+                      {row.currentPosition && (
+                        <span className="ivd-job-meta text-body-s">From: {row.currentPosition}</span>
+                      )}
+                    </td>
                     <td data-label="Department">{row.department}</td>
                     <td className="ivd-cell-wide" data-label="Interview date">
                       <DateCell raw={row.interviewDate} todayKey={todayKey} />

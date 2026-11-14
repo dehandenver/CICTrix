@@ -176,14 +176,6 @@ export const QualifiedApplicantsRSPPage = ({ mode = 'score' }: QualifiedApplican
           }
           byApplicant[key] = snapshot;
           byApplicant[snapshot.applicantId] = snapshot;
-          const email = String(snapshot.row?.email ?? snapshot.row?.applicant_email ?? '').trim().toLowerCase();
-          if (email) {
-            byApplicant[`email:${email}`] = snapshot;
-          }
-          const name = String(snapshot.row?.name ?? snapshot.row?.applicant_name ?? snapshot.row?.full_name ?? '').trim().toLowerCase();
-          if (name) {
-            byApplicant[`name:${name}`] = snapshot;
-          }
         });
         setCompletedEvaluationIds(completedIds);
         setEvaluationsByApplicant(byApplicant);

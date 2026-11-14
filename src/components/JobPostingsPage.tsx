@@ -67,6 +67,27 @@ const ITEMS_PER_PAGE = 10;
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
 
+/** Maps a stored status to the list status kept on archived and locally stored applicants. */
+export const toJobPostApplicantStatus = (rawStatus: string): ReturnType<typeof getApplicants>[number]['status'] => {
+  const normalized = normalizeText(rawStatus);
+  // Closed outcomes first: 'withdrawn - hired elsewhere' contains 'hired', and
+  // 'not qualified' contains 'qualified', which counted them as qualified.
+  if (normalized.includes('withdrawn')) return 'Rejected';
+  if (normalized.includes('not qualified') || normalized.includes('disqual')) return 'Not Qualified';
+  if (normalized.includes('reject') || normalized.includes('not selected')) return 'Rejected';
+  // 'Recommended for Hiring' predates the split between screening and the
+  // post-evaluation decision; migration 20260926 resolves the stored rows.
+  if (normalized === 'recommended for hiring') return 'Recommended for Hiring';
+  if (normalized.includes('qualified') || normalized.includes('hired') || normalized.includes('accepted')) {
+    return 'Qualified';
+  }
+  if (normalized.includes('shortlist')) return 'Shortlisted';
+  if (normalized.includes('evaluation')) return 'Interview Completed';
+  if (normalized.includes('interview')) return 'For Interview';
+  if (normalized.includes('review') || normalized.includes('pending')) return 'Under Review';
+  return 'New Application';
+};
+
 const normalizeRomanNumeralsInText = (value: string) =>
   String(value ?? '')
     .split(/(\s+)/)
@@ -309,24 +330,6 @@ export const JobPostingsPage = () => {
       dbRows: dbRows.length,
     });
 
-    const toStatus = (rawStatus: string): ReturnType<typeof getApplicants>[number]['status'] => {
-      const normalized = normalizeText(rawStatus);
-      // Rejection first: 'not qualified' contains 'qualified', so testing for
-      // qualification before it counted disqualified applicants as qualified.
-      if (normalized.includes('not qualified') || normalized.includes('disqual')) return 'Not Qualified';
-      if (normalized.includes('reject')) return 'Rejected';
-      // 'Recommended for Hiring' predates the split between screening and the
-      // post-evaluation decision; migration 20260926 resolves the stored rows.
-      if (normalized === 'recommended for hiring') return 'Recommended for Hiring';
-      if (normalized.includes('qualified') || normalized.includes('hired') || normalized.includes('accepted')) {
-        return 'Qualified';
-      }
-      if (normalized.includes('shortlist')) return 'Shortlisted';
-      if (normalized.includes('interview')) return 'For Interview';
-      if (normalized.includes('review') || normalized.includes('pending')) return 'Under Review';
-      return 'New Application';
-    };
-
     const normalizeFuzzy = (value: string) =>
       normalizeRomanNumeralsInText(String(value ?? ''))
         .trim()
@@ -421,7 +424,7 @@ export const JobPostingsPage = () => {
         return {
           id: String(row?.id ?? crypto.randomUUID()),
           jobPostingId: linkedJobId,
-          status: toStatus(String(row?.status ?? '')),
+          status: toJobPostApplicantStatus(String(row?.status ?? '')),
         };
       })
       .filter((row: any): row is { id: string; jobPostingId: string; status: ReturnType<typeof getApplicants>[number]['status'] } => Boolean(row));

@@ -22,19 +22,24 @@ import { BackButton } from './BackButton';
 import { DocumentCollectionModal } from './DocumentCollectionModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import {
-  fetchLatestEvaluationForApplicantOrEmailAnySource,
+  fetchLatestEvaluationForApplicantAnySource,
   subscribeToEvaluationChanges,
   type EvaluationSnapshot,
 } from '../lib/evaluationScores';
 import { Modal } from './modal';
 import { TableStateRows, TopScorerBadge, topScorerIds, topScorerRowClass } from './data-table';
 import { getAdminRole } from '../lib/adminSession';
+import { describeActionFailure } from '../lib/friendlyErrors';
 import { fetchWrittenExamTotals, saveWrittenExamTotal, type SaveExamTotalResult } from '../lib/api/examTotalPoints';
 import {
+  CATEGORY_SCORES_UPDATED_EVENT,
   fetchApplicantCategoryScores,
+  fetchApplicantScoreSummaries,
+  isUuid,
   saveApplicantCategoryScores,
   savePositionWrittenExamScores,
   type ApplicantCategoryScores,
+  type ApplicantScoreSummary,
 } from '../lib/api/applicantScores';
 import {
   DEFAULT_WRITTEN_EXAM_TOTAL,
@@ -361,6 +366,12 @@ const isUpcoming = (iso?: string | null): boolean => {
 
 // ─── ExamScoresModal ─────────────────────────────────────────────────────────
 
+/** "<what> were not saved. Your entries are still here." plus the cause and next step. */
+const scoreSaveFailure = (what: string, error: unknown): string => {
+  const failure = describeActionFailure(`save the ${what.toLowerCase()}`, error);
+  return `${what} were not saved. Your entries are still here. ${failure.message} ${failure.nextStep}`;
+};
+
 interface ExamScoresModalProps {
   folder:         PositionFolder;
   existingScores: Record<string, string>;
@@ -370,7 +381,7 @@ interface ExamScoresModalProps {
   canEditTotal:   boolean;
   onSaveTotal:    (total: number) => Promise<SaveExamTotalResult>;
   onClose:        () => void;
-  onSave:         (scores: Record<string, string>) => void;
+  onSave:         (scores: Record<string, string>) => Promise<{ ok: boolean; error?: unknown }>;
 }
 
 const ExamScoresModal = ({ folder, existingScores, knownScores, total, canEditTotal, onSaveTotal, onClose, onSave }: ExamScoresModalProps) => {
@@ -380,6 +391,7 @@ const ExamScoresModal = ({ folder, existingScores, knownScores, total, canEditTo
   }));
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [totalInput,  setTotalInput]  = useState(String(total));
   const [totalError,  setTotalError]  = useState<string | null>(null);
   const [savingTotal, setSavingTotal] = useState(false);
@@ -427,15 +439,23 @@ const ExamScoresModal = ({ folder, existingScores, knownScores, total, canEditTo
     [folder.applicants],
   );
 
-  const handleSave = () => {
-    if (!allFilled) return;
+  const handleSave = async () => {
+    if (!allFilled || saving) return;
     setSaving(true);
-    setTimeout(() => {
-      onSave(scores);
-      setSaving(false);
-      setSaved(true);
-      setTimeout(onClose, 800);
-    }, 300);
+    setSaveError('');
+    let result: { ok: boolean; error?: unknown };
+    try {
+      result = await onSave(scores);
+    } catch (error) {
+      result = { ok: false, error };
+    }
+    setSaving(false);
+    if (!result.ok) {
+      setSaveError(scoreSaveFailure('Exam scores', result.error));
+      return;
+    }
+    setSaved(true);
+    setTimeout(onClose, 800);
   };
 
   return (
@@ -487,6 +507,11 @@ const ExamScoresModal = ({ folder, existingScores, knownScores, total, canEditTo
               ? `Enter the written examination score (0–${total}) for each applicant.`
               : `Total points are set by RSP. Scores run from 0 to ${total}.`}
           </p>
+          {saveError && (
+            <p role="alert" style={{ margin: 0, fontSize: '0.875rem', color: 'var(--status-error)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" /> {saveError}
+            </p>
+          )}
           {totalError && (
             <p role="alert" style={{ margin: 0, fontSize: '0.875rem', color: 'var(--status-error)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
               <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" /> {totalError}
@@ -563,11 +588,13 @@ interface ApplicantScoringModalProps {
   evaluation?:  EvaluationSnapshot | null;
   /** Written Exam total points for this applicant's position. */
   examTotal:    number;
+  /** Remote `is_finalized` for this UUID; local cache alone is not durable. */
+  durablyFinalized?: boolean;
   onClose:      () => void;
-  onSave:       (applicantId: string, scores: ApplicantCategoryScores) => void;
+  onSave:       (applicantId: string, scores: ApplicantCategoryScores) => Promise<{ ok: boolean; error?: unknown }>;
 }
 
-const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluation, examTotal, onClose, onSave }: ApplicantScoringModalProps) => {
+const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluation, examTotal, durablyFinalized, onClose, onSave }: ApplicantScoringModalProps) => {
   // Current employees (verified at wizard time via employee auth) submit with
   // application_type === 'promotion'. Their evaluation must be locked to a
   // Promotional Appointment — Original is invalid for an existing employee.
@@ -617,8 +644,13 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
     isCurrentEmployee ? 'promotional' : (savedScores[applicant.id]?.appointmentType ?? 'original'),
   );
   const [posType,   setPosType]   = useState<PositionType>(savedScores[applicant.id]?.positionType ?? 'rank-and-file');
-  const [isFinalized, setIsFinalized] = useState(hasPersistedScores);
+  const [savedThisSession, setSavedThisSession] = useState(false);
+  // For a real persisted applicant, only the remote summary can confirm
+  // finalization. Non-UUID demo/test IDs keep the local-only behavior.
+  const isFinalized = (isUuid(applicant.id) ? durablyFinalized === true : hasPersistedScores)
+    || savedThisSession;
   const [saving,    setSaving]    = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [filesModal, setFilesModal] = useState<{ catKey: CatKey; files: AttachmentRow[] } | null>(null);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
@@ -631,19 +663,10 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
   }, [evaluation]);
 
   useEffect(() => {
-    const saved = savedScores[applicant.id];
-    const t: AppointmentType = saved?.appointmentType ?? (isCurrentEmployee ? 'promotional' : 'original');
-    setIsFinalized(isFullySaved(saved, t));
-    // isFullySaved is referentially stable per render; including it in deps would
-    // cause needless re-runs without changing behavior.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicant.id, savedScores, isCurrentEmployee]);
-
-  useEffect(() => {
     let disposed = false;
 
     const refresh = async () => {
-      const latest = await fetchLatestEvaluationForApplicantOrEmailAnySource(applicant.id, applicant.email, supabase);
+      const latest = await fetchLatestEvaluationForApplicantAnySource(applicant.id, supabase);
       if (!disposed && latest) {
         setLiveEvaluation(latest);
       }
@@ -663,7 +686,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
       unsubscribe();
       window.removeEventListener('cictrix:applicants-updated', onApplicantsUpdated as EventListener);
     };
-  }, [applicant.id, applicant.email]);
+  }, [applicant.id]);
 
   useEffect(() => {
     const base = deriveInitial(applicant, savedScores);
@@ -743,14 +766,23 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
     ? ['pcpt']
     : ['oralExam'];
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (saving) return;
     setSaving(true);
-    setTimeout(() => {
+    setSaveError('');
+    try {
       const merged: ApplicantCategoryScores = { ...scores, appointmentType: apptType, positionType: posType };
-      onSave(applicant.id, merged);
+      const result = await onSave(applicant.id, merged);
+      if (result?.ok) {
+        setSavedThisSession(true);
+      } else {
+        setSaveError(scoreSaveFailure('Scores', result?.error));
+      }
+    } catch (error) {
+      setSaveError(scoreSaveFailure('Scores', error));
+    } finally {
       setSaving(false);
-      setIsFinalized(true);
-    }, 300);
+    }
   };
 
   void allApplicants;
@@ -796,6 +828,16 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                 <div>
                   <p style={SM_LABEL}>Score Finalized — View Only Mode</p>
                   <p style={{ ...SM_NOTE, color: 'var(--neutral-800)' }}>This applicant's evaluation has been finalized. Fields are read-only.</p>
+                </div>
+              </div>
+            )}
+
+            {saveError && (
+              <div role="alert" style={{ background: 'var(--error-100)', borderLeft: '4px solid var(--error-500)', borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <AlertTriangle size={18} style={{ color: 'var(--error-500)', flexShrink: 0 }} aria-hidden="true" />
+                <div>
+                  <p style={{ ...SM_LABEL, color: 'var(--error-700)' }}>Scores not saved</p>
+                  <p style={{ ...SM_NOTE, color: 'var(--neutral-800)' }}>{saveError}</p>
                 </div>
               </div>
             )}
@@ -1270,6 +1312,8 @@ interface ApplicantsListViewProps {
   onBack:                 () => void;
   completedEvaluationIds: Set<string>;
   savedCatScores:         Record<string, ApplicantCategoryScores>;
+  scoreSummaries:         Record<string, ApplicantScoreSummary>;
+  summariesLoadFailed:    boolean;
   evaluationsByApplicant?: Record<string, EvaluationSnapshot>;
   examScores?:            Record<string, Record<string, string>>;
   /** Written Exam total points for this folder's position. */
@@ -1300,6 +1344,8 @@ const ApplicantsListView = ({
   onBack,
   completedEvaluationIds,
   savedCatScores,
+  scoreSummaries,
+  summariesLoadFailed,
   evaluationsByApplicant,
   examScores,
   examTotal,
@@ -1312,10 +1358,7 @@ const ApplicantsListView = ({
   // the Original / Promotional tab and count each track independently.
   const typed = useMemo(() =>
     folder.applicants.map(a => {
-      const evalSnapshot = evaluationsByApplicant?.[a.id]
-        ?? (a.email ? evaluationsByApplicant?.[`email:${a.email.toLowerCase().trim()}`] : null)
-        ?? (a.full_name ? evaluationsByApplicant?.[`name:${a.full_name.toLowerCase().trim()}`] : null)
-        ?? null;
+      const evalSnapshot = evaluationsByApplicant?.[a.id] ?? null;
       const posExam = examScores?.[folder.position]?.[a.id];
       const cs = deriveInitial(a, savedCatScores, evalSnapshot, posExam);
       const apptType: AppointmentType = cs.appointmentType ?? 'original';
@@ -1395,6 +1438,13 @@ const ApplicantsListView = ({
         </div>
       </div>
 
+      {summariesLoadFailed && (
+        <div role="alert" className="flex items-start gap-3 rounded-xl border-l-4 border-[var(--warning-500)] bg-[var(--warning-100)] p-4 text-sm text-[var(--neutral-800)]">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-[var(--warning-700)]" aria-hidden="true" />
+          <span>We couldn't load saved score status. Finalized labels are unavailable until this read succeeds; reload the page to try again.</span>
+        </div>
+      )}
+
       {/* Table: shared .abyan-table layer, top scorer per track (Task 5) */}
       <div className="abyan-table-wrap">
         <table className="abyan-table" style={{ minWidth: 980 }}>
@@ -1412,12 +1462,19 @@ const ApplicantsListView = ({
           </thead>
           <tbody>
             {ranked.map((a, i) => {
-              const isFinalized = !!savedCatScores[a.id] || completedEvaluationIds.has(a.id);
+              const summary = scoreSummaries[a.id];
+              const durableTrack = isUuid(a.id);
+              // Local cache and completed evaluations can label demo/test IDs;
+              // a real applicant is finalized only by the remote summary.
+              const isFinalized = durableTrack
+                ? summary?.isFinalized === true
+                : (!!savedCatScores[a.id] || completedEvaluationIds.has(a.id));
+              const finalizationUnavailable = durableTrack && !summary && summariesLoadFailed;
               const isTop = topScorers.has(a.id);
               const cs = a.catScores;
               const sv = (key: CatKey): string => {
-                const v = cs[key]?.finalScore ?? cs[key]?.initialScore ?? 0;
-                return v > 0 ? String(v) : '—';
+                const v = cs[key]?.finalScore ?? cs[key]?.initialScore;
+                return typeof v === 'number' && Number.isFinite(v) ? String(v) : '—';
               };
               const schedule = (date?: string | null, time?: string | null) => date ? (
                 <span
@@ -1457,11 +1514,14 @@ const ApplicantsListView = ({
                     if (c.key !== 'writtenExam') {
                       return <td key={c.key} className="is-center" style={{ fontWeight: 600 }}>{sv(c.key)}</td>;
                     }
-                    const raw = cs.writtenExam?.finalScore ?? cs.writtenExam?.initialScore ?? 0;
-                    const { exceedsTotal } = convertExamScore(raw, examTotal);
+                    const raw = cs.writtenExam?.finalScore ?? cs.writtenExam?.initialScore;
+                    const hasWrittenScore = typeof raw === 'number' && Number.isFinite(raw);
+                    const { exceedsTotal } = hasWrittenScore
+                      ? convertExamScore(raw, examTotal)
+                      : { exceedsTotal: false };
                     return (
                       <td key={c.key} className="is-center" style={{ fontWeight: 600 }}>
-                        {raw > 0 ? formatScoreOverTotal(raw, examTotal) : '—'}
+                        {hasWrittenScore ? formatScoreOverTotal(raw, examTotal) : '—'}
                         {exceedsTotal && (
                           <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 2, fontSize: 14, fontWeight: 700, color: 'var(--error-700)', whiteSpace: 'nowrap' }}>
                             <AlertTriangle size={12} aria-hidden="true" /> Score exceeds total
@@ -1471,10 +1531,17 @@ const ApplicantsListView = ({
                     );
                   })}
                   <td className="is-center">
-                    <span className={`badge ${isFinalized ? 'badge-success' : 'badge-warning'}`}>
-                      {isFinalized ? <CheckCircle2 size={12} aria-hidden="true" /> : <span className="badge-dot" aria-hidden="true" />}
-                      {isFinalized ? 'Finalized' : 'Pending'}
-                    </span>
+                    {finalizationUnavailable ? (
+                      <span className="badge badge-neutral">
+                        <span className="badge-dot" aria-hidden="true" />
+                        Status unavailable
+                      </span>
+                    ) : (
+                      <span className={`badge ${isFinalized ? 'badge-success' : 'badge-warning'}`}>
+                        {isFinalized ? <CheckCircle2 size={12} aria-hidden="true" /> : <span className="badge-dot" aria-hidden="true" />}
+                        {isFinalized ? 'Finalized' : 'Pending'}
+                      </span>
+                    )}
                   </td>
                 </tr>
               );
@@ -1526,6 +1593,8 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
 
   const [examScores,  setExamScores]  = useState<Record<string, Record<string, string>>>(loadExamScores);
   const [catScores,   setCatScores]   = useState<Record<string, ApplicantCategoryScores>>(loadCatScores);
+  const [scoreSummaries, setScoreSummaries] = useState<Record<string, ApplicantScoreSummary>>({});
+  const [summariesLoadFailed, setSummariesLoadFailed] = useState(false);
   const [examTotals,  setExamTotals]  = useState<Record<string, number>>({});
   const [examTotalsLoadFailed, setExamTotalsLoadFailed] = useState(false);
   const canEditTotal = canEditExamTotal(getAdminRole());
@@ -1562,6 +1631,37 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
       window.removeEventListener('cictrix:category-scores-updated', loadScores);
     };
   }, []);
+
+  const applicantIdsKey = useMemo(
+    () => [...new Set(applicants.map((a) => a.id))].join('|'),
+    [applicants],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const ids = applicantIdsKey ? applicantIdsKey.split('|') : [];
+    const loadSummaries = () => {
+      void fetchApplicantScoreSummaries(ids).then((result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          setSummariesLoadFailed(true);
+          return;
+        }
+        const next: Record<string, ApplicantScoreSummary> = {};
+        for (const [id, summary] of result.data) {
+          next[id] = summary;
+        }
+        setScoreSummaries(next);
+        setSummariesLoadFailed(false);
+      });
+    };
+    loadSummaries();
+    window.addEventListener(CATEGORY_SCORES_UPDATED_EVENT, loadSummaries);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(CATEGORY_SCORES_UPDATED_EVENT, loadSummaries);
+    };
+  }, [applicantIdsKey]);
 
   const handleSaveExamTotal = useCallback(async (position: string, total: number) => {
     const result = await saveWrittenExamTotal(position, total);
@@ -1635,10 +1735,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
     [folders, posFilter, offFilter, examFilter, search],
   );
 
-  const handleSaveExam = useCallback((position: string, scores: Record<string, string>) => {
-    const updated = { ...examScores, [position]: scores };
-    setExamScores(updated);
-
+  const handleSaveExam = useCallback(async (position: string, scores: Record<string, string>) => {
     const scoresNumeric: Record<string, number> = {};
     Object.entries(scores).forEach(([id, val]) => {
       const num = parseFloat(val);
@@ -1647,28 +1744,37 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
       }
     });
 
-    const updatedCat = { ...catScores };
+    const result = await savePositionWrittenExamScores(position, scoresNumeric);
+    if (!result.ok) return result;
+
+    setExamScores((prev) => ({ ...prev, [position]: scores }));
     const posApplicants = folders.find(f => f.position === position)?.applicants ?? [];
-    Object.entries(scores).forEach(([id, val]) => {
-      const num = parseFloat(val);
-      if (!isNaN(num)) {
-        const applicant = posApplicants.find(a => a.id === id);
-        if (applicant) {
-          const existing = deriveInitial(applicant, updatedCat);
-          updatedCat[id] = { ...existing, writtenExam: { ...existing.writtenExam, initialScore: num } };
+    // Built from the latest state, not a copy taken before the save was awaited.
+    setCatScores((prev) => {
+      const updatedCat = { ...prev };
+      Object.entries(scores).forEach(([id, val]) => {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+          const applicant = posApplicants.find(a => a.id === id);
+          if (applicant) {
+            const existing = deriveInitial(applicant, updatedCat);
+            // A new exam score replaces the old one outright (F12).
+            updatedCat[id] = { ...existing, writtenExam: { ...existing.writtenExam, initialScore: num, finalScore: num } };
+          }
         }
-      }
+      });
+      return updatedCat;
     });
-    setCatScores(updatedCat);
+    return result;
+  }, [folders]);
 
-    void savePositionWrittenExamScores(position, scoresNumeric);
-  }, [examScores, catScores, folders]);
-
-  const handleSaveCatScores = useCallback((applicantId: string, scores: ApplicantCategoryScores) => {
-    const updated = { ...catScores, [applicantId]: scores };
-    setCatScores(updated);
-    void saveApplicantCategoryScores(applicantId, scores);
-  }, [catScores]);
+  const handleSaveCatScores = useCallback(async (applicantId: string, scores: ApplicantCategoryScores) => {
+    const result = await saveApplicantCategoryScores(applicantId, scores);
+    if (result.ok) {
+      setCatScores((prev) => ({ ...prev, [applicantId]: scores }));
+    }
+    return result;
+  }, []);
 
   // Browser Back closes one level: an open modal first, then the folder.
   useBackClosesView(openFolder !== null, () => setOpenFolder(null), 'score-folder');
@@ -1689,6 +1795,8 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
           onBack={() => setOpenFolder(null)}
           completedEvaluationIds={completedEvaluationIds}
           savedCatScores={catScores}
+          scoreSummaries={scoreSummaries}
+          summariesLoadFailed={summariesLoadFailed}
           evaluationsByApplicant={evaluationsByApplicant}
           examScores={examScores}
           examTotal={totalForPosition(examTotals, liveOpenFolder.position)}
@@ -1851,17 +1959,19 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
           canEditTotal={canEditTotal}
           onSaveTotal={(total) => handleSaveExamTotal(examModal.position, total)}
           onClose={() => setExamModal(null)}
-          onSave={scores => { handleSaveExam(examModal.position, scores); }}
+          onSave={scores => handleSaveExam(examModal.position, scores)}
         />
       )}
 
       {scoresCtx && (
         <ApplicantScoringModal
+          key={scoresCtx.applicant.id}
           applicant={scoresCtx.applicant}
           allApplicants={scoresCtx.folder.applicants}
           savedScores={catScores}
           evaluation={evaluationsByApplicant?.[scoresCtx.applicant.id]}
           examTotal={totalForPosition(examTotals, scoresCtx.folder.position)}
+          durablyFinalized={scoreSummaries[scoresCtx.applicant.id]?.isFinalized === true}
           onClose={() => setScoresCtx(null)}
           onSave={handleSaveCatScores}
         />

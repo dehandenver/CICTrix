@@ -1,7 +1,7 @@
 ---
 title: Bring the General Services Office up to the imported-office standard
 date: 2026-10-21
-status: In Progress
+status: Done
 summary: The 25 GSO seats exist live but went in bare. Add the office, weighting C and its divisions, fill every post's CSC qualifications, duties, documents and summary, and open the 5 vacant posts with dates, in one transactional SQL file.
 spec: Chat decision 2026-10-21 (recommendations accepted). Follows docs/plans/2026-10-20-import-sheet-job-postings.md.
 ---
@@ -43,3 +43,9 @@ The Office of the City General Services Officer works like the other four import
 
 - After the run (read-only): `departments` has OCGSO plus 5 child divisions and active weighting C. All 24 GSO posts have qualifications and posted-by. Exactly 5 are Open, with deadlines.
 - Browser: the public vacancy list shows 119, 125, 131, 140 and 149. The office filter and the office directory list "Office of the City General Services Officer" with its 5 divisions.
+
+## Status check 2026-11-12
+
+Done. The SQL ran live and all 24 posts carry full content. Today 0 GSO posts are Open (G4 expected 5), most likely closed by the later vacancy open/close work; see `docs/session-summaries/2026-10-21-gso-postings-fixup-summary.md`.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

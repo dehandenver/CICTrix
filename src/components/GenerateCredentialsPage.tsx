@@ -9,6 +9,7 @@ import {
   generateEmployeeCredentials,
   printCredentialCards,
   type CredentialResult,
+  type PromotionOutcome,
   type ReservedApplicant,
 } from '../lib/hiringFlow';
 import {
@@ -36,6 +37,13 @@ import { describeActionFailure } from '../lib/friendlyErrors';
 
 type Row = ReservedApplicant & { office: string; positionLabel: string };
 
+const PROMOTION_RESULT_COPY = 'Promotion completed. Your existing employee account is unchanged.';
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/** Category chip (§10): a promotion is a kind of appointment, not a status. */
+const PromotionChip = () => <span className="badge badge-tint">Promotion</span>;
+
 const CHECKBOX_CLASS = 'h-[18px] w-[18px] shrink-0 cursor-pointer accent-[var(--color-primary)]';
 
 const GroupCheckbox = ({ state, label, onChange }: { state: CheckState; label: string; onChange: () => void }) => {
@@ -59,7 +67,9 @@ export const GenerateCredentialsPage = () => {
   const [revoking, setRevoking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialResult[]>([]);
+  const [promotions, setPromotions] = useState<PromotionOutcome[]>([]);
   const [failures, setFailures] = useState<string[]>([]);
+  const [unconfirmed, setUnconfirmed] = useState(0);
   // A failed read is reported, not shown as "nobody is awaiting credentials".
   const [loadError, setLoadError] = useState<unknown>(null);
   const feedback = useFeedback();
@@ -112,23 +122,61 @@ export const GenerateCredentialsPage = () => {
     return Array.from(counts.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [selectedRows]);
 
+  const selectedPromotionCount = selectedRows.filter((r) => r.applicationType === 'promotion').length;
+  const selectedCredentialCount = selectedRows.length - selectedPromotionCount;
+
   const today = localIsoDate();
   const visibleIds = visible.map((r) => r.id);
 
   const handleGenerate = async () => {
     setGenerating(true);
     setError(null);
-    const outcome = await generateEmployeeCredentials(selectedRows);
-    setGenerating(false);
-    setConfirmGenerate(false);
-    setSelected(new Set());
-    setCredentials(outcome.credentials);
-    setFailures(outcome.failures);
-    if (outcome.credentials.length === 0) {
-      setError("We couldn't generate any credentials. Check your connection and try again.");
+    try {
+      const outcome = await generateEmployeeCredentials(selectedRows);
+      setConfirmGenerate(false);
+      setSelected(new Set());
+      setCredentials(outcome.credentials);
+      setPromotions(outcome.promotions);
+      setFailures(outcome.failures);
+      setUnconfirmed(outcome.unconfirmed ?? 0);
+      // When every row failed, the result modal lists each reason, so no banner blames the connection.
+      if (outcome.credentials.length === 0 && outcome.promotions.length === 0 && outcome.failures.length === 0) {
+        setError("We couldn't generate any credentials. Check your connection and try again.");
+      }
+    } catch (err) {
+      // Keep the selection so nothing has to be re-ticked; the reload below drops rows that were processed.
+      setConfirmGenerate(false);
+      const failure = describeActionFailure('generate the credentials', err);
+      setError(`${failure.title} ${failure.message} ${failure.nextStep}`);
+    } finally {
+      setGenerating(false);
+      void load();
     }
-    void load();
   };
+
+  const closeResults = () => { setCredentials([]); setPromotions([]); setFailures([]); setUnconfirmed(0); };
+  // Every selected row failed: the modal only lists reasons and claims nothing was created or emailed.
+  const nothingCompleted = credentials.length === 0 && promotions.length === 0;
+  // A promotion with no answer may have committed, so "nothing" could be false.
+  const resultTitle = nothingCompleted && unconfirmed > 0
+    ? 'Result Not Confirmed'
+    : nothingCompleted
+    ? 'Nothing Was Completed'
+    : credentials.length > 0 && promotions.length > 0
+      ? 'Appointments Completed'
+      : credentials.length === 0
+        ? 'Promotions Completed'
+        : 'Employee Records Created';
+  const resultSubtitle = nothingCompleted && unconfirmed > 0
+    ? "We couldn't confirm every result. Check the reasons below."
+    : nothingCompleted
+    ? 'None of the selected applicants were completed. Check the reasons below.'
+    : [
+      credentials.length > 0
+        ? `${plural(credentials.length, 'account')} generated. Credentials were emailed where an address was on file.`
+        : null,
+      promotions.length > 0 ? `${plural(promotions.length, 'promotion')} completed.` : null,
+    ].filter(Boolean).join(' ');
 
   const handleRevoke = async () => {
     if (!revokeTarget) return;
@@ -272,9 +320,14 @@ export const GenerateCredentialsPage = () => {
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm font-semibold text-[var(--color-primary-900)]" title={row.fullName}>{row.fullName}</p>
                                   <p className="text-xs text-[var(--neutral-600)]">
-                                    {[row.referenceNo, `Report by ${formatDisplayDate(row.signingDeadline)}`].filter(Boolean).join(' · ')}
+                                    {[
+                                      row.referenceNo,
+                                      row.applicationType === 'promotion' ? row.employeeNumber : null,
+                                      `Report by ${formatDisplayDate(row.signingDeadline)}`,
+                                    ].filter(Boolean).join(' · ')}
                                   </p>
                                 </div>
+                                {row.applicationType === 'promotion' && <PromotionChip />}
                                 {/* §10: waiting = Warning, missed date = Error */}
                                 {overdue ? (
                                   <span className="badge badge-error"><span className="badge-dot" aria-hidden="true" />Deadline passed</span>
@@ -306,13 +359,21 @@ export const GenerateCredentialsPage = () => {
       {/* Generate: confirm (§9.10) */}
       <ConfirmModal
         open={confirmGenerate}
-        title={`Generate credentials for ${selected.size} applicant${selected.size === 1 ? '' : 's'}?`}
+        title={selectedPromotionCount > 0
+          ? `Complete ${plural(selected.size, 'appointment')}?`
+          : `Generate credentials for ${plural(selected.size, 'applicant')}?`}
         confirmLabel="Generate"
         loading={generating}
         onCancel={() => setConfirmGenerate(false)}
         onConfirm={() => { void handleGenerate(); }}
         message={(
           <p className="!mb-0">
+            {selectedPromotionCount > 0 && (
+              <>
+                <b>{plural(selectedCredentialCount, 'credential')}, {plural(selectedPromotionCount, 'promotion')}.</b>{' '}
+                Promotions keep the employee&apos;s existing account, so no credentials are generated for them.{' '}
+              </>
+            )}
             Each one is hired and their plantilla is marked filled. Everyone else who applied to those plantillas moves to
             Archives as Not Selected, and their status tracker shows the regret letter.
           </p>
@@ -321,7 +382,10 @@ export const GenerateCredentialsPage = () => {
         <ul className="max-h-48 divide-y divide-[var(--neutral-200)] overflow-y-auto rounded-xl border border-[var(--neutral-200)] text-sm">
           {selectedRows.map((r) => (
             <li key={r.id} className="px-3 py-2">
-              <p className="font-semibold text-[var(--color-primary-900)]">{r.fullName}</p>
+              <p className="flex items-center gap-2 font-semibold text-[var(--color-primary-900)]">
+                {r.fullName}
+                {r.applicationType === 'promotion' && <PromotionChip />}
+              </p>
               <p className="text-xs text-[var(--neutral-600)]">{r.positionLabel} · {r.department}</p>
             </li>
           ))}
@@ -348,29 +412,32 @@ export const GenerateCredentialsPage = () => {
       {/* Result: credentials + print (option A cut-out cards). Not dismissible:
           the temporary passwords are shown once, so closing is an explicit Done. */}
       <Modal
-        open={credentials.length > 0 || failures.length > 0}
-        onClose={() => { setCredentials([]); setFailures([]); }}
+        open={credentials.length > 0 || promotions.length > 0 || failures.length > 0}
+        onClose={closeResults}
         dismissible={false}
         size="lg"
-        icon={<CheckCircle strokeWidth={1.75} />}
-        title="Employee Records Created"
-        subtitle={`${credentials.length} account${credentials.length === 1 ? '' : 's'} generated. Credentials were emailed where an address was on file.`}
+        icon={nothingCompleted ? <XCircle strokeWidth={1.75} /> : <CheckCircle strokeWidth={1.75} />}
+        title={resultTitle}
+        subtitle={resultSubtitle}
         footer={(
           <>
-            <button
-              type="button"
-              className="btn btn-md btn-secondary"
-              disabled={credentials.length === 0}
-              onClick={() => {
-                if (!printCredentialCards(credentials)) {
-                  feedback.warning("The print window didn't open.", "Your browser blocked it. Allow pop-ups for this site, then click Print Credentials again.");
-                }
-              }}
-            >
-              <Printer className="h-4 w-4" aria-hidden="true" />
-              Print Credentials
-            </button>
-            <button type="button" className="btn btn-md btn-primary" onClick={() => { setCredentials([]); setFailures([]); }}>
+            {!nothingCompleted && (
+              <button
+                type="button"
+                className="btn btn-md btn-secondary"
+                disabled={credentials.length === 0}
+                title={credentials.length === 0 && promotions.length > 0 ? 'Promotions have no credentials to print.' : undefined}
+                onClick={() => {
+                  if (!printCredentialCards(credentials)) {
+                    feedback.warning("The print window didn't open.", "Your browser blocked it. Allow pop-ups for this site, then click Print Credentials again.");
+                  }
+                }}
+              >
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Print Credentials
+              </button>
+            )}
+            <button type="button" className="btn btn-md btn-primary" onClick={closeResults}>
               Done
             </button>
           </>
@@ -379,9 +446,13 @@ export const GenerateCredentialsPage = () => {
         {failures.length > 0 && (
           <div role="alert" className="mb-4 rounded-xl border-l-4 border-[var(--warning-500)] bg-[var(--warning-100)] p-3 text-sm text-[var(--neutral-800)]">
             <p className="font-semibold">Some steps need attention:</p>
-            <ul className="mt-1 list-disc pl-5">{failures.map((f) => <li key={f}>{f}</li>)}</ul>
+            <ul className="mt-1 list-disc pl-5">{failures.map((f, i) => <li key={i}>{f}</li>)}</ul>
           </div>
         )}
+        {credentials.length > 0 && promotions.length > 0 && (
+          <h3 className="mb-2 text-base font-semibold text-[var(--color-primary-900)]">New employee credentials</h3>
+        )}
+        {credentials.length > 0 && (
         <div className="abyan-table-wrap">
           <table className="abyan-table w-full">
             <thead>
@@ -420,9 +491,44 @@ export const GenerateCredentialsPage = () => {
             </tbody>
           </table>
         </div>
-        <p className="mt-4 text-xs text-[var(--neutral-600)]">
-          Employees must change their temporary password at first login. Keep this list confidential.
-        </p>
+        )}
+        {credentials.length > 0 && (
+          <p className="mt-4 text-xs text-[var(--neutral-600)]">
+            Employees must change their temporary password at first login. Keep this list confidential.
+          </p>
+        )}
+        {promotions.length > 0 && (
+          <div className={credentials.length > 0 ? 'mt-6' : undefined}>
+            {credentials.length > 0 && (
+              <h3 className="mb-2 text-base font-semibold text-[var(--color-primary-900)]">Promotions</h3>
+            )}
+            <div className="abyan-table-wrap">
+              <table className="abyan-table w-full">
+                <thead>
+                  <tr className="border-b border-[var(--neutral-200)] text-left text-[13px] font-semibold text-[var(--color-primary-900)]">
+                    <th scope="col" className="pb-2">Name</th>
+                    <th scope="col" className="pb-2">Position / Office</th>
+                    <th scope="col" className="pb-2">Employee ID</th>
+                    <th scope="col" className="pb-2">Result</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--neutral-200)]">
+                  {promotions.map((p) => (
+                    <tr key={p.applicantId}>
+                      <td className="py-3 pr-4 font-semibold text-[var(--color-primary-900)]">{p.fullName}</td>
+                      <td className="py-3 pr-4">
+                        <p>{p.position || '—'}{p.plantilla ? ` · ${p.plantilla}` : ''}</p>
+                        <p className="text-xs text-[var(--neutral-600)]">{p.department || '—'}</p>
+                      </td>
+                      <td className="py-3 pr-4 font-mono font-semibold text-[var(--color-primary-900)]">{p.employeeNumber}</td>
+                      <td className="py-3 text-[var(--neutral-800)]">{PROMOTION_RESULT_COPY}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

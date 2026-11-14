@@ -1,0 +1,485 @@
+---
+title: Repair the promotional hiring pipeline
+date: 2026-10-30
+status: Done
+summary: Repair the active employee application and RSP promotion flow, including scheduled interviewer visibility, durable scores, selection visibility, appointment completion, and existing-account preservation. Security remediation and the unused PM promotion module are excluded.
+spec: docs/session-summaries/2026-10-30-promotional-hiring-audit-summary.md
+---
+
+## Goal
+
+An existing employee can apply from a fresh browser, complete the existing screening and assessment process, appear in For Hiring, be reserved for signing, and receive a promotion without creating a second employee or replacing their account. A promotional interview scheduled by RSP appears in the interviewer's dashboard and applicant list, opens the correct PCPT evaluation, and remains visible after reload. The employee UUID, employee number, original hire date, account ID, username, and password remain unchanged. The employee's current role/office and target plantilla are updated, the appointment is recorded once, and retries do not duplicate any of those actions.
+
+This is a **functional repair plan**, not a production-security sign-off. The user chose to exclude remediation work on 2026-10-30 and approved implementation with “build” after selecting DeepSeek max. Implementation is in the isolated `promotional-hiring-fixes-build` worktree on `fix/promotional-hiring-pipeline`. Approval does not authorize live migrations, deployment, or email.
+
+## Approach
+
+### Design and scope
+
+Keep React/TypeScript/Vite, Supabase, FastAPI, and the existing Submitted → screening → assessment → Qualified → For Contract Signing → Hired flow. `applicantStatus.ts` treats `Selected` as the canonical hire status and `Hired` as a legacy value that maps to it. This plan still writes `Hired`, because the existing hire paths, the live data (all hired applicants are stored as `Hired`) and several screens that match the raw string `hired` all depend on it. See "Before starting Tasks 4–8". Do not add a PM approval stage.
+
+Fix lookup, score persistence, and list filtering in their existing service/component boundaries. Add a focused **promotion-only appointment transaction** shared by the browser and Python hire paths. It updates the existing employee, fills the reserved target slot, changes application status, and records promotion history together. External hiring keeps its existing behavior and gets regression coverage; this is not a general hiring rewrite.
+
+The transaction is a proposed implementation detail for review: independent employee/status/slot HTTP writes were rejected because a lost response or failed slot write can leave a promotion half-complete. It does not migrate authentication or repair project-wide permissions. Any new callable operation must nevertheless validate its caller and must not introduce another anonymous mutation endpoint.
+
+**Included:** fresh-browser promotion login using the current portal-account mechanism; scheduled promotion visibility and PCPT access in the interviewer portal; truthful score saving and reloading; promotion-aware ranking/selection; canonical employee update; retry-safe promotion completion; promotion-specific result messages; tests and isolated acceptance verification.
+
+**Excluded:** Auth migration, password hashing/rotation, project-wide RLS/grant/Storage changes, changes to the remediation plan, activation/integration of `PMPromotionalApplications`, IPCR competency computation, scoring-policy/weight changes, duplicate-record cleanup, bulk production repairs, replacement of the vacancy-occupancy model, and automatic reopening/advertising of the employee's former position. Existing security findings remain unresolved, not waived or fixed by this plan.
+
+### Existing decisions and constraints
+
+- Use the layout in `docs/mockups/2026-10-21-hire-reservation-flow.html`: existing selection dialogs, cross-department signing queue, and external credential print cards. Only promotion-result copy/state changes are planned; no new navigation or layout. `DESIGN_IDENTITY.md` overrides mockup styling; no token changes.
+- An application is identified by its own applicant UUID, not by the employee's email or a prior application. The employee is resolved by the persisted `applicants.employee_id` employee number, never by title, name, or email.
+- Use the deployed `employees` base-table fields: `position`, `department`, `division`, `plantilla_num`, and `employee_number`. Do not add `department_id` to accommodate stale code. Do not copy a `positions.id` UUID into the incompatible numeric `employees.position_id` column.
+- Resolve the target office/position from the application's exact `plantilla_slot_id` and that slot's `job_posting_id`, not a title-only lookup or legacy department-name substitution. Resolve the employee-facing plantilla number from the stored `Plantilla <n>` label; `item_number` is an internal key, not that number. Reject ambiguous/missing mapping instead of guessing.
+- Keep the existing written-exam requirement and scoring conversions. Promotional assessment total uses the existing five-category `calcModalScore(..., 'promotional')` calculation. Oral scores are not required for a promotional appointment; do not invent oral scores from PCPT. Preserve separate written-exam and 130-point summary metrics rather than silently redefining them.
+- No service-role credentials in the frontend, no new packages, no broad component refactors, no new module folder. All external calls remain in `src/lib/`.
+- Create a migration only during approved implementation using `npx supabase migration new complete_promotional_appointment`. Its timestamp comes from the CLI. Test locally/preview; repository migrations merge by PR, never by manual MCP/dashboard application.
+- Do not automatically create a portal account for a promotion with a missing or ambiguous account link. Return an actionable failure before appointment writes. Account provisioning is a separate action.
+
+### File responsibilities
+
+| Files | Responsibility |
+| --- | --- |
+| `src/lib/employeePortalData.ts`, `src/modules/applicant/ApplicantWizard.tsx` | Resolve existing promotion credentials remotely without depending on another browser's cache. |
+| `src/lib/api/applicantScores.ts`, `src/components/QualifiedApplicantsSection.tsx` | Save before finalizing/caching; expose durable, typed score summaries. |
+| `src/components/ForHiringPage.tsx`, `src/components/ApplicantRankingPage.tsx` | Use application identity and persisted assessment data. |
+| `src/lib/applicantSchedule.ts`, `src/lib/interviewerAccess.ts`, interviewer dashboard/list/evaluation components | Trace persisted schedules through assignment and posting filters; restore scheduled promotional interviews without widening access. |
+| New `src/lib/api/promotionalHiring.ts` | Typed promotion RPC boundary; no password issuance or external-hire logic. |
+| `src/lib/api/employeesApi.ts`, `backend/app/routes/employees.py` | Route every promotion hire entry point to the same transaction, retaining external-hire compatibility. |
+| `src/lib/hiringFlow.ts`, `src/components/GenerateCredentialsPage.tsx` | Distinguish promotions from external credential generation and report mixed outcomes accurately. |
+| New CLI-generated migration, `supabase/tests/promotional_appointment.test.sql` | Transaction, rollback, caller checks, concurrent completion, and idempotence. |
+| `src/lib/hiredApplicantSync.ts` and its new focused test | Prevent startup backfills from creating/rewinding promotion employees or statuses. |
+
+### Review focus
+
+1. A prior account/hire must not hide a different promotion application, and a saved promotion interview must reach the eligible interviewer's dashboard, list and PCPT form without shared browser caches (Tasks 3 and 3A).
+2. A rejected score save or stale browser cache must not make an applicant look finalized (Task 2).
+3. Double-clicks, simultaneous completions, lost responses, and replay of an old promotion must not duplicate or rewind appointments (Tasks 4–5).
+4. Missing/deleted employees, ambiguous accounts, stale reservations, or a mismatched slot must fail without writes (Task 4).
+5. A promotion-only or mixed batch must never reset a promotion password, print old credentials, or report a successful promotion as a credential-generation failure (Task 6).
+
+## Steps
+
+### Implementation checkpoint — paused after Task 3
+
+Paused at the user's request on 2026-10-30. Tasks 1–3 are implemented, reviewed and committed on `fix/promotional-hiring-pipeline`: `1dda88f`, `c29adba`, `20c24f1`. Task 3A was completed afterwards (see the Task 3A checkpoint below). Task 7 was subsequently completed separately on `fix/applicant-status-promotion-followups` as `273259e`, with 19 focused regressions and independent Sol/high review. Task 4 was completed on 2026-11-02 on `fix/promotional-appointment-transaction` (see the Task 4 checkpoint). Tasks 5 and 6 were completed the same day (see their checkpoints). Task 8 ran on 2026-11-02 against the local stack (see the Task 8 checkpoint). The promotion transaction passed every acceptance check, F1–F3 were then fixed in `d18d4b4`. F4 (pre-existing external-hire office failure) was fixed in `2d3fe26`; see the F4 section. Do not rerun Task 7.
+
+Combined verification after Task 3: **136 src test files / 1,239 tests passed**; `npx tsc --noEmit`, repository-wide `npm run lint`, `npm run build`, and `git diff --check` passed. After merging `upstream/main` to clear the PR conflict (merge `7b115ef`), the full suite passed **139 files / 1,248 tests**, with lint and build green. Tests/build used synthetic localhost Supabase settings, not production credentials. Existing React act/refused-localhost test warnings and Vite/Browserslist/bundle-size warnings remain. No migrations were added; live-data seed tests and database/browser end-to-end acceptance were not run. Docker/Podman/local Postgres remain unavailable, blocking Task 4's required transaction verification and Task 8's isolated acceptance. Overall plan stays In Progress, not Done.
+
+### Task 3A checkpoint — resumed 2026-10-30
+
+Task 3A is done for the reported defect, on branch `fix/interviewer-scheduled-promotions` (commit `180c831`, not pushed). The branch is stacked on `fix/applicant-status-score-writes` (`2e8fef9`, a docs-only commit) so both plans and `docs/plans/index.html` merge without conflict. Merge that branch first, or merge both together.
+
+- **Root cause.** Both interviewer screens treated any applicant whose email ends in `@example.com` as demo data and hid them. The live scheduled promotion is the only applicant with that domain. Read-only checks with the publishable key found every other boundary passes: interview date and time are set, the rater is assigned through `assigned_interviewer_email`, the posting `City Accountant II` is Open, and the title matches. No code seeds `@example.com` demo rows any more. Demo rows are now recognised only by a `mock-` id.
+- **Files changed.** `InterviewerDashboard.tsx` and `InterviewerApplicantsList.tsx`: the `isDemoApplicant` helper only. `EvaluationForm.tsx` was **not** changed: it already resolves Promotional from the persisted `application_type`. Task 3A only adds `EvaluationForm.promotion.test.tsx`, so `EvaluationForm.tsx` edits belong to Step 3 of `2026-10-30-applicant-status-and-score-writes.md`.
+- **Builder deviation.** The approved OpenAI/DeepSeek route isn't available in this Claude Code cloud session. The user resumed Task 3A here, and it was built and reviewed inline in this session with no subagent. Tasks 4–8 still need a model choice before they are dispatched.
+- **Checks.** The new tests fail without the fix (dashboard 2 of 3, list 3 of 3) and pass with it. Results: `npx vitest run src/lib/applicantSchedule.scheduled.test.ts src/modules/interviewer` gives 8 files / 54 tests passed; `npx tsc --noEmit` and repository-wide `npm run lint` pass. The full `npm test` run gives 142 of 144 files and 1,266 of 1,268 tests passed. The 2 failures are pre-existing: the live-data seed test (see Risks) and `trainingProgress.test.ts`, which also fails on the base commit when the clock is in UTC (the test assumes +08:00).
+
+Keep this worktree and branch for the next session. The branch was pushed to the `Jayyoo07` fork and [PR #83](https://github.com/dehandenver/CICTrix/pull/83) is open against `dehandenver/CICTrix:main`. It describes this as the **Tasks 1–3 partial repair**, not a completed promotional appointment pipeline. No merge, deployment, email or live database write has been performed. The Vercel check reports the expected "Authorization required to deploy" on fork PRs. See [implementation summary](../session-summaries/2026-10-30-promotional-hiring-fixes-summary.md) for checks and remaining limits.
+
+### Checkpoint smoke/sanity verification — user-requested extension
+
+The user asked for the pre-merge smoke/sanity pass on 2026-10-30 and required the approved DeepSeek builder to run it. A real browser pass is not available in this environment: there is no installed browser-automation package or browser harness, and no isolated Supabase/Postgres runtime. Installing packages or using production is excluded.
+
+Delegated substitute, clearly labeled as such:
+
+- Fresh-browser promotion-entry smoke against a remote-account fixture, with empty browser storage.
+- Cross-task handoff smoke using the real Task 2 score save/summary services over a stateful fake Supabase table: save a complete promotional assessment, simulate a hard reload, then verify the saved total and written exam drive For Hiring and Applicant Ranking.
+- Fail-closed sanity: a rejected score upsert creates no durable summary and leaves the promotion out of selection while an existing reservation remains visible.
+- Built-artifact smoke: serve `dist` with `npm run preview` on localhost, fetch the index and main asset, then stop the server. No external service calls.
+
+Owned new tests: `src/test/promotionEntry.smoke.test.tsx`, `src/test/promotionPipeline.smoke.test.tsx`. No product edits; defects found are reported to the parent for a separate corrective decision. This is not a substitute for Task 8's isolated-browser/database acceptance, and it must not be reported as browser-verified.
+
+Status 2026-10-30: **accepted**. A fresh `deepseek/deepseek-flash#max` builder (catalog identity DeepSeek V4.1 Flash 1017, `max` advertised) authored and ran the checks; parent reviewed the harness and independently reran both smoke files: **2 files / 5 tests passed**, `npx tsc --noEmit` and scoped ESLint clean. Parent independently reproduced the built-artifact preview smoke: index 200 with root and module script, main JS 200 (3,333,754 bytes), no listener left. Committed as `e483c55` (`test(promotion): add checkpoint smoke and sanity checks`). This remains mocked jsdom evidence, not browser/database/RLS acceptance; Tasks 3A–8 are still unverified. Pushed to the fork with [PR #83](https://github.com/dehandenver/CICTrix/pull/83) open; not merged.
+
+Execution is task-by-task using test-driven development under the user-invoked `delegate` workflow. For each task, the builder writes the named failing tests, runs them to demonstrate the defect, makes the smallest implementation, and reruns to green. The OpenAI orchestrator then reviews the diff and independently reruns the relevant checks. Task commit steps below belong to the orchestrator after review and applicable approval, never to the builder. No pushes or live writes without explicit authorization.
+
+### Delegation setup — approved for implementation
+
+| Role | Exact model and effort | Existing connection |
+| --- | --- | --- |
+| Orchestrator, planner, reviewer | `openai/gpt-6.1-sol#high` | OpenAI ChatGPT OAuth; connection metadata reports `oauth`. |
+| Product-code, migration, test and integration builder | `deepseek/deepseek-flash#max` | Existing paid DeepSeek API-key connection; catalog identity `DeepSeek V4.1 Flash 1017`. User selected max for this run. |
+
+Preflight on 2026-10-30 confirmed both routes are active; OpenAI advertises `high` and DeepSeek advertises the user-selected `max`. The current session is already `openai/gpt-6.1-sol#high`. Connection metadata shows OpenAI OAuth and DeepSeek key authentication without a needs-auth status. This verifies configured availability, not remaining quota. No credential values were read or changed. A newer OpenAI candidate, `openai/gpt-6.1-terra`, is available; it has not been selected and its later release date alone does not establish suitability. No newer comparable DeepSeek Flash candidate was listed. DeepSeek max is approved for this run only; global skill/model defaults are unchanged. Approval was subsequently granted and builders have returned Task 1 results; see the execution ledger below.
+
+- The user approved this plan, including Task 3A, and the exact model pair with “build” after selecting DeepSeek max. Any later scope/model change needs renewed approval before affected dispatches.
+- Before execution, establish an isolated non-main worktree/branch with this plan and its audit available. Preserve the existing uncommitted audit/plan documents and the user's untracked `run-queue.bat`; do not discard or silently move them. Follow the project's worktree procedure.
+- Dispatch built-in `general` builders with the explicit override `deepseek/deepseek-flash#max` on every new child. Give each child the approved plan, applicable instructions, exact owned paths from its task, needed prior interfaces, and checks. Exclude credentials from prompts.
+- Run Tasks 1 → 2 → 3 → 3A → 4 → 5 → 6 → 7 sequentially for this run. Task 3 consumes Task 2; Task 5 consumes Task 4; Task 6 consumes Task 5. The other tasks remain serial to simplify review and avoid shared-file/generated-state conflicts.
+- Builders may edit only assigned code/test/migration paths. They must not spawn helpers, switch models, commit, push, deploy, call live services, run live-data seed scripts, or send email. Database testing is local only; using a remote preview requires separate authorization.
+- OpenAI owns planning/tracking and review, not product-code fixes. Any combined-result fix is a separately owned DeepSeek integration dispatch with exclusive ownership of the relevant affected paths and explicit regression checks. Do not overlap it with another builder editing those files.
+- After each result, inspect the actual diff and rerun checks before accepting it. Track the original task's corrective counter across resumed/replacement children. After two unsuccessful corrective dispatches, stop that task and ask the user; do not issue a third or have OpenAI take over implementation.
+- Report model authentication, quota, rate-limit, unavailable local database, or conflicting user changes as blockers. Never silently substitute Pro, a free model, another account, or another effort level.
+- Task 8 is combined-result verification. OpenAI may run checks/browser acceptance and review; any new test code or integration implementation remains delegated to the approved DeepSeek route.
+- **Historical Task 3 stopping instruction:** finish Task 3 and its review, run unit tests across Tasks 1–3, then pause. Later user approvals resumed Task 3A and Task 7 separately; their checkpoints supersede the old unstarted state. The current run stops after Task 7; Tasks 4–6 and 8 remain pending. Pushing or opening a PR requires separate authorization.
+
+### Delegation ledger
+
+Approval and passing isolated baseline recorded; Task 1 is accepted. A correction count excludes the initial implementation and increments only when a dispatched corrective fix is rejected or fails required checks. The detailed recovery ledger is `.superpowers/sdd/2026-10-30-promotional-hiring-fixes/progress.md` in this worktree. That file is gitignored and exists only in the original Windows worktree. In other checkouts, this table and the Task 3A checkpoint are the record.
+
+| Task | Owner | State | Unsuccessful corrections |
+| --- | --- | --- | --- |
+| 1 — fresh-browser promotion entry | DeepSeek builder; OpenAI review | Accepted; 1dda88f; 22 tests, TypeScript and scoped ESLint pass | 0 / 2 |
+| 2 — durable scores | DeepSeek builder; OpenAI review | Accepted; c29adba; 52 tests, TypeScript and scoped ESLint pass | 0 / 2 |
+| 3 — selection/ranking | DeepSeek builder; OpenAI review | Accepted; 20c24f1; post-merge 139 files / 1,248 src tests, TypeScript, lint and build pass | 0 / 2 |
+| 3A — scheduled interviewer display | Built inline in a Claude Code session (route deviation, see the Task 3A checkpoint) | Accepted for the reported defect; `180c831`; 54 interviewer tests, TypeScript and lint pass | 0 / 2 |
+| 4 — atomic appointment migration | Built inline in a Claude Code session (Opus), same route deviation as 3A | Accepted; see the Task 4 checkpoint; 8 single-session test groups and 2 two-session scenarios pass on a local copy of the production schema | 0 / 2 |
+| 5 — shared appointment entry points | Sonnet (high) builder; Opus review in Claude Code | Accepted; see the Task 5 checkpoint; 50 targeted and 19 backend tests, full suite 1,333 tests, TypeScript and lint pass | 0 / 2 |
+| 6 — account-preserving results | Two Sonnet (high) builders in parallel lanes; Opus review in Claude Code | Accepted; see the Task 6 checkpoint; 28 targeted tests, full suite 1,347 tests, TypeScript and lint pass | 0 / 2 |
+| 7 — legacy sync guards | DeepSeek builder; OpenAI review | Accepted; `273259e`; 19 focused tests, 146 files / 1,283 src tests, TypeScript and lint pass; Sol/high review clean after one successful corrective round | 0 / 2 |
+| 8 — combined verification / integration | OpenAI verification; DeepSeek for code/tests | Queued | Track corrections against the originating task |
+
+### Task 1: Make promotion entry independent of local credential caches
+
+**Modify:** `src/lib/employeePortalData.ts`, `src/modules/applicant/ApplicantWizard.tsx`.
+**Create tests:** `src/lib/employeePortalData.promotion.test.ts`, `src/modules/applicant/ApplicantWizard.promotion.test.tsx`.
+
+**Interface:** `authenticatePromotionalEmployee(identifier: string, password: string): Promise<{ ok: boolean; account?: EmployeePortalAccount; error?: string }>` in the existing service file. Accept username or employee number, normalize the identifier only, and require an exact password match against the current remote account. Do not download the whole account roster. Do not return/cache credentials in diagnostic output. This intentionally retains the legacy credential mechanism; it does not make that mechanism secure.
+
+- [x] Test an empty localStorage browser with valid remote username and employee-number logins; both resolve the same employee and prefill the form.
+- [x] Test wrong password, deleted/missing/ambiguous account, failed remote read, and a stale local cached password. None may enter the promotion form on cached authority; show invalid credentials separately from an unavailable lookup.
+- [x] Run `npx vitest run src/lib/employeePortalData.promotion.test.ts src/modules/applicant/ApplicantWizard.promotion.test.tsx`; observe failures, implement the helper and awaited wizard call, and rerun to pass. Stub every remote call.
+- [x] Commit: `fix(promotion): resolve existing accounts across browsers` (`1dda88f`).
+
+### Task 2: Make score finalization depend on a durable save
+
+**Modify/test:** `src/lib/api/applicantScores.ts`, `src/lib/api/applicantScores.test.ts`, `src/components/QualifiedApplicantsSection.tsx`.
+**Create test:** `src/components/QualifiedApplicantsSection.persistence.test.tsx`.
+
+**Interfaces:** retain `saveApplicantCategoryScores`' existing result signature; make scoring modal `onSave` return `Promise<{ ok: boolean; error?: unknown }>` and await it. Add `ApplicantScoreSummary = { applicantId: string; appointmentType: 'original' | 'promotional'; assessmentTotal: number | null; writtenExamRawScore: number | null; isFinalized: boolean }` and `fetchApplicantScoreSummaries(applicantIds: string[]): Promise<{ ok: boolean; data: Map<string, ApplicantScoreSummary>; error?: unknown }>` to the existing score service. Read persisted category rows and calculate the appropriate assessment total with existing formulas; incomplete required categories produce null. Do not read nonexistent score columns from `applicants`.
+
+- [x] Test a rejected upsert: modal stays editable/open with the entered values and an error, no finalized state, no success event, and no authoritative cache update.
+- [x] Test success, hard reload in an empty-cache client, valid zero scores, incomplete promotion categories/PCPT, and a failed summary read. A read failure is not an empty successful ranking.
+- [x] Persist first, then publish the cache/event and UI finalization. For a real applicant ID, local-only data never counts as durable finalization. Keep non-UUID test/demo behavior explicitly separate.
+- [x] Run `npx vitest run src/lib/api/applicantScores.test.ts src/components/QualifiedApplicantsSection.persistence.test.tsx` through red/green; commit `fix(rsp): finalize applicant scores after persistence` (`c29adba`).
+
+### Task 3: Restore promotion visibility and use the saved assessment scores
+
+**Modify:** `src/components/ForHiringPage.tsx`, `src/components/ApplicantRankingPage.tsx`.
+**Modify tests:** `src/components/ForHiringPage.scored.test.tsx`, `src/components/ForHiringPage.context.test.tsx`.
+**Create tests:** `src/components/ForHiringPage.promotion.test.tsx`, `src/components/ApplicantRankingPage.scores.test.tsx`.
+
+**Consumes:** Task 2's `fetchApplicantScoreSummaries`; retain `fetchHiringContext` for slot/reservation state.
+
+- [x] Reproduce the audit case: a new qualified promotion shares an email with both an older hire and an existing account; it must appear. A completed record for this exact applicant UUID must not reappear.
+- [x] Remove email-wide exclusion and account-existence-as-completion checks. Preserve terminal/disqualified/deleted exclusions, filled-slot exclusion, existing reservation visibility, and revoked-selection behavior.
+- [x] Fetch application type and join durable summaries by applicant UUID. Rank promotions with the saved five-category assessment total, not an invented oral score; retain the separate written-exam eligibility requirement. Do not substitute education alone, a partial local save, or someone else's same-email evaluation.
+- [x] Test a fully scored promotion with PCPT but no oral evaluation, missing written exam, an incomplete promotion, original-applicant regression, and reload without localStorage. The report shows saved totals rather than blank `applicants.total_score` fields.
+- [x] Run `npx vitest run src/components/ForHiringPage src/components/ApplicantRankingPage --exclude "**/.worktrees/**" --exclude "**/.claude/worktrees/**"` through red/green; commit `fix(promotion): restore selection visibility and ranking` (`20c24f1`).
+
+### Task 3A: Restore scheduled promotional interviews in the interviewer portal
+
+**Reported requirement:** On 2026-10-30 the user reported that scheduled promotional hiring interviews do not display for interviewers. Read-only build investigation confirmed the live promotion has an interview date/time, an active assigned rater, and an Open linked posting/slot. Its email satisfies the blanket `@example.com` demo exclusion in both interviewer screens. Reproduce that confirmed exclusion with a persisted-UUID fixture first; additional causes remain unverified until tested. Do not change the live email or remove assignment rules as a workaround.
+
+**Inspect/modify as evidence requires:** `src/lib/applicantSchedule.ts`, `src/lib/interviewerAccess.ts`, `src/modules/interviewer/InterviewerDashboard.tsx`, `src/modules/interviewer/InterviewerApplicantsList.tsx`, `src/modules/interviewer/EvaluationForm.tsx`.
+**Modify tests:** `src/lib/applicantSchedule.scheduled.test.ts`, `src/modules/interviewer/InterviewerApplicantsList.dedupe.test.ts`.
+**Create tests:** `src/modules/interviewer/InterviewerDashboard.promotion.test.tsx`, `src/modules/interviewer/InterviewerApplicantsList.promotion.test.tsx`, `src/modules/interviewer/EvaluationForm.promotion.test.tsx`.
+
+**Existing boundaries:** `saveApplicantAssignment`/`scheduleApplicantsBatch` persist the RSP schedule; `isScheduledForInterview` currently checks only `interview_date`; `resolveAssignedPositionsForInterviewer` combines rater assignments and application assignments. `buildJobsFromPostings` additionally filters to Active postings and groups/deduplicates by title/code. The applicant list and evaluation form independently enforce assigned-position access. These are investigation points, not permission to remove every filter.
+
+- [x] Reproduce with one original and one promotional application scheduled through the same RSP action. Capture the saved application UUID/type, target slot/posting, canonical interview date/time, assigned interviewer, posting state and resolved assigned positions using synthetic fixtures. Trace RSP write → remote read → schedule predicate → assignment resolution → posting filter → dedupe → type/status filter → evaluation navigation. Identify the first boundary that drops the promotion before changing code. *Done: the `@example.com` demo filter. Every other boundary passes for the live row.*
+- [x] Add a failing dashboard/list regression matching that boundary. Assert the scheduled promotional applicant appears once, the dashboard count equals the drill-down count, the Promotional filter includes them, and the list opens `/interviewer/evaluate/<applicant UUID>` rather than a plantilla ID or another same-email application.
+- [x] Repair the narrowest confirmed mismatch. Use persisted scheduling data, not the applicant's current job/office, local account cache, or a status label alone. If a linked posting has closed to new applications, its already scheduled eligible interviews must remain reachable for assessment; this must not reopen the vacancy. Preserve assignment restrictions and existing original-applicant behavior. Do not widen access to all applicants as a workaround. *Only the demo filter changed. Closed-posting reachability was not changed, because the live posting is Open and that path isn't the cause; it is still a follow-up.*
+- [x] Keep the scheduled-only rule from `docs/plans/2026-10-28-interviewer-scheduled-applicants-only.md`: no interview schedule means no interview task. A written-exam-only date does not count as an interview; do not invent an oral-interview requirement for promotions. If investigation finds legacy date aliases, support only aliases confirmed by the actual scheduling writer/data contract and add explicit tests rather than treating arbitrary dates as interchangeable.
+- [ ] *Partly done:* test empty-cache/second-browser display, refresh/realtime after scheduling and rescheduling, assignment changes, two different applicants sharing one plantilla, identical position titles in different offices/postings, an unscheduled promotion, and a remote read failure. Keep distinct applicant UUIDs distinct; report read/assignment errors rather than a successful empty list. Respect the existing assignment model without silently creating a new permission policy. *Covered: empty cache, unscheduled promotion, `mock-` rows, two applicants on one plantilla (existing dedupe test). Not covered: realtime and rescheduling, assignment changes, identical titles across offices, read-failure reporting. None of these caused the reported defect, and the read-failure and same-title cases are existing behaviour that would need product changes. They are left for a follow-up.*
+- [x] Test that opening the scheduled promotion resolves Promotional from the persisted application and displays PCPT without requiring oral scores or an appointment-type value cached by the RSP browser. After submission/reload it appears in the existing completed/history view, not as a vanished or still-unrated task. Verify the saved evaluation remains linked to this application UUID and can be read by RSP scoring. *Load path and dashboard history are covered. The submit-and-RSP-read round trip wasn't added, because it needs the `EvaluationForm.tsx` submit path, which Step 3 of the applicant-status plan rewrites; add it there.*
+- [x] Run `npx vitest run src/lib/applicantSchedule.scheduled.test.ts src/modules/interviewer/InterviewerDashboard.promotion.test.tsx src/modules/interviewer/InterviewerApplicantsList.promotion.test.tsx src/modules/interviewer/EvaluationForm.promotion.test.tsx src/modules/interviewer/InterviewerApplicantsList.dedupe.test.ts` through red/green. Mock all clients/Storage calls; do not submit a live evaluation.
+- [x] Commit: `fix(interviewer): display scheduled promotional interviews` (`180c831`).
+
+### Before starting Tasks 4–8
+
+Read these first. They came from work done after this plan was written:
+
+- [Fix applicant score and status writes](2026-10-30-applicant-status-and-score-writes.md) (Draft): a parallel plan that covers the interviewer module and the applicant status vocabulary. Its findings F1–F7 are evidence about the same pipeline.
+- [Live database check of handoff claims](../session-summaries/2026-10-30-live-db-claims-verification-summary.md): live counts and statuses as of 2026-10-30, with the GET-only queries to re-run them.
+- The Task 3A checkpoint above: the scheduled promotion `09e72c95…` is now visible to its interviewer. It is still `Interview/Exam Scheduled`, has no evaluation, and must not be used as test data (see Risks).
+
+Where the two plans touch:
+
+| This plan | Applicant status plan | What to do |
+|---|---|---|
+| Task 4 migration, if you regenerate `src/types/database.types.ts` | Step 2 removes `applicants.total_score` from that file | Regenerate from the live schema, which has no `total_score`, or merge after Step 2. Don't add the column back. |
+| Task 6 `hiringFlow.ts` and Task 7 `hiredApplicantSync.ts` read statuses through `normalizeStatus` | D3 changes the legacy `Reviewed` mapping to `For Evaluation` | No action needed; no live rows are `Reviewed`. Use the canonical names from `applicantStatus.ts`, never the legacy ones. |
+| Task 8 acceptance, interviewer step | Step 3 makes submitting an evaluation move the applicant to `For Evaluation` | If Step 3 has landed, expect `For Evaluation` after the interviewer submits, not `Reviewed`. |
+| Task 4 writes the hire status | `applicantStatus.ts` defines `Selected` as canonical and `Hired` as legacy | Write `Hired`. Several screens match the raw string `hired`: `RSPDashboard.tsx:506`, `:1955` and `:2201`, and `ApplicationStatusPage.tsx:873`. A promotion stored as `Selected` would show as not hired there. Moving every writer and reader to `Selected` is a separate change, logged as a follow-up in the status plan. |
+| Task 3's rewritten `ApplicantRankingPage` and `ForHiringPage` | Step 2 may touch their legacy `total_score` fallbacks | No action here. Step 2 must keep Task 3's tests passing. |
+| None of Tasks 4–8 | Owns `EvaluationForm.tsx`, `ApplicantDetailsPage.tsx` scoring, `JobPostingsPage.tsx` status labels | Leave these files to that plan. |
+
+### Task 4: Complete a promotion in one retry-safe database transaction
+
+**Create:** CLI-generated `supabase/migrations/<generated-version>_complete_promotional_appointment.sql`, `supabase/tests/promotional_appointment.test.sql`.
+
+**Database interface:** `public.complete_promotional_appointment(p_applicant_id uuid, p_actor_user_id uuid DEFAULT NULL) RETURNS jsonb`, returning `{ applicant_id, employee_uuid, employee_number, slot_id, completed_at, already_completed }`. No client-supplied target employee, office, title, password, or decision timestamp.
+
+- [x] Reinspect table columns, constraints, triggers, role mappings and function grants against the isolated database before authoring the migration. Confirm the audit's missing `employees.department_id`; validate the `employee_history` action and actor foreign keys. Do not run writes against production to discover these facts.
+- [x] Add failing database tests for preserving the existing employee UUID/number/email/original hire date/account credentials, updating the exact target role/office/division/plantilla, writing one `employee_history` action `promoted`, and firing existing fill/archive/withdraw behavior only on successful completion.
+- [x] Add failure/rollback tests: missing or deleted employee/account, ambiguous account match, non-promotion application, absent/mismatched slot, another reservation holder, already-filled target, incomplete required assessment, and invalid actor. Assert employee, application, target slot, history and affected applications are unchanged on rejection or an injected failure.
+- [x] Implement as `SECURITY INVOKER` with a fixed `search_path` and schema-qualified references. Revoke effective PUBLIC/anon execution on this new function; grant only intended authenticated/service callers. Normal calls derive the actor from `auth.uid()` and reject a conflicting actor parameter. A service-role backend call may supply only the identity already verified by the backend. In both cases require the current active RSP or ADMIN `user_roles` row; do not trust browser metadata. This guards the new operation only, not existing open table grants.
+- [x] Acquire row locks in a documented consistent order, compatible with reservation/fill triggers; serialize completions for the same employee as well as the same application/slot. First completion requires the application's current reservation and valid assessment. Resolve the target through the linked slot/posting; never use title-only matching. Reject an ambiguous plantilla-number mapping.
+- [x] In the same transaction update the employee's assignment fields only, mark the target slot filled by this application, write `Hired` (not `Selected`; see "Before starting Tasks 4–8"), and append history using the verified actor and database time. Preserve employment status, personal details, original hire date and account identity. Do not insert into `employees` or `employee_portal_accounts`, reopen the old posting, or reseed onboarding.
+- [x] Test a repeated/lost-response completion returns `already_completed: true` with no new writes/history, including replay after a later promotion. Inconsistent legacy partial completion must return a conflict for investigation, not fabricate success or silently repair production data. Use two database sessions to prove concurrent requests cannot duplicate history or take another holder's slot.
+- [x] Run the database suite on a local/preview stack via the installed Supabase CLI's documented test command, plus `npm run check:migrations`; record the exact commands/version and results. If no isolated stack is available, mark this task blocked rather than replacing it with production tests.
+- [x] Commit: `fix(promotion): complete appointments atomically`.
+
+### Task 4 checkpoint — 2026-11-02
+
+Done on branch `fix/promotional-appointment-transaction`, cut from `upstream/main` at `e110977`. Built inline in a Claude Code session, like Task 3A, because the OpenAI/DeepSeek route is not available there.
+
+- **Files.** `supabase/migrations/20261102041556_complete_promotional_appointment.sql` (CLI-generated version), `supabase/tests/promotional_appointment.test.sql`, `supabase/tests/promotional_appointment_fixture.sql` (shared fixture) and `supabase/tests/promotional_appointment_concurrency.sh` (two sessions, commits synthetic rows then deletes them, local only).
+- **Test database.** The repo migrations cannot build a database from scratch: the first one fails because `pm_lnd_reports`, `applicants`, `job_postings`, `employee_portal_accounts`, `employee_history` and `newly_hired` were created by hand in production. The local stack was instead loaded with production's public schema, generated from its catalog through read-only MCP queries (no rows). Tables, columns, functions, triggers, RLS policies, grants and indexes fingerprint-match production; constraints match after normalizing equivalent array-cast text. The migration was then applied on top.
+- **Interface as planned,** plus two decisions: errors carry a machine-readable `HINT` (`not_authorized` with SQLSTATE 42501; the rest with P0001, listed in the migration header) for Task 5 to classify, and the history row is keyed to its application by `remarks = 'Application <uuid>'`, which is how a replay is recognised without a schema change.
+- **Lock order changed from the first draft:** employee first, then plantilla, then application, then the portal account (share lock). Locking the plantilla and application before the employee deadlocks when two promotions of one person run together, because completing one fires `withdraw_on_hire_elsewhere` on the other. Scenario B of the concurrency script covers it.
+- **Assessment rule** matches For Hiring: a finalized `promotional` score row with education, experience, performance, potential and PCPT final scores (zero counts) and a written exam score.
+- **Not done here:** `src/types/database.types.ts` was not regenerated (Task 5 needs the RPC type; see "Before starting Tasks 4–8"). The migration has not been applied anywhere but the local stack; it reaches production only by PR merge.
+
+### Task 5: Make all promotion hire entry points use the same operation
+
+**Create:** `src/lib/api/promotionalHiring.ts`, `src/lib/api/promotionalHiring.test.ts`, `src/lib/api/employeesApi.promotion.test.ts`, `backend/test_promotional_hiring.py`.
+**Modify:** `src/lib/api/employeesApi.ts`, `backend/app/routes/employees.py`.
+
+**Interfaces:** `PromotionalAppointmentResult = { applicantId: string; employeeUuid: string; employeeNumber: string; slotId: string; completedAt: string; alreadyCompleted: boolean }`; `completePromotionalAppointment(applicantId: string): Promise<PromotionalAppointmentResult>` throws on rejection. Retain `hireApplicant(applicantId: string): Promise<EmployeeRow>` for existing callers; its promotion branch invokes the transaction and returns the same canonical employee via the compatibility view.
+
+- [x] Convert the audit's in-memory duplicate-employee reproduction into a regression test. For a promotion, assert zero employee inserts, zero number/email generation, zero password writes, and unchanged original hire date with the backend both reachable and unavailable.
+- [x] Classify from the saved application, not cached UI metadata. Route promotions to Task 4's RPC before the generic external-hire fallback. Missing identity, authorization failures, unsupported/missing RPC, or a timeout must never cause an INSERT fallback. Surface an uncertain response as retryable without claiming failure or success prematurely.
+- [x] Make the Python promotion branch call the same RPC with its server-verified user UUID; remove its obsolete `department_id` update. Never accept an actor UUID from the request body. A rejected transaction is not retried through another privileged path.
+- [x] Test retry after an RPC committed but the following response/view read failed; read the existing result rather than appointing again. Test a normal external applicant to prove its existing hire behavior is retained.
+- [x] Run `npx vitest run src/lib/api/promotionalHiring.test.ts src/lib/api/employeesApi.promotion.test.ts` and `python -m unittest test_promotional_hiring` from `backend` through red/green using the existing environment and mocked clients; commit `fix(promotion): unify frontend and backend appointment paths`.
+
+### Task 5 checkpoint — 2026-11-02
+
+Built by a Sonnet (high) builder and reviewed by Opus in Claude Code, on `fix/promotional-appointment-transaction`. The user approved this model pair for Tasks 5–6 in place of the OpenAI/DeepSeek route, which is not available there.
+
+- **Frontend.** `src/lib/api/promotionalHiring.ts` calls the RPC with no actor, maps the result, and throws `PromotionalAppointmentError` with `kind`, `code`, `hint` and `retryable`. Network failures, the 30-second timeout and empty answers are `uncertain` and retryable; known hints, `not_authorized`, a missing RPC (`not_deployed`) and other database errors are final. `hireApplicant` reads `application_type` remotely first; promotions go only to the RPC and then read the employee back with `fetchEmployeeById` (`employees_with_department`). External applicants keep the old path unchanged.
+- **Backend.** `hire_from_applicant` returns early for promotions and calls the same RPC through the service-role client with `p_actor_user_id` from the verified token. It refuses with 503 if the service-role client is missing rather than using the anon client. Hints map to 403/404/409/422, a missing RPC to 503, and a transport failure or empty answer to 504. The old title-lookup promotion branch and its `department_id` write are gone; the external branch only changed indentation.
+- **Real API check.** Against the local stack through PostgREST and supabase-js, anon gets `42501`, a rejection arrives as `P0001` with its hint, a conflicting actor as `42501`/`not_authorized`, and a missing function as `PGRST202`, matching the classifier.
+- **Found, not fixed (outside Task 5):** the external backend branch still inserts the nonexistent `employees.department_id`, so external hires likely always fall back to the browser path; `/employees/from-applicant` has no role check for external hires; `db.get_service_client()` silently falls back to the anon client when the service key is unset. The three `hireApplicant` callers now receive `PromotionalAppointmentError` for promotions; Task 6 owns showing it properly.
+
+### Task 6: Preserve accounts and distinguish promotion results from credentials
+
+**Modify:** `src/lib/hiringFlow.ts`, `src/components/GenerateCredentialsPage.tsx`, `src/lib/hiringFlow.columns.test.ts`, `src/components/GenerateCredentialsPage.test.tsx`.
+**Create test:** `src/lib/hiringFlow.promotion.test.ts`.
+
+**Interfaces:** extend `ReservedApplicant` with `applicationType: 'job' | 'promotion'` and `employeeNumber: string | null`, mapped from the remote application. Extend `GenerateOutcome` with `promotions: PromotionalAppointmentResult[]`; keep `credentials` exclusively for newly issued external credentials and `failures` for per-row failures. Update all callers/test doubles for the explicit result shape.
+
+- [x] Test promotion-only, external-only and mixed batches. A promotion must call Task 5's transaction, never call `assignApplicantToSlot` a second time, never generate/upsert a password/account, never send a credential email, and never write a `newly_hired` record that overwrites the employee's original hire information. Existing account/profile reads use the updated `employees` source.
+- [x] Validate the promotion account link remotely before appointment completion inside the transaction. An empty cache is fine; a genuinely missing/ambiguous account is not replaced by a new one. Employee account details remain byte-for-byte unchanged.
+- [x] Report success when either completed promotions or issued credentials exist. Promotion result copy: **"Promotion completed. Your existing employee account is unchanged."** Show the employee number, position and office; no password field for promotions. Print includes only newly issued external credentials; a promotion-only result disables credential printing. Keep the saved modal/table structure and shared components.
+- [x] Handle per-row rejection and thrown batch errors without a stuck loading state or losing unprocessed selections. No completed promotion is described as "No credentials generated" failure. Any non-transactional optional notification/listing failure must not rerun the appointment; no promotion notification email is added in this scope.
+- [x] Run `npx vitest run src/lib/hiringFlow src/components/GenerateCredentialsPage --exclude "**/.worktrees/**" --exclude "**/.claude/worktrees/**"` through red/green; commit `fix(promotion): retain accounts during appointment completion`.
+
+### Task 6 checkpoint — 2026-11-02
+
+Built by two Sonnet (high) builders in parallel, file-disjoint lanes (the user asked for two), against an interface fixed before dispatch; reviewed by Opus in Claude Code on `fix/promotional-appointment-transaction`.
+
+- **Interface deviation.** `GenerateOutcome.promotions` is `PromotionOutcome[]`, which extends `PromotionalAppointmentResult` with `fullName`, `position`, `department` and `plantilla`, because the page must show them and the RPC result does not return them.
+- **Data flow (`hiringFlow.ts`).** `fetchReservedApplicants` now selects `application_type, employee_id` and maps `applicationType` and `employeeNumber`. Promotion rows call `completePromotionalAppointment` once and skip `hireApplicant`, the second `assignApplicantToSlot`, password and account creation, the credential email and the Newly Hired record. The account check happens inside the transaction (`account_missing`/`account_ambiguous`). A thrown error becomes one per-row failure, with retry wording only when `retryable`. The local applicants cache write after success is isolated so it cannot turn a completed promotion into a failure.
+- **Page (`GenerateCredentialsPage.tsx`).** Success when credentials or promotions exist. Promotions get their own table in the same result modal with "Promotion completed. Your existing employee account is unchanged.", employee number, position, plantilla and office, and no password. Print sends only new credentials and is disabled for promotion-only results. The modal title becomes "Promotions Completed" or "Appointments Completed" when promotions are present. List and confirm rows show a "Promotion" category chip and employee number; the confirm dialog counts credentials and promotions. `handleGenerate` uses try/catch/finally, so a thrown batch keeps the selection and clears the loading state.
+- **Branch review (Opus, Tasks 4–6).** Verdict: ready with fixes, no critical issues. Fixed: a row cached as `job` that is a promotion remotely reached `hireApplicant` (which completes the promotion), then the external steps, and `upsertEmployeePortalAccount` would have merged a new password into the existing account. `hireApplicantWithOutcome` now reports the promotion, and `generateEmployeeCredentials` stops before any account, email or Newly Hired step; `hireApplicant` keeps its signature. Fixed afterwards at the user's request (minor): lock-wait and deadlock SQLSTATEs (`57014`, `40P01`, `40001`, `55P03`) are now a retryable `busy` kind in the browser and a 503 in the backend, with plain copy instead of raw database text (`authenticated` has an 8s statement timeout, so the 30s client timeout is only a backstop); replay detection now runs before the account check, so a retry after the account changed still answers `already_completed`; the reservation check uses `IS DISTINCT FROM`, so a NULL status is refused as `not_reserved`; two active offices with the same normalized name are refused with the new hint `office_ambiguous` (422). The migration was edited in place because it has not reached `main`. Still noted, not fixed (minor): result labels come from the cached row; a thrown batch hides credentials already issued; the confirm copy says "hired" for promotion-only batches. Set aside by the reviewer as outside scope: the legacy RSPDashboard path that writes `newly_hired` before `hireApplicant`, and the unused `QualifiedApplicantsPage` that upserts accounts after `hireApplicant`.
+- **Still not covered:** no browser check of the new table layout. Full-suite run shows one unhandled teardown error in `CompetencyFrameworkPage.test.tsx`, untouched by this branch.
+
+### Task 7: Keep legacy startup synchronization from undoing promotion repairs
+
+**Modify/test:** `src/lib/hiredApplicantSync.ts`, new `src/lib/hiredApplicantSync.promotion.test.ts`.
+
+- [x] Test that a legacy promotion-related `newly_hired` row cannot create a second employee, set a current promotion to a hire status (`Hired` or `Selected`) before completion, or rewrite a completed promotion's status, reset the original hire date, or rewind the employee's current role after a later promotion.
+- [x] Fetch the associated persisted application type before applying those legacy backfills; skip promotions and report ambiguous links rather than assigning new identities. Preserve existing external-hire backfill behavior. Do not run a cleanup/backfill against production or change unrelated startup services.
+- [x] Run `npx vitest run src/lib/hiredApplicantSync.promotion.test.ts` through red/green; commit `fix(promotion): exclude promotions from legacy hire backfills` (`273259e`).
+
+#### Task 7 focused execution plan — completed
+
+The user invoked `delegate` for Task 7 only on 2026-10-30 and approved the focused plan and exact model pair with “go ahead”. This run uses the existing isolated worktree `applicant-status-promotion-followups`, branch `fix/applicant-status-promotion-followups`, based on `upstream/main` at `a3568ec`. It does not resume Tasks 4–6 or 8, implement the applicant-status plan, or authorize a push, deployment, live backfill, database write or email. Task 7 has no dependency on the appointment RPC or an isolated database; every Supabase call in its tests must be mocked.
+
+**Approach and ownership.** Keep the three public exports and their `Promise<void>` signatures. Read application identity/type from `applicants` by exact applicant UUID before mutation, not from email, browser storage or the `newly_hired` row alone. Skip promotions without modifying applicant status, employee identity, assignment or original hire date. Only a uniquely resolved persisted external application (`application_type: 'job'`) may enter the existing external backfill. Missing, duplicate, unknown-type or otherwise conflicting links are skipped with a diagnostic, not assigned a new identity. A failed classification read must cause no dependent writes and must not mark the affected sync as successfully finished, so a later invocation can retry. Do not log credentials or full personal records.
+
+The builder owns only `src/lib/hiredApplicantSync.ts` and new `src/lib/hiredApplicantSync.promotion.test.ts`. Cover `syncHiredApplicantStatus`, `syncNewlyHiredToEmployees` and `repairDefaultedEmployeeRecords`; the last already skips promotions, so retain that behavior and test it. No changes to `src/main.tsx`, other startup services, authentication, scoring, hire status vocabulary, migrations, dependencies or UI. A broader startup rewrite or removal of external backfills would exceed this task.
+
+**Exact models and preflight.** Orchestrator/planner/reviewer: `openai/gpt-6.1-sol#high`, existing OpenAI OAuth. Product-code/test builder: `deepseek/deepseek-flash#max`, existing paid DeepSeek key connection, current catalog identity `DeepSeek V4.1 Flash 1017`. Catalog checks advertise both required efforts; session metadata confirms Sol/high, and connection metadata reports OpenAI `oauth` and DeepSeek `key`. This establishes configuration, not remaining quota or a successful builder call. A newer OpenAI candidate, `openai/gpt-6.1-terra`, was found but is not selected; no newer comparable Flash candidate was listed. Retain the default pair unless the user explicitly approves a replacement. Obtain explicit approval of this focused plan and exact pair before dispatch or product edits.
+
+**Acceptance cases and steps.** Use synthetic Filipino-named fixtures and assertions against captured Supabase reads/writes, not merely console output or permissive mocks that ignore filters.
+
+- [x] After approval, dispatch one `general` builder with explicit override `deepseek/deepseek-flash#max`, exclusive ownership of the two code/test paths, and no helper agents, commits, pushes, deployments or live services. Initial child: `ses_e736caf5cffeVIkqKVeCS0lfaQ`.
+- [x] Write regressions proving a legacy promotion-related `newly_hired` row cannot set an unfinished promotion to `Hired`/`Selected`, rewrite a completed promotion status, insert a second employee when its number is stale/missing from the employee query, reset an original hire date, or rewind the current assignment after a later promotion. Exercise the existing repair helper's skip as well.
+- [x] Add missing/duplicate/unknown-type application and failed-read cases: no mutation for unresolved links; failed reads leave retry possible. Test a mixed batch so valid external hires continue while promotions and unresolved rows remain untouched. Keep different applicant UUIDs distinct even when they share email.
+- [x] Add external regressions for the existing status backfill, missing-employee insert and default-field repair, including already-existing employees and session gating. Assert classification happens before any dependent mutation. Do not change external field mappings or credential behavior.
+- [x] Run `npx vitest run src/lib/hiredApplicantSync.promotion.test.ts` and record the expected assertion failures against the original implementation before making the smallest service changes; module-loading or mock-harness errors do not count as red evidence. Builder recorded 10 expected assertion failures / 7 passes on the original service; parent inspected the log.
+- [x] Implement only the service guards, rerun the focused test to green, and return the diff, exact red/green commands/results and any deviations or blockers. Keep unsuccessful corrective attempts at `0 / 2` until a dispatched corrective fix is rejected or fails required checks; stop after two unsuccessful corrective attempts. Initial focused run: 17/17 green. Review exposed duplicate-source status updates and conflicting employee-number inserts; one DeepSeek corrective round recorded 3 expected failures / 16 passes, then 19/19 green.
+- [x] OpenAI reviews the actual diff and independently runs the checks below. Any product/test correction goes back to the approved DeepSeek route, not inline OpenAI implementation. Parent confirmed the full corrected diff and 19 focused tests, TypeScript, lint and 146 src files / 1,283 tests. Fresh Sol/high review marked both Important findings addressed with no new findings. Zero unsuccessful corrective attempts.
+- [x] After acceptance, update this task's checkboxes/ledger and the existing implementation summary, regenerate the dashboard, and commit the focused change as `fix(promotion): exclude promotions from legacy hire backfills` (`273259e`). Keep the overall plan In Progress and leave the other tasks pending. Do not push without separate authorization.
+
+**Checks for this run.** Use synthetic localhost Supabase environment settings, never copy production `.env` or run app startup/live seed scripts:
+
+- `npx vitest run src/lib/hiredApplicantSync.promotion.test.ts`
+- `npx tsc --noEmit`
+- `npm run lint`
+- `npx vitest run src --exclude "**/.worktrees/**" --exclude "**/.claude/worktrees/**"` (report any failures; do not fix unrelated baseline tests)
+- `git diff --check`
+
+OpenAI owns plan/summary tracking, the generated dashboard and independent review/verification; DeepSeek owns product code/tests. The prior read-only review on this branch passed 24 relevant test files / 188 tests, TypeScript and lint; this is not evidence for the new Task 7 regressions. The run's recovery ledger is `.superpowers/sdd/2026-10-30-promotional-hiring-fixes/progress.md` in this worktree.
+
+**Final observed checks:** focused file 19/19, `npx tsc --noEmit` and `npm run lint` pass. The corrected full-suite run launched alongside other checks hit the shell's 120-second timeout and an `ERR_IPC_CHANNEL_CLOSED` worker error; it is not counted as passing. After confirming the installed CLI's worker option, the parent reran `npx vitest run src --maxWorkers 2 --exclude "**/.worktrees/**" --exclude "**/.claude/worktrees/**"` alone with a 300-second shell limit: **146 files / 1,283 tests passed**, exit 0, in 145.61s. No tests or unhandled errors were suppressed, and no product/config changes were made to obtain that result. `git diff --check` passes. Browser/database/RLS acceptance and live-data script tests remain outside this run.
+
+### Task 8: Verify the functional pipeline in an isolated environment
+
+- [x] Use synthetic Filipino-named employee/applicant fixtures on a local or approved preview database; use a mail sink/mock for external credential sends. No copied live passwords or personal records. Browser tests must point at the isolated database because app startup still contains legacy writes.
+- [x] From an empty-cache browser, sign in to apply, submit for an exact open plantilla, screen and schedule. In a separate interviewer browser, confirm the promotional interview appears in dashboard counts and the applicant list, open its PCPT form, submit and reload to verify completion/history and RSP receipt. Then save promotion categories and written exam, reload, confirm report/For Hiring totals, reserve, revoke once, reserve again, and complete signing.
+- [x] Verify one employee before/after, the same employee UUID/number/original hire date and unchanged portal account, the new assignment, one promotion history event, the target slot filled, other target-slot applicants archived, and other open applications handled by existing triggers. Replaying the same completion must change nothing. Do not reopen the former posting automatically.
+- [x] Sign in again from a clean browser using the existing account and confirm the updated role/office. Run an external-hire regression and a mixed promotion/external batch; verify only the external applicant receives newly issued credentials and credential print output.
+- [x] *Run 2026-11-02; F9 and F11 failed the feedback check and were fixed and rechecked the same day (see “F9–F12 fixed”):* Exercise rejected score save, stale reservation, concurrent completion, and response loss in the isolated stack. Verify no duplicate/partial transaction and actionable UI feedback.
+- [ ] *Run 2026-11-02 and branch reviewed; F9–F12 fixed. Only `npm run build` remains (environmental failure on this machine); see below:* Run the checks below, inspect the whole branch, complete `DESIGN_IDENTITY.md` §16 for touched UI, and record outcomes/remaining limits in the implementation session summary. Mark this plan Done only after the functional acceptance checks pass; otherwise record Blocked with the precise failed gate.
+
+#### Task 8 checkpoint — 2026-11-02 (Blocked)
+
+Run on `fix/promotional-appointment-transaction` at `feebbfb` with no code changes. The app ran against the local Supabase stack (`127.0.0.1:54321`, production schema, no production rows); the network log showed no request to the production project. A local sink on `:8000` recorded `/api` calls and sent nothing; every other `/api` route answered 404, so external hires took the client fallback. Test-only local scaffolding: an `applicant-attachments` bucket with permissive policies, a document attached through the storage API after F5, and the rival, external and extra promotion applicants inserted with SQL. Synthetic people: Maricel Dela Cruz, Ligaya Bautista and Danilo Reyes (promotions), Ramon Aquino and Rowena Bautista (external), Jomar Villanueva (rival), Liza Santos (RSP), Arnel Reyes (rater).
+
+**Passed**
+
+- Fresh-browser promotional application (prefilled from the employee record), RSP document validation, qualify and schedule. The interviewer dashboard counted the interview (To evaluate 1, Due today 1) and listed it; the PCPT form opened, submitted and, after reload, showed Completed with a 4.0 rating in history.
+- Categories then written exam saved; Applicant Score and For Hiring both show 72.00 and 82/100. Reserve, revoke once (“Did not report”) and reserve again all worked.
+- Completion from Generate: one employee with the same UUID, number, hire date and `user_account_id`; the portal account is byte-identical; only department, position, division, plantilla and `modified_by/at` changed; one `promoted` history row performed by the RSP user; target plantilla filled; the rival became Not Selected; her other open application became Withdrawn - Hired Elsewhere; no Newly Hired row, no email, no posting created or reopened.
+- Replay through PostgREST as RSP returned `already_completed: true`, and a fingerprint of employees, accounts, applicants, plantillas, history and plantilla links was unchanged.
+- Clean-browser sign-in with the existing portal account worked and loaded the updated record. The visited employee pages do not display position or office, so this was checked on the fetched record, not on screen.
+- Mixed batch (Ramon external, Ligaya promotion, Rowena external): Ramon got an employee, account, Newly Hired row, one recorded email and the only print card; Ligaya’s account was unchanged and she got no email; Rowena’s failure (F4) left nothing partial.
+- Stale reservation: refused with “not currently selected for this plantilla. Select them again before completing”, nothing changed. Busy: with the employee row locked for 20 s the RPC returned `57014` at 8 s, the row showed the busy copy, and nothing changed. Concurrent completion: two simultaneous RPC calls returned one `already_completed: false` and one `true`, with one history row.
+- Result modal at 375 px and 768 px: no page overflow, tables scroll inside their containers, white header title, focus inside. Esc does not close it, by design (`dismissible={false}` protects shown passwords).
+
+**Failed gate and defects**
+
+- **F1 (gate; Tasks 2–3 scope).** Saving the promotion categories after the written exam reset `written_exam` to empty and `written_exam_raw_score` to 0, while the exam page kept showing 82 from browser storage. Saving the exam after the categories keeps both. The exam-only save also created the row as `appointment_type = original`, `is_finalized = true` for a promotion applicant.
+- **F2 (this branch, Generate page).** When every selected row fails, the page banner says “Check your connection and try again” and the modal says “Employee Records Created … Credentials were emailed where an address was on file” with an empty table and a Print button.
+- **F3 (this branch, busy fix).** The busy row message repeats the retry advice: `BUSY_MESSAGE` already says retrying is safe, and `promotionFailureMessage` appends its own retry sentence.
+- **F4 (pre-existing, external fallback).** `hireExternalApplicant`’s fallback maps office names to legacy labels (`Budget Office` → `Finance`), which `enforce_active_office` rejects, so external hires that reach the fallback for remapped offices fail; the row says “Try again” although a retry cannot help. The fallback also leaves `plantilla_num` empty. The FastAPI route was not exercised.
+- **F5 (pre-existing, applicant wizard).** The application row is inserted before files upload, so a failed upload leaves an application with no document while the page says “not submitted”, and the retry then says “already applied”. Promotional uploads are typed `other`, so screening needs the manual Validate Documents override.
+- **F6–F8 (pre-existing, minor).** Prefill put “Dela” into the middle name from a compound surname. Interviewer submit and revoke write the legacy `Reviewed` status (the applicant-status plan). The Shortlist tooltip still says documents are missing after validation; a legacy applicants upsert gets 400 for missing columns on qualify and generate; the score modal shows “Oral Exam 14.00 / 5” and “PCPT Converted 12/10”.
+
+**F1–F3 fixed (`d18d4b4`, same day).** At the user’s request, Opus orchestrated and two Sonnet (high) builders worked test-first in separate lanes.
+- F1: `saveApplicantCategoryScores` reads the row first when the caller has no written exam score and keeps the persisted exam (failing the save if the row cannot be read). `savePositionWrittenExamScores` gives a new row the applicant’s own appointment type and leaves it unfinalized. 6 of 9 new tests failed first. Against the local stack, signed in as RSP, an exam-only save then a category save with an empty exam left `promotional`, exam 82, raw 82 and the categories.
+- F2: an all-failed batch shows “Nothing Was Completed” with the per-row reasons, no tables, no Print and no connection banner; titles for any success are unchanged. F3: `promotionFailureMessage` no longer appends retry advice that busy and uncertain messages already carry. 3 new tests failed first. F2 and F3 were not rechecked in the browser.
+- Then `npx tsc --noEmit`, `npm run lint` and the full suite (149 files / 1,366 tests) passed.
+
+**Not covered:** rejected score save and response loss in the browser (unit-tested only); the FastAPI external route and real email delivery; screenshots (the pane was hidden); a full keyboard pass beyond the result modal. `npm run build` fails on this machine with esbuild “remove …\Temp\esbuild-…: Access is denied”, identically on the base `e110977` and outside the command sandbox, so it is environmental and not evidence about this branch; the last passing build is the Task 3 checkpoint.
+
+### F4: external hires take their office from the plantilla — approved 2026-11-02
+
+Opus orchestrates and reviews (medium); two Sonnet (high) builders work test-first in parallel. Read-only checks of the live schema and data before planning:
+
+- `employees` has no `department_id` column, so the FastAPI insert that sends it cannot succeed.
+- 33 departments are active (not 5). Live postings use active names except 4 under "Information Technology" and 4 under "Legal", which are inactive; hires for those stay refused, now with a message naming the office. Fixing those postings is a separate data decision.
+- Six job titles have more than one posting, so the title lookup errors (client, swallowed) or picks an arbitrary posting (backend).
+- All 179 plantilla labels are "Plantilla <n>", and no reserved plantilla lacks its application link.
+- `employees_with_department` returns `current_division` as NULL and omits `plantilla_num`, but every reader of division and plantilla number (employee application profile, IDP form, performance evaluations) reads `employees` directly, so no view change is needed.
+
+Rule for both paths, matching `complete_promotional_appointment`: with `applicants.plantilla_slot_id`, read the slot and its posting; the office is the posting's department matched case- and space-insensitively to one active department and written with that department's name; division is the slot's, else the posting's; `plantilla_num` is the number in a "Plantilla <n>" label (left empty otherwise, without blocking the hire). Without a slot, use the posting only when exactly one non-deleted posting has the title, else the applicant's office, with the same active-office match. No active match refuses the hire before any insert. The legacy office and position-to-office maps are deleted.
+
+- **T1 web app fallback.** Files: `src/lib/api/employeesApi.ts`, `src/lib/hiringFlow.ts`, new `src/lib/api/employeesApi.external.test.ts`, `src/lib/hiringFlow.promotion.test.ts`. `hireExternalApplicant` applies the rule and throws a non-retryable `ExternalHireError` for an inactive office; the Generate row shows that message without "Try again".
+- **T2 backend route.** Files: `backend/app/routes/employees.py`, `backend/test_promotional_hiring.py`. `hire_from_applicant` applies the rule, drops `department_id`, and returns 422 with the same message before any insert.
+- **Verification.** `npx tsc --noEmit`, `npm run lint`, full Vitest, the backend pytest file, then a local-stack external hire (valid office: office, division and plantilla number set; inactive office: refused, nothing written).
+
+**F4 fixed (`2d3fe26`, 2026-11-02).** T1 also updated the fallback fixtures in `employeesApi.promotion.test.ts`. The client keeps its own label regex because `plantillaNumberOf` is case-insensitive and the RPC is not. Read errors on the slot, posting, title lookup or departments throw a plain (retryable) error instead of guessing.
+- Tests first: 22 client tests and 16 backend cases failed before the change; afterwards the 3 client files pass (48 tests) and `python -m unittest test_promotional_hiring` passes 33.
+- `npx tsc --noEmit` and `npm run lint` pass. `npm test` ran 861 files because it also collects the `.claude/worktrees/` checkouts: 859 passed; the 2 failures are `scripts/seed-training-attendance.test.mjs` (a data-count assertion, 172 vs 167, last changed 2026-10-28) and its stale worktree copy (missing `.env`). Neither touches this change. `npx vitest run src` passed 850/850 files.
+- Local stack, the real client code with the backend unreachable, signed in as RSP: Rowena Bautista (posting office Budget Office, active locally) was hired as `EMP-D7F5D631` with `department` Budget Office, `division` Records Division, `plantilla_num` 2 and applicant status Hired. Jasmin Villareal, a synthetic applicant on a posting under the inactive "Information Technology", was refused with `ExternalHireError` naming the office; no employee row was written and her application stayed Qualified.
+- The FastAPI route ran only in unit tests.
+
+**Final checks, 2026-11-02 (after F4).**
+- `npm run check:migrations`: OK, 129 files. `npm test -- --exclude "**/.worktrees/**" --exclude "**/.claude/worktrees/**"`: 151 of 152 files, 1,398 of 1,399 tests. The one failure is `scripts/seed-training-attendance.test.mjs`, which reads the live database through `.env` and asserts a fixed count (172 vs 167); the branch does not touch `scripts/`. `npm run build` still fails with the environmental esbuild error.
+- Mixed batch through Generate on the local stack, signed in as RSP: Rowena Bautista (external), Ramon Aquino (promotion, a new Plantilla 4) and Jasmin Villareal (external, inactive office). Rowena: hired as `EMP-D7F5D631` in Budget Office, Records Division, plantilla 2, plantilla filled, one new account, one recorded email, the only credential card. Ramon: the same single employee row moved to Senior Records Analyst, Budget Office, Records Division, plantilla 4, plantilla filled, portal account byte-identical (md5 before and after), no email. Jasmin: “not hired. Office "Information Technology" is not an active office…”, no employee, plantilla still open, application unchanged.
+- §16 on the results modal, all-failed state (Jasmin alone): “Nothing Was Completed”, white Poppins title, `#C8D1FF` subtitle, the reason listed, no tables, no Print, no page banner; `aria-modal` and labelled; Tab stays inside; full-screen sheet at 375 px and 736 px wide at 768 px with no horizontal overflow. Gap, pre-existing since the shared `Modal` (2026-10-25): a non-dismissible modal disables its close button, so on open nothing inside it takes focus until Tab is pressed. Fixed afterwards in `4a947ed` (see below). The 8 live postings under the inactive "Information Technology" and "Legal" offices still cannot be hired into until their office is changed or reactivated.
+
+**Failure-path run and branch review, 2026-11-02.**
+- Shared modal focus fixed in `4a947ed`: when Close is disabled, initial focus falls back to the first enabled control, then the panel (`tabIndex={-1}`). Two new tests failed first; `npx tsc --noEmit`, `npm run lint` and `vitest run src` (850 files / 7,385 tests) pass.
+- `npm run build` fails with the same esbuild “remove …esbuild-…: Access is denied” error even with `TMP`/`TEMP` pointed at a different folder, so something on this machine (most likely antivirus) locks esbuild's temp file. Not evidence about the branch; run it on another machine or in CI.
+- Rejected score save, local stack, Sonnet (medium) browser run with a temporary rejecting trigger on `applicant_category_scores` (removed afterwards): the category save shows “Scores not saved” and keeps the entries, and the row is byte-identical (pass). The written-exam save fails silently (F9, below).
+- Lost response, local stack: `window.fetch` patched so the `complete_promotional_appointment` call commits and then throws. Data integrity holds: one employee row (same UUID, number and hire date), one `promoted` history row, slot filled once, one portal account, no email; a replay returns `already_completed: true` and changes nothing (row fingerprint identical). The UI wording fails (F11, below). No request reached the production project.
+- Whole-branch review (Opus, `/code-review`) plus the run found:
+  - **F9:** `QualifiedApplicantsSection` `handleSaveExam` discards the result of `savePositionWrittenExamScores` (`void …`), which writes the local exam cache before the database. A rejected exam save closes the modal, shows “Completed”, and keeps showing the unsaved scores after reload.
+  - **F10:** `savePositionWrittenExamScores` only warns when its pre-read of existing rows fails, then upserts blank or cached categories with `is_finalized` false, which can erase a finalized assessment (F1 in the other direction).
+  - **F11:** a lost promotion response reads “Nothing Was Completed” and “not promoted.” although the promotion may have committed, and the row then leaves Generate, so the advised retry is impossible in the UI.
+  - **F12:** correcting a written exam keeps the old `writtenExam.finalScore`; the next category save writes `written_exam_raw_score` from it, reverting the correction (seen: 70 → 88 → 70).
+  - Minor: the category-save error always blames the connection; the results modal keys failure lines by their text.
+
+#### F9–F12 fix plan — approved 2026-11-02
+
+Decisions approved in chat (all as recommended); Opus builds in this session, test-first.
+- **F12:** `written_exam_raw_score` is the exam of record. An exam save sets both `initialScore` and `finalScore` to the new score (database row, browser cache, page state). A category save always reads the row first and keeps its exam (with `finalScore` taken from `written_exam_raw_score`) over the caller's copy; the caller's exam is used only when no row exists.
+- **F10:** `savePositionWrittenExamScores` fails the whole batch, writing nothing, when the pre-read of existing rows fails.
+- **F9:** the exam batch updates the browser cache only after the database confirms; `handleSaveExam` awaits the result and updates page state only on success; `ExamScoresModal` stays open with an error otherwise.
+- **F11:** `generateEmployeeCredentials` checks once more after an `uncertain` error (a replay is safe). If that also gets no answer the line reads “result not confirmed” with how to tell from the page, `GenerateOutcome.unconfirmed` counts it, and the results modal is titled “Result Not Confirmed” instead of “Nothing Was Completed”. Rejections, busy and other errors are not retried. This replaces the earlier rule that the Generate page never retries a promotion.
+- **Minor:** both score modals word their error through `describeActionFailure`, so a refused write no longer blames the connection; failure lines are keyed by index.
+- **Checks:** new unit and component tests fail first; tsc, lint, `vitest run src`; then the rejected exam save and lost promotion response are rerun on the local stack.
+
+**F9–F12 fixed (`3d60c60`, `0deca4a`).** The code was written before this section was saved, against the decisions approved in chat; the section was saved before any commit.
+- Tests: 7 new or changed tests failed first (4 service, 1 component, 3 Generate flow; one F1 test that encoded the F12 behaviour was rewritten, and one timing assumption updated because the category save now reads first). Then `npx tsc --noEmit`, `npm run lint` and `vitest run src` (851 files / 7,394 tests) pass.
+- Local stack recheck (Sonnet, medium), synthetic Rolando Cabatuan, Estrella Magbanua and Napoleon Tubungbanua: a refused exam save keeps the modal open with “Exam scores were not saved. Your entries are still here. …”, the folder stays Pending, nothing is cached, and the row is unchanged; after the fault is removed the save persists exam 88 in both fields. An exam corrected 70 → 88 stays 88 after a category save. With the first promotion response lost, Generate checks again, the replay returns `already_completed` and the modal reads “Promotions Completed”; with every response lost it reads “Result Not Confirmed … result not confirmed …”, never “not promoted”. Each promotion committed once (one employee row, one history row, one account, no email). Results modals open with focus on Done inside the dialog. Injected faults were removed; traffic stayed on the local host.
+
+### I1 and M1 from the F9–F12 review — approved 2026-11-03
+
+A Sonnet (high) review of `ead20c2..2d0183f` found no critical issues. Two findings are fixed here; M2–M8 are left as tracked minors (small, transient, or out of scope).
+
+**I1. A second call that comes back "busy" is reported as "nothing was saved".** In `completeOrConfirmPromotion` (`src/lib/hiringFlow.ts`), only a second `uncertain` result counts as unconfirmed. A lost first response does not cancel its transaction, so the second call can wait on that transaction's locks and fail as `busy` (57014) while the first one commits afterwards. The row then reads "not promoted … nothing was saved", which F11 set out to remove.
+
+- Change: once the first call was `uncertain`, report any second-call failure as unconfirmed except `rejected`, `not_authorized` and `not_deployed`, which are definite. Carry that through to `unconfirmed` and the "result not confirmed" wording.
+- Tests (written first, in `src/lib/hiringFlow.promotion.test.ts`): uncertain then busy → unconfirmed with "result not confirmed"; uncertain then rejected → "not promoted" with the rejection message; busy on the first call stays "not promoted" and is not retried.
+
+**M1. The exam save writes back an old copy of the page's scores.** `handleSaveExam` (`src/components/QualifiedApplicantsSection.tsx`) copies `catScores` before awaiting the save, then sets state from that copy, so a score load that lands during the save is overwritten.
+
+- Change: build the update inside `setCatScores((prev) => …)`, as `handleSaveCatScores` already does, and drop `catScores` from the callback's dependencies.
+- Test: in `QualifiedApplicantsSection.examSave.test.tsx`, assert the page shows the saved exam score after a successful save.
+
+**Executor:** Sonnet, medium effort, one builder. The change is about 20 lines across two files with exact locations given, so it needs no planning judgment.
+
+**Checks:** the two test files above, `npx tsc --noEmit`, `npm run lint`, then `vitest run src`. No browser rerun: the I1 path needs a lock-wait timeout the local stack can't produce on demand, and the unit tests cover the classification.
+
+- [x] I1 fixed with tests (`40e0dc1`)
+- [x] M1 fixed with test (`40e0dc1`)
+
+Done 2026-11-03 by one Sonnet (medium) builder. The uncertain-then-busy test failed first and passes now; the uncertain-then-rejected test and the new exam-table test guard the success paths and passed before and after, since M1 is a race the unit test cannot trigger. `npx tsc --noEmit`, `npm run lint` and `vitest run src` (851 files) pass.
+
+### Test gaps from the I1/M1 review — requested 2026-11-03
+
+The review of `40e0dc1` passed with no critical or important issues. At the user's request, its two test gaps are closed before pushing. Tests only; no production code changes unless a test exposes a bug, which would come back as a new decision.
+
+- Second-call errors (`src/lib/hiringFlow.promotion.test.ts`): after a first call with no answer, a second call failing as `failed` or with a plain `Error` is unconfirmed; `not_authorized` and `not_deployed` stay "not promoted".
+- The M1 race (`src/components/QualifiedApplicantsSection.examSave.test.tsx`): scores loaded from the database while an exam save is waiting must survive the save. Check that the test fails on the pre-fix `handleSaveExam` (from `2d0183f`) and passes on the current code.
+- Done inline (no subagent): a few tests in two files.
+- Checks: both files, `npx tsc --noEmit`, `npm run lint`, `vitest run src`.
+
+- [x] Second-call error tests (`5435113`)
+- [x] M1 race test, shown to fail on the pre-fix code (`5435113`)
+
+Done 2026-11-03 inline. Four second-call tests (`failed`, a plain error, `not_authorized`, `not_deployed`) pass with no code change. The race test resolves a database score load while the exam save is pending; it failed against `handleSaveExam` from `2d0183f` and passes on `40e0dc1`. `npx tsc --noEmit`, `npm run lint` and `vitest run src` (851 files / 7,402 tests) pass.
+
+## Risks
+
+- **Security remains unresolved by explicit scope choice.** The legacy login still uses plaintext credentials; existing broad grants can bypass even a correctly guarded new RPC. Functional acceptance must not be described as production-security readiness.
+- **A new transaction needs a migration before compatible clients can use it.** If absent, fail with an actionable deployment message; never restore the unsafe promotion INSERT fallback. Rollout is reviewed migration first, compatible client/backend second, with separate push/deployment approval. Rollback must not re-enable duplicate-employee promotion logic.
+- **Current data may already contain inconsistent identities/partial hires.** Reject ambiguous links and report them; inventory/repair is a separate approved task. Do not repair the live scheduled promotion as a test.
+- **History and triggers interact.** Slot fill archives competitors; any hire status (`Selected`, `Hired` or `Accepted`, per `is_hired_application_status`) withdraws other applications. Tests must verify trigger-induced changes roll back with a failed promotion and that historical successful applications are not rewound.
+- **The occupancy redesign remains deferred.** This plan assigns the target and records the promotion; it does not automatically reopen or advertise the former position, rewrite historical filled-slot records, or infer position IDs from duplicate titles.
+- **Scoring differences are policy, not cleanup.** Reuse existing promotional conversions and show consistent assessment totals, but do not change weights, thresholds, or the written-exam requirement. Any newly discovered rule conflict that cannot be resolved from current behavior requires user confirmation before implementation.
+- **Baseline test noise:** the audit's scoped run had 1,189 passes and one unrelated live-data training-seed count failure (167 expected, 172 received). Recheck the baseline; do not silently fix or suppress that test in this task. It is now Step 5 of [the applicant status plan](2026-10-30-applicant-status-and-score-writes.md), and the [live database check](../session-summaries/2026-10-30-live-db-claims-verification-summary.md) explains that the test counts active employees in the 5 seeded offices, not all employees. The seed test now runs on a fixture: see [the applicant status plan](2026-10-30-applicant-status-and-score-writes.md).
+- **Parallel plan.** [Fix applicant score and status writes](2026-10-30-applicant-status-and-score-writes.md) (Draft) also touches the interviewer module and status names. See "Before starting Tasks 4–8" for where the two plans touch.
+
+## Checks to run
+
+- `npx tsc --noEmit`
+- `npm run lint`
+- The targeted Vitest commands in Tasks 1–7, including Task 3A's scheduled-interviewer regressions, with all clients/email calls mocked.
+- `npm test -- --exclude "**/.worktrees/**" --exclude "**/.claude/worktrees/**"` (nested worktrees must not contaminate this branch's run).
+- `python -m unittest test_promotional_hiring` from `backend` using the existing Python environment.
+- Local/preview database transaction tests, including two-session concurrency and rollback; discover the installed CLI flags with `--help` rather than assuming them.
+- `npm run check:migrations`
+- `npm run build`
+- Isolated browser acceptance from Task 8, plus mobile/tablet/desktop and keyboard/error-state checks for the touched modal/table/login surfaces.
+- Read-only post-deployment verification only after separately approved deployment; any live submission/appointment/email still requires explicit approval.
+
+## Plan review and execution gate
+
+Plan and exact model pair approved in chat. Follow the delegation ledger and task checkboxes for execution state; approval does not authorize live database changes, sends, pushes or deployments. Stop affected work if the required isolated database or model route is unavailable; report the precise blocker rather than substituting production access or another model.
+
+## Status check 2026-11-12
+
+Done. The open build question is settled: Vercel built `cd71e17` successfully, and both promotion smoke test files pass. Still not covered: the FastAPI external hire route, real email, and the eight live postings under the inactive IT and Legal offices (a data decision). Minor findings M2–M8 stay recorded above.
+
+Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.

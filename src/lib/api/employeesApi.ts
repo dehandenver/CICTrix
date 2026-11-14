@@ -1,4 +1,10 @@
 import { supabase } from '../supabase';
+import { normalizeApplicationType } from './applicantScores';
+import {
+  PromotionalAppointmentError,
+  completePromotionalAppointment,
+} from './promotionalHiring';
+import type { PromotionalAppointmentResult } from './promotionalHiring';
 
 // Ideally this comes from the generated types. 
 // We manually bridge it here according to the schema since we can't regenerate types yet.
@@ -88,9 +94,160 @@ async function getAuthToken() {
 }
 
 /**
- * Hire Applicant Flow (writes via FastAPI).
+ * Read the saved application's type remotely. Cached UI state is never trusted
+ * for this, and a failed read throws instead of guessing "external": guessing
+ * wrong would insert a second employee for someone who already works here.
+ */
+async function isPromotionApplication(applicantId: string): Promise<boolean> {
+  const { data, error } = await (supabase as any)
+    .from('applicants')
+    .select('application_type')
+    .eq('id', applicantId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || 'Could not read the application to decide how to hire it');
+  }
+  if (!data) {
+    throw new Error('Applicant not found');
+  }
+  return normalizeApplicationType(data.application_type) === 'promotional';
+}
+
+/**
+ * Promotion path: the database transaction is the only writer. The employee
+ * already exists, so nothing here creates an employee, number, email, account
+ * or password, and the backend endpoint is not called.
+ */
+async function hirePromotion(applicantId: string): Promise<HireOutcome> {
+  const result = await completePromotionalAppointment(applicantId);
+  try {
+    return { employee: await fetchEmployeeById(result.employeeUuid), promotion: result };
+  } catch (err) {
+    // The appointment is committed. Retrying replays the RPC, which answers
+    // already_completed, and then reads the employee again.
+    throw new PromotionalAppointmentError(
+      'The promotion was completed, but the employee record could not be loaded. Retry to load it. Retrying will not appoint the employee again.',
+      { kind: 'employee_read_failed', retryable: true, code: String((err as any)?.code ?? '') || null },
+    );
+  }
+}
+
+export type HireOutcome = {
+  employee: EmployeeRow;
+  /** Set when the saved application was a promotion. The employee kept their account, so callers must not issue credentials. */
+  promotion: PromotionalAppointmentResult | null;
+};
+
+/**
+ * Hire and say which path ran. The type is read from the saved application,
+ * so a caller holding a stale cached type still learns it was a promotion.
+ */
+export async function hireApplicantWithOutcome(applicantId: string): Promise<HireOutcome> {
+  if (await isPromotionApplication(applicantId)) {
+    return hirePromotion(applicantId);
+  }
+  return { employee: await hireExternalApplicant(applicantId), promotion: null };
+}
+
+/**
+ * Hire Applicant Flow.
+ * Promotions go through the appointment transaction; external applicants keep
+ * the backend-then-client-fallback path below.
  */
 export async function hireApplicant(applicantId: string): Promise<EmployeeRow> {
+  return (await hireApplicantWithOutcome(applicantId)).employee;
+}
+
+/** Thrown when an external hire is refused for a reason a retry cannot fix. The message is written for the person reading it. */
+export class ExternalHireError extends Error {
+  readonly retryable = false;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ExternalHireError';
+  }
+}
+
+/** The number in a "Plantilla <n>" label. Same rule as `complete_promotional_appointment`. */
+const PLANTILLA_LABEL_NUMBER = /^\s*[Pp]lantilla\s+([0-9]+)\s*$/;
+
+const clean = (value: unknown): string => String(value ?? '').trim();
+
+type ExternalAssignment = { department: string; division: string | null; plantillaNumber: string | null };
+
+/**
+ * Office, division and plantilla number for an external hire. The reserved
+ * plantilla's posting is the source, as it is for promotions. Without a
+ * reserved plantilla, a posting is used only when exactly one has the title.
+ * The office is written as the active department's own name, because the
+ * `enforce_active_office` trigger rejects anything else.
+ */
+async function resolveExternalAssignment(applicant: any, positionName: string): Promise<ExternalAssignment> {
+  let office = clean(applicant.office);
+  let division: string | null = null;
+  let plantillaNumber: string | null = null;
+
+  if (applicant.plantilla_slot_id) {
+    const { data: slot, error: slotErr } = await (supabase as any)
+      .from('plantilla_slots')
+      .select('id, job_posting_id, label, division')
+      .eq('id', applicant.plantilla_slot_id)
+      .maybeSingle();
+    if (slotErr) throw new Error(slotErr.message || 'Could not read the plantilla for this application');
+
+    const { data: posting, error: postingErr } = slot
+      ? await (supabase as any)
+          .from('job_postings')
+          .select('id, title, department, division')
+          .eq('id', slot.job_posting_id)
+          .is('deleted_at', null)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (postingErr) throw new Error(postingErr.message || 'Could not read the job posting for this application');
+    if (!slot || !posting) throw new ExternalHireError('The job posting for this plantilla no longer exists.');
+
+    office = clean(posting.department);
+    division = clean(slot.division) || clean(posting.division) || null;
+    plantillaNumber = PLANTILLA_LABEL_NUMBER.exec(String(slot.label ?? ''))?.[1] ?? null;
+  } else {
+    const { data: postings, error: postingsErr } = await (supabase as any)
+      .from('job_postings')
+      .select('id, title, department, division')
+      .is('deleted_at', null)
+      .ilike('title', positionName);
+    if (postingsErr) throw new Error(postingsErr.message || 'Could not read the job postings for this application');
+    if (Array.isArray(postings) && postings.length === 1) {
+      office = clean(postings[0].department);
+      division = clean(postings[0].division) || null;
+    }
+  }
+
+  if (!office) {
+    throw new ExternalHireError("This application has no office. Set the job posting's office, then hire again.");
+  }
+
+  const { data: departments, error: departmentsErr } = await (supabase as any)
+    .from('departments')
+    .select('name')
+    .eq('is_active', true);
+  if (departmentsErr) throw new Error(departmentsErr.message || 'Could not read the active offices');
+
+  const wanted = office.toLowerCase();
+  const matches = ((departments ?? []) as Array<{ name: string }>).filter((d) => clean(d.name).toLowerCase() === wanted);
+  if (matches.length === 0) {
+    throw new ExternalHireError(
+      `Office "${office}" is not an active office. Change the job posting's office to an active one, then hire again.`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new ExternalHireError(`Office "${office}" matches more than one active office. Resolve the duplicate first.`);
+  }
+  return { department: matches[0].name, division, plantillaNumber };
+}
+
+/** External applicants: writes via FastAPI, with a client fallback. */
+async function hireExternalApplicant(applicantId: string): Promise<EmployeeRow> {
   const token = await getAuthToken();
   try {
     const res = await fetch(`${API_BASE_URL}/employees/from-applicant/${applicantId}`, {
@@ -120,7 +277,12 @@ export async function hireApplicant(applicantId: string): Promise<EmployeeRow> {
     throw new Error(appErr?.message || 'Applicant not found in Supabase for client-side fallback');
   }
 
-  // 2. Generate and verify unique employee number
+  // 2. Resolve office, division and plantilla number. Done first so a hire the
+  // database would reject is refused before anything is looked up or written.
+  const positionName = (applicant as any).position || 'Staff';
+  const assignment = await resolveExternalAssignment(applicant, positionName);
+
+  // 3. Generate and verify unique employee number
   let empId = (applicant as any).employee_id;
   if (!empId) {
     let candidateId = `EMP-${applicantId.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
@@ -173,47 +335,6 @@ export async function hireApplicant(applicantId: string): Promise<EmployeeRow> {
     }
   }
 
-  // 3. Resolve department name and ID
-  const positionName = (applicant as any).position || 'Staff';
-  let departmentName = (applicant as any).office || 'Operations';
-  
-  // Try to match department name from job_postings
-  try {
-    const { data: job } = await (supabase as any)
-      .from('job_postings')
-      .select('department')
-      .ilike('title', positionName)
-      .maybeSingle();
-    if (job?.department) {
-      departmentName = job.department;
-    }
-  } catch { /* ignore */ }
-
-  const legacyMap: Record<string, string> = {
-    'Human Resource Management Office': 'Human Resources',
-    'Information Technology Office': 'Information Technology',
-    'City Planning and Development Office': 'Operations',
-    'City Health Office': 'Operations',
-    'City Engineering Office': 'Operations',
-    "Treasurer's Office": 'Finance',
-    'Budget Office': 'Finance',
-    'General Services Office': 'Operations',
-    'Office of the City Engineer': 'Operations',
-    'Office of the City Accountant': 'Finance',
-    'Office of the City Social Welfare and Development': 'Operations',
-    'IT Department': 'Information Technology',
-    'HR Department': 'Human Resources',
-    'Finance Department': 'Finance',
-    'Legal Department': 'Legal',
-    'IT Division': 'Information Technology',
-    'Health Office': 'Operations',
-    'Treasury Department': 'Finance'
-  };
-
-  if (legacyMap[departmentName]) {
-    departmentName = legacyMap[departmentName];
-  }
-
   // 4. Construct email & resolve email uniqueness constraint
   let email = (applicant as any).email;
   if (!email) {
@@ -255,7 +376,9 @@ export async function hireApplicant(applicantId: string): Promise<EmployeeRow> {
     permanent_address_street: (applicant as any).address || null,
     sex: gender,
     position: positionName,
-    department: departmentName,
+    department: assignment.department,
+    division: assignment.division,
+    plantilla_num: assignment.plantillaNumber,
     employment_status: 'Regular',
     date_hired: new Date().toISOString().split('T')[0],
     status: 'Active',

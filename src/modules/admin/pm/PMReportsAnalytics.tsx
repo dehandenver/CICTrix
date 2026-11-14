@@ -846,7 +846,7 @@ export function PMReportsAnalytics() {
                   <button
                     type="button"
                     onClick={handleExport}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#363EE8] px-4 py-2 text-xs font-semibold text-white hover:bg-[#2e35d4] transition shadow-sm"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#363EE8] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--color-primary-700)] transition shadow-sm"
                   >
                     <Download className="h-3.5 w-3.5" /> Download CSV
                   </button>

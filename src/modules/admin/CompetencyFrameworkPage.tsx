@@ -34,7 +34,7 @@ const SUBTABS = [
 
 const levelPill = (level: string | null): React.CSSProperties => {
   const tones: Record<string, { bg: string; fg: string }> = {
-    Basic: { bg: 'rgba(107,114,128,0.15)', fg: '#4b5563' },
+    Basic: { bg: 'rgba(107,114,128,0.15)', fg: 'var(--neutral-600)' },
     Intermediate: { bg: 'rgba(54,62,232,0.1)', fg: '#363EE8' },
     Advanced: { bg: 'rgba(16,185,129,0.14)', fg: '#047857' },
   };
@@ -46,7 +46,7 @@ export const CompetencyFrameworkPage = () => {
   const [active, setActive] = useState<(typeof SUBTABS)[number]['key']>('requirements');
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
+    <div className="ds-remap abyan-tokens min-h-screen bg-[var(--bg-page)]">
       <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
       <div className="admin-layout">
         <Sidebar activeModule="Super" userRole="super-admin" />
@@ -71,9 +71,9 @@ export const CompetencyFrameworkPage = () => {
                   padding: '8px 16px',
                   borderRadius: '999px',
                   border: '1px solid',
-                  borderColor: active === s.key ? '#363EE8' : '#d1d5db',
+                  borderColor: active === s.key ? '#363EE8' : 'var(--neutral-200)',
                   background: active === s.key ? '#363EE8' : '#fff',
-                  color: active === s.key ? '#fff' : '#374151',
+                  color: active === s.key ? '#fff' : 'var(--neutral-800)',
                   fontWeight: 600,
                   fontSize: '13px',
                   cursor: 'pointer',
@@ -164,7 +164,7 @@ const PositionRequirements = () => {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
         <div style={{ position: 'relative', flex: 1, maxWidth: '420px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-400)' }} />
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by position or competency…" style={{ ...ui.input, paddingLeft: '36px' }} />
         </div>
         <button type="button" onClick={() => setEditing('new')} style={ui.primaryBtn}>
@@ -188,14 +188,14 @@ const PositionRequirements = () => {
           <div key={position} style={{ ...ui.card, marginBottom: '14px' }}>
             <div style={ui.cardHeader}>
               {position}
-              <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>{items.length} competencies</span>
+              <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>{items.length} competencies</span>
             </div>
             <div className="abyan-table-wrap is-flush"><table className="abyan-table">
               <tbody>
                 {items.map((r) => (
                   <tr key={r.id}>
-                    <td style={{ ...ui.td, width: '28%', fontWeight: 600, color: '#1f2937' }}>{r.competency_name}</td>
-                    <td style={{ ...ui.td, color: '#6b7280' }}>{r.description || '—'}</td>
+                    <td style={{ ...ui.td, width: '28%', fontWeight: 600, color: 'var(--neutral-800)' }}>{r.competency_name}</td>
+                    <td style={{ ...ui.td, color: 'var(--neutral-600)' }}>{r.description || '—'}</td>
                     <td style={{ ...ui.td, width: '130px' }}>
                       <span style={levelPill(r.proficiency_level)}>{r.proficiency_level}</span>
                     </td>
@@ -203,7 +203,7 @@ const PositionRequirements = () => {
                       <button type="button" onClick={() => setEditing(r)} style={{ ...ui.secondaryBtn, padding: '6px 10px', marginRight: '6px' }} title="Edit">
                         <Pencil size={14} />
                       </button>
-                      <button type="button" onClick={() => remove(r)} style={{ ...ui.secondaryBtn, padding: '6px 10px', color: '#b91c1c', borderColor: '#fca5a5' }} title="Remove">
+                      <button type="button" onClick={() => remove(r)} style={{ ...ui.secondaryBtn, padding: '6px 10px', color: 'var(--error-700)', borderColor: '#fca5a5' }} title="Remove">
                         <Trash2 size={14} />
                       </button>
                     </td>
@@ -385,7 +385,7 @@ const ReviewQueue = () => {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-        <p style={{ color: '#6b7280', fontSize: '14px', margin: 0, flex: 1 }}>
+        <p style={{ color: 'var(--neutral-600)', fontSize: '14px', margin: 0, flex: 1 }}>
           Proposed changes wait here for PM validation before the live Position Requirements list updates.
         </p>
         <button type="button" onClick={() => setShowPropose(true)} style={ui.primaryBtn}>
@@ -398,7 +398,7 @@ const ReviewQueue = () => {
         <div style={ui.cardHeader}>
           <FileClock size={18} />
           Pending
-          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>{proposalsLoad.initialLoading ? '' : pending.length}</span>
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>{proposalsLoad.initialLoading ? '' : pending.length}</span>
         </div>
         {proposalsLoad.initialLoading ? (
           <SkeletonList show={proposalsLoad.showSkeleton} rows={3} label="Loading proposals…" />
@@ -406,19 +406,19 @@ const ReviewQueue = () => {
           <div style={ui.emptyBox}>No pending proposals.</div>
         ) : (
           pending.map((p) => (
-            <div key={p.id} style={{ borderTop: '1px solid #f0f0f0', padding: '14px 20px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+            <div key={p.id} style={{ borderTop: '1px solid var(--neutral-200)', padding: '14px 20px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span style={actionPill(p.action)}>{p.action}</span>
-                  <strong style={{ color: '#1f2937' }}>{p.competency_name}</strong>
-                  <span style={{ color: '#6b7280', fontSize: '13px' }}>· {p.position}</span>
+                  <strong style={{ color: 'var(--neutral-800)' }}>{p.competency_name}</strong>
+                  <span style={{ color: 'var(--neutral-600)', fontSize: '13px' }}>· {p.position}</span>
                   {p.proficiency_level && <span style={levelPill(p.proficiency_level)}>{p.proficiency_level}</span>}
                   {p.rsp_input && (
-                    <span style={{ ...levelPill('Intermediate'), background: 'rgba(245,158,11,0.15)', color: '#b45309' }}>RSP input</span>
+                    <span style={{ ...levelPill('Intermediate'), background: 'rgba(245,158,11,0.15)', color: 'var(--warning-700)' }}>RSP input</span>
                   )}
                 </div>
-                {p.description && <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>{p.description}</div>}
-                <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
+                {p.description && <div style={{ fontSize: '13px', color: 'var(--neutral-600)', marginTop: '4px' }}>{p.description}</div>}
+                <div style={{ fontSize: '12px', color: 'var(--neutral-400)', marginTop: '4px' }}>
                   Submitted by {p.submitted_by || 'unknown'} · {new Date(p.created_at).toLocaleString()}
                 </div>
               </div>
@@ -430,7 +430,7 @@ const ReviewQueue = () => {
                   type="button"
                   onClick={() => setRejectTarget(p)}
                   disabled={busyId === p.id}
-                  style={{ ...ui.secondaryBtn, padding: '7px 12px', color: '#b91c1c', borderColor: '#fca5a5' }}
+                  style={{ ...ui.secondaryBtn, padding: '7px 12px', color: 'var(--error-700)', borderColor: '#fca5a5' }}
                 >
                   Reject
                 </button>
@@ -447,12 +447,12 @@ const ReviewQueue = () => {
             Reviewed
           </div>
           {reviewed.map((p) => (
-            <div key={p.id} style={{ borderTop: '1px solid #f0f0f0', padding: '12px 20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div key={p.id} style={{ borderTop: '1px solid var(--neutral-200)', padding: '12px 20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
               <span style={actionPill(p.action)}>{p.action}</span>
-              <span style={{ fontSize: '13px', color: '#374151' }}>
+              <span style={{ fontSize: '13px', color: 'var(--neutral-800)' }}>
                 <strong>{p.competency_name}</strong> · {p.position}
               </span>
-              <span style={{ marginLeft: 'auto', fontSize: '12px', color: p.status === 'Approved' ? '#047857' : '#b91c1c', fontWeight: 600 }}>
+              <span style={{ marginLeft: 'auto', fontSize: '12px', color: p.status === 'Approved' ? '#047857' : 'var(--error-700)', fontWeight: 600 }}>
                 {p.status}
                 {p.reviewed_by ? ` · ${p.reviewed_by}` : ''}
               </span>
@@ -486,7 +486,7 @@ const ReviewQueue = () => {
               <button type="button" onClick={() => setRejectTarget(null)} style={ui.secondaryBtn}>
                 Cancel
               </button>
-              <button type="button" onClick={doReject} style={{ ...ui.primaryBtn, background: '#dc2626' }}>
+              <button type="button" onClick={doReject} style={{ ...ui.primaryBtn, background: 'var(--error-500)' }}>
                 Reject
               </button>
             </div>
@@ -631,7 +631,7 @@ const actionPill = (action: string): React.CSSProperties => {
   const tones: Record<string, { bg: string; fg: string }> = {
     add: { bg: 'rgba(16,185,129,0.14)', fg: '#047857' },
     revise: { bg: 'rgba(54,62,232,0.1)', fg: '#363EE8' },
-    remove: { bg: 'rgba(220,38,38,0.12)', fg: '#b91c1c' },
+    remove: { bg: 'rgba(220,38,38,0.12)', fg: 'var(--error-700)' },
   };
   const t = tones[action] ?? tones.revise;
   return { display: 'inline-block', padding: '1px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', background: t.bg, color: t.fg };
@@ -690,7 +690,7 @@ const CompetencyMap = () => {
       )}
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '240px', maxWidth: '360px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--neutral-400)' }} />
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search competency…" style={{ ...ui.input, paddingLeft: '36px' }} />
         </div>
         <select value={positionFilter} onChange={(e) => setPositionFilter(e.target.value)} style={{ ...ui.input, width: 'auto' }}>
@@ -715,7 +715,7 @@ const CompetencyMap = () => {
         <div style={ui.cardHeader}>
           <Grid3x3 size={18} />
           Competency Map
-          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>
             {mapLoad.initialLoading ? '' : `${groupedByPosition.length} position${groupedByPosition.length === 1 ? '' : 's'}`}
           </span>
         </div>
@@ -735,7 +735,7 @@ const CompetencyMap = () => {
               <tbody>
                 {groupedByPosition.map(([pos, posReqs]) => (
                   <tr key={pos}>
-                    <td style={{ ...ui.td, fontWeight: 600, color: '#1f2937' }}>{pos}</td>
+                    <td style={{ ...ui.td, fontWeight: 600, color: 'var(--neutral-800)' }}>{pos}</td>
                     <td style={{ ...ui.td, padding: '8px 12px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {posReqs.map((r) => (
@@ -749,14 +749,14 @@ const CompetencyMap = () => {
                               fontSize: '14px',
                               padding: '4px 8px',
                               borderRadius: '6px',
-                              border: '1px solid #f0f0f0',
+                              border: '1px solid var(--neutral-200)',
                               background: '#fafafa',
                             }}
                           >
-                            <span style={{ fontWeight: 600, color: '#1f2937' }}>{r.competency_name}</span>
+                            <span style={{ fontWeight: 600, color: 'var(--neutral-800)' }}>{r.competency_name}</span>
                             <span style={levelPill(r.proficiency_level)}>{r.proficiency_level}</span>
                             {r.description && (
-                              <span style={{ color: '#6b7280', fontSize: '14px' }}>— {r.description}</span>
+                              <span style={{ color: 'var(--neutral-600)', fontSize: '14px' }}>— {r.description}</span>
                             )}
                           </div>
                         ))}
@@ -792,7 +792,7 @@ const ChangeLog = () => {
       <div style={ui.cardHeader}>
         <ShieldQuestion size={18} />
         Change Log
-        <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>{entriesLoad.initialLoading ? '' : `${entries.length} entries`}</span>
+        <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>{entriesLoad.initialLoading ? '' : `${entries.length} entries`}</span>
       </div>
       {entriesLoad.initialLoading ? (
         <SkeletonList show={entriesLoad.showSkeleton} label="Loading the change log…" />
@@ -804,8 +804,8 @@ const ChangeLog = () => {
             <li key={e.id} style={{ display: 'flex', gap: '12px', padding: '10px 20px', borderTop: '1px solid #f5f5f5' }}>
               <span style={actionPill(e.action)}>{e.action}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '13px', color: '#374151' }}>{e.summary || '—'}</div>
-                <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--neutral-800)' }}>{e.summary || '—'}</div>
+                <div style={{ fontSize: '12px', color: 'var(--neutral-400)', marginTop: '2px' }}>
                   {e.approved_by || 'unknown'} · {e.source === 'review-queue' ? 'via Review Queue' : 'direct edit'} ·{' '}
                   {new Date(e.created_at).toLocaleString()}
                 </div>

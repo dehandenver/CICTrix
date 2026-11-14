@@ -1168,19 +1168,6 @@ export const RSPDashboard = () => {
             .filter(([email]) => Boolean(email))
         );
 
-        const applicantEmailById = new Map<string, string>();
-        const applicantIdsByEmail = new Map<string, string[]>();
-        applicantsRes.value.data.forEach((item: any) => {
-          const applicantId = String(item?.id ?? '').trim();
-          const emailKey = normalizeEmailKey(String(item?.email ?? ''));
-          if (!applicantId || !emailKey) return;
-          applicantEmailById.set(applicantId, emailKey);
-          const current = applicantIdsByEmail.get(emailKey) ?? [];
-          if (!current.includes(applicantId)) {
-            applicantIdsByEmail.set(emailKey, [...current, applicantId]);
-          }
-        });
-
         const evaluationBestScore = new Map<string, number>();
         const evaluationsByApplicantId = new Map<string, any>();
 
@@ -1212,18 +1199,12 @@ export const RSPDashboard = () => {
               (typeof item?.overall_impression_score === 'number' && item.overall_impression_score > 0) ||
               (typeof item?.personality_score === 'number' && item.personality_score > 0);
 
-            const linkedEmail = applicantEmailById.get(applicantId);
-            const linkedIds = linkedEmail ? applicantIdsByEmail.get(linkedEmail) ?? [] : [];
-            const targetIds = Array.from(new Set([applicantId, ...linkedIds]));
-
             if (score > 0) {
-              targetIds.forEach((targetId) => {
-                const current = evaluationBestScore.get(targetId) ?? 0;
-                if (score >= current) {
-                  evaluationBestScore.set(targetId, score);
-                  evaluationsByApplicantId.set(targetId, item);
-                }
-              });
+              const current = evaluationBestScore.get(applicantId) ?? 0;
+              if (score >= current) {
+                evaluationBestScore.set(applicantId, score);
+                evaluationsByApplicantId.set(applicantId, item);
+              }
             }
 
             if (!hasScore) return;
@@ -1342,25 +1323,6 @@ export const RSPDashboard = () => {
 
       if (evaluationsRes.status === 'fulfilled' && !evaluationsRes.value.error && Array.isArray(evaluationsRes.value.data)) {
         const completed = new Set<string>();
-        const applicantRows =
-          applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)
-            ? applicantsRes.value.data
-            : [];
-
-        const applicantEmailById = new Map<string, string>();
-        const applicantIdsByEmail = new Map<string, string[]>();
-        applicantRows.forEach((item: any) => {
-          const applicantId = String(item?.id ?? '').trim();
-          const emailKey = normalizeEmailKey(String(item?.email ?? ''));
-          if (!applicantId || !emailKey) return;
-          applicantEmailById.set(applicantId, emailKey);
-          if (!emailKey) return;
-          const current = applicantIdsByEmail.get(emailKey) ?? [];
-          if (!current.includes(applicantId)) {
-            applicantIdsByEmail.set(emailKey, [...current, applicantId]);
-          }
-        });
-
         evaluationsRes.value.data.forEach((item: any) => {
           const applicantId = String(item?.applicant_id ?? '').trim();
           if (!applicantId) return;
@@ -1372,11 +1334,7 @@ export const RSPDashboard = () => {
             (typeof item?.personality_score === 'number' && item.personality_score > 0);
           if (!hasScore) return;
 
-          const linkedEmail = applicantEmailById.get(applicantId);
-          const linkedIds = linkedEmail ? applicantIdsByEmail.get(linkedEmail) ?? [] : [];
-          Array.from(new Set([applicantId, ...linkedIds])).forEach((targetId) => {
-            completed.add(targetId);
-          });
+          completed.add(applicantId);
         });
 
         setCompletedEvaluationIds(completed);

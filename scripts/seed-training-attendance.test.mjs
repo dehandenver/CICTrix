@@ -1,4 +1,63 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// The seeder's dry run must never reach the configured project: the roster and
+// sessions below are the whole world it sees, and any write fails the test.
+const fixture = vi.hoisted(() => {
+  const OFFICES = [
+    'Office of The City Health Officer',
+    'Office of The City Accountant',
+    'Office of The City Engineer',
+    'Office of The City Social Welfare and Development Officer',
+    'Office of the City General Services Officer',
+  ];
+  const EMPLOYEES_PER_OFFICE = 20;
+  const employees = OFFICES.flatMap((department, office) =>
+    Array.from({ length: EMPLOYEES_PER_OFFICE }, (_, index) => ({
+      id: `00000000-0000-0000-000${office}-${String(index).padStart(12, '0')}`,
+      department,
+      status: 'Active',
+    })),
+  );
+  const session = (id, title, month, status = 'Scheduled') => ({
+    id: `11111111-1111-1111-1111-${String(id).padStart(12, '0')}`,
+    title,
+    category: 'General',
+    scheduled_date: `2026-${month}-10T08:00:00.000Z`,
+    end_date: `2026-${month}-11T17:00:00.000Z`,
+    capacity: 500,
+    status,
+    objectives: [],
+  });
+  const sessions = [
+    session(1, 'Ethics in Public Service', '03'),
+    session(2, 'Local Governance & LGU Operations', '04'),
+    session(3, 'Records Management', '05'),
+    session(4, 'Customer Service in Government', '06'),
+    session(5, 'Year-End Planning', '12'),
+  ];
+  const tables = { employees_with_department: employees, training_sessions: sessions };
+  const client = {
+    from(table) {
+      if (!(table in tables)) throw new Error(`Unexpected table: ${table}`);
+      const chain = {
+        then: (resolve) => resolve({ data: tables[table], error: null }),
+      };
+      for (const method of ['select', 'in', 'eq', 'order']) chain[method] = () => chain;
+      for (const method of ['insert', 'upsert', 'update', 'delete']) {
+        chain[method] = () => { throw new Error(`Unexpected write: ${method} on ${table}`); };
+      }
+      return chain;
+    },
+  };
+  return { client, employees, sessions };
+});
+
+vi.mock('./lib/ipcr-shared.mjs', () => ({
+  loadEnv: () => ({}),
+  serviceClient: () => fixture.client,
+  die: (message) => { throw new Error(message); },
+}));
+
 import {
   computeEnrolledAt,
   effectiveStatus,
@@ -57,23 +116,24 @@ describe('seed-training-attendance', () => {
     expect(isGeneralOrEthics({ title: 'Civil Engineering Road Design', objectives: [] })).toBe(false);
   });
 
-  it('runs generateTrainingAttendance dry run and matches target compliance percentages', async () => {
+  it('dry run reports the target compliance split for the fixture roster', async () => {
     const result = await generateTrainingAttendance({ dryRun: true, writeSql: false, applyDb: false });
 
-    expect(result.totalEmployees).toBe(167);
-    expect(result.completedSessions).toBe(32);
-    expect(result.generatedEnrollments).toBe(252);
+    // 20 employees per office: 13 met, 4 partial, 3 none, across 5 offices.
+    expect(result.totalEmployees).toBe(fixture.employees.length);
+    expect(result.met).toBe(65);
+    expect(result.partial).toBe(20);
+    expect(result.none).toBe(15);
+    expect(result.met + result.partial + result.none).toBe(result.totalEmployees);
+    expect(result.metPct).toBe(65);
+    expect(result.partialPct).toBe(20);
+    expect(result.nonePct).toBe(15);
+  });
 
-    // Target ~65% Met, ~20% Partial, ~15% None
-    expect(result.metPct).toBeGreaterThanOrEqual(64);
-    expect(result.metPct).toBeLessThanOrEqual(66);
+  it('dry run counts past sessions only and enrolls each employee per their target', async () => {
+    const result = await generateTrainingAttendance({ dryRun: true, writeSql: false, applyDb: false });
 
-    expect(result.partialPct).toBeGreaterThanOrEqual(19);
-    expect(result.partialPct).toBeLessThanOrEqual(21);
-
-    expect(result.nonePct).toBeGreaterThanOrEqual(14);
-    expect(result.nonePct).toBeLessThanOrEqual(16);
-
-    expect(result.met + result.partial + result.none).toBe(167);
+    expect(result.completedSessions).toBe(fixture.sessions.length - 1);
+    expect(result.generatedEnrollments).toBe(result.met * 2 + result.partial);
   });
 });

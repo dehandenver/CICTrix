@@ -1,7 +1,7 @@
 ---
 title: The interviewer portal shows only applicants who were scheduled
 date: 2026-10-28
-status: Approved
+status: Done
 summary: The Assigned job postings table counted every applicant whose position matched, not the ones scheduled for an interview, so a posting read 6 while the list behind it held 1. Count and list both filter on an interview schedule now, and the applicant dedupe stops merging distinct people who share a plantilla item number. The oral assessment table's SCORE column no longer stretches to its longest option label and squeeze REMARKS off the row.
 spec: Reported 2026-10-28 with screenshots of the dashboard table and the evaluation form
 ---
@@ -82,3 +82,7 @@ dropdown does not need to repeat the words.
 - `npm test`
 - `npm run lint`
 - `npm run build`
+
+## Status check 2026-11-14
+
+Done. Shipped in `7273919` (PR #66): `isScheduledForInterview` in `src/lib/applicantSchedule.ts` (with tests) filters both the dashboard count and `InterviewerApplicantsList.tsx`; the applicant dedupe was changed; `src/styles/interviewer.css` fixes the SCORE column. See `docs/session-summaries/2026-10-28-interviewer-scheduled-applicants-only-summary.md`.

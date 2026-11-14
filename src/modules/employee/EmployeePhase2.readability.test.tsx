@@ -21,6 +21,7 @@ const makeSheet = (phase2Status: Phase2Status = 'open'): EmployeeRatingSheet => 
   period: 'July–December 2026',
   phase2Status,
   phase2OpenTargetDate: null,
+  returnedAt: null,
   mfos: [
     {
       id: 'mfo-1', functionType: 'core', title: 'Process reports',

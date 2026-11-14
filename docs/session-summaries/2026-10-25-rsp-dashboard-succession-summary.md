@@ -13,6 +13,7 @@ Plan: `docs/plans/2026-10-25-rsp-dashboard-succession.md`
 
 - The first build followed option B: named-only counts relabeled "named", with a KPI card and Coverage and Risk columns. After review the user asked to remove the KPI card, the Coverage and Risk columns, and to use the Succession Planning page's data, so the plan was revised the same day.
 - The modal's risk filter was dropped along with the Risk column; search is its only filter.
+- Added 2026-11-12 (audit): the D4 concurrency cap (`OVERVIEW_ENGINE_CONCURRENCY`) is gone. Commit `2514d8f` replaced the per-position engine calls with one batched `listAutoSuccessorsForPositions` call, which is the fix the plan named for slow loading.
 
 ## Checks run
 

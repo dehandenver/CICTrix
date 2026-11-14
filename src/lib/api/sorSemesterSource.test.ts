@@ -27,6 +27,7 @@ vi.mock('../supabase', () => {
     from: vi.fn((table: string) => {
       const eqFilters: [string, any][] = [];
       const inFilters: [string, any[]][] = [];
+      let range: [number, number] | null = null;
 
       const queryBuilder: any = {
         select: vi.fn((_cols = '*') => {
@@ -45,6 +46,10 @@ vi.mock('../supabase', () => {
           return queryBuilder;
         }),
         order: vi.fn(() => queryBuilder),
+        range: vi.fn((from: number, to: number) => {
+          range = [from, to];
+          return queryBuilder;
+        }),
         update: vi.fn((_payload: any) => queryBuilder),
         maybeSingle: vi.fn(async () => {
           const rows = getFilteredRows();
@@ -52,7 +57,7 @@ vi.mock('../supabase', () => {
         }),
         then: (resolve: (val: any) => void) => {
           const rows = getFilteredRows();
-          resolve({ data: rows, error: null });
+          resolve({ data: range ? rows.slice(range[0], range[1] + 1) : rows, error: null });
         },
       };
 

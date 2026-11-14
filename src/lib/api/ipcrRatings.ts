@@ -25,6 +25,8 @@ import type { FunctionType } from './ipcrTargets';
 import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
 import { createNotifications } from './employeeNotifications';
 import { type OfficeScope, getAcceptedOfficeNames, norm } from './officeScope';
+import { REASON_PARTIAL_SAVE, REASON_SELF_RATING_DRAFT, writeAuditEntry } from './ipcrAudit';
+import { NO_LONGER_PENDING } from './ipcrApproval';
 
 const supabase = supabaseClient as any;
 
@@ -81,7 +83,8 @@ export interface RatingInput {
   timeliness: number | null;
 }
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+// auditFailed: the action saved but its ipcr_audit_log row did not (see ipcrAudit.ts).
+type Result<T> = { ok: true; data: T; auditFailed?: boolean } | { ok: false; error: string };
 
 const nowIso = () => new Date().toISOString();
 const clamp15 = (v: number | null): number | null =>
@@ -417,19 +420,15 @@ export async function saveRatings(params: {
       }
     }
 
-    // Best-effort audit line.
-    supabase
-      .from('ipcr_audit_log')
-      .insert({
-        target_setting_id: targetSettingId,
-        action: 'rate',
-        performed_by: raterEmployeeId,
-        performed_by_role: 'office_account',
-        reason: complete ? 'Phase 2 rating completed' : 'Phase 2 partial save',
-      })
-      .then(() => undefined, () => undefined);
+    const audited = await writeAuditEntry({
+      target_setting_id: targetSettingId,
+      action: 'rate',
+      performed_by: raterEmployeeId,
+      performed_by_role: 'office_account',
+      reason: complete ? 'Phase 2 rating completed' : REASON_PARTIAL_SAVE,
+    });
 
-    return { ok: true, data: { phase2Status, overallScore, adjectival } };
+    return { ok: true, data: { phase2Status, overallScore, adjectival }, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to save ratings.' };
   }
@@ -562,6 +561,8 @@ async function rollUpToWorkspace(
 
 export interface EmployeeRatingSheet extends RatingSheet {
   phase2OpenTargetDate: string | null;
+  /** Set while the reviewer has returned the sheet and the employee hasn't resubmitted. */
+  returnedAt: string | null;
 }
 
 /**
@@ -606,6 +607,7 @@ export async function loadEmployeeRatingSheet(
         // phase2_status may be undefined pre-migration → treat as locked.
         phase2Status: (setting.phase2_status ?? 'locked') as Phase2Status,
         phase2OpenTargetDate: setting.phase2_open_target_date ?? null,
+        returnedAt: setting.phase2_returned_at ?? null,
       },
     };
   } catch (err) {
@@ -677,6 +679,8 @@ export async function saveEmployeeRatings(params: {
         phase2_status: phase2Status,
         phase2_completed_at: submit ? nowIso() : null,
         phase2_submitted_at: submit ? nowIso() : null,
+        // A resubmit answers the reviewer's return, so the marker and its comment go.
+        ...(submit ? { phase2_returned_at: null, review_comment: null } : {}),
         updated_at: nowIso(),
       })
       .eq('id', targetSettingId);
@@ -707,16 +711,14 @@ export async function saveEmployeeRatings(params: {
       adjectival: null,
     }));
 
-    supabase
-      .from('ipcr_audit_log')
-      .insert({
-        target_setting_id: targetSettingId,
-        action: 'rate',
-        performed_by: employeeId,
-        performed_by_role: 'employee',
-        reason: submit ? 'Phase 2 self-rating submitted' : 'Phase 2 self-rating draft',
-      })
-      .then(() => undefined, () => undefined);
+    // The employee is not the reader of the audit trail; writeAuditEntry logs a failure.
+    void writeAuditEntry({
+      target_setting_id: targetSettingId,
+      action: 'rate',
+      performed_by: employeeId,
+      performed_by_role: 'employee',
+      reason: submit ? 'Phase 2 self-rating submitted' : REASON_SELF_RATING_DRAFT,
+    });
 
     return { ok: true, data: { phase2Status, overallScore, adjectival } };
   } catch (err) {
@@ -762,7 +764,8 @@ export async function openSelfRatingPeriod(params: {
 
 /**
  * Office/PM bulk action: CLOSE the self-rating window. Flips every currently
- * OPEN or IN_PROGRESS record to 'closed' (records who/when). Records that were
+ * OPEN or IN_PROGRESS record to 'closed' (records who/when), except a sheet
+ * returned for revision, which stays open until resubmitted. Records that were
  * already 'completed' (employee submitted) are left as-is — they're terminal.
  * Closing is allowed even if not every employee has submitted; the employee then
  * sees a read-only view of whatever they had saved.
@@ -776,7 +779,9 @@ export async function closeSelfRatingPeriod(params: {
       .from('target_settings')
       .select('id, employee_id')
       .eq('status', 'approved')
-      .in('phase2_status', ['open', 'in_progress']);
+      .in('phase2_status', ['open', 'in_progress'])
+      // A sheet returned for revision stays open until the employee resubmits.
+      .is('phase2_returned_at', null);
     if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
     const { data: openRows, error } = await query;
     if (error) return { ok: false, error: error.message };
@@ -943,17 +948,22 @@ export async function returnPhase2ForRevision(p: {
   comment: string;
 }): Promise<Result<null>> {
   try {
-    const { error } = await supabase
+    const { data: changed, error } = await supabase
       .from('target_settings')
       .update({
         phase2_status: 'in_progress', // revert to in_progress so employee can edit
+        phase2_returned_at: nowIso(),
         review_comment: p.comment?.trim() || null,
         updated_at: nowIso(),
       })
-      .eq('id', p.targetSettingId);
+      .eq('id', p.targetSettingId)
+      .eq('phase2_status', 'completed') // only a sheet still waiting for review
+      .is('phase2_approved_at', null)
+      .select('id');
     if (error) return { ok: false, error: error.message };
+    if (!changed?.length) return { ok: false, error: NO_LONGER_PENDING };
 
-    await supabase.from('ipcr_audit_log').insert({
+    const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
       action: 'return_phase2',
       performed_by: p.approverEmployeeId,
@@ -985,7 +995,7 @@ export async function returnPhase2ForRevision(p: {
       },
     ]);
 
-    return { ok: true, data: null };
+    return { ok: true, data: null, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Return failed.' };
   }
@@ -1019,7 +1029,7 @@ export async function adminEditRatings(p: {
       if (error) return { ok: false, error: error.message };
     }
 
-    await supabase.from('ipcr_audit_log').insert({
+    const audited = await writeAuditEntry({
       target_setting_id: p.targetSettingId,
       action: 'admin_edit_ratings',
       performed_by: p.approverEmployeeId,
@@ -1027,7 +1037,7 @@ export async function adminEditRatings(p: {
       reason: 'Office Account edited ratings/accomplishments before approval',
     });
 
-    return { ok: true, data: null };
+    return { ok: true, data: null, ...(audited ? {} : { auditFailed: true }) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Edit failed.' };
   }

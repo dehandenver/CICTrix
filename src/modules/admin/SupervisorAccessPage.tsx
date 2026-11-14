@@ -96,7 +96,7 @@ export const SupervisorAccessPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
+    <div className="min-h-screen bg-[var(--bg-page)] ds-remap abyan-tokens">
       <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
       <div className="admin-layout">
         <Sidebar activeModule="Super" userRole="super-admin" />
@@ -154,7 +154,7 @@ export const SupervisorAccessPage = () => {
             style={{
               marginTop: '20px',
               background: '#fff',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--neutral-200)',
               borderRadius: '12px',
               overflow: 'hidden',
             }}
@@ -162,17 +162,17 @@ export const SupervisorAccessPage = () => {
             <div
               style={{
                 padding: '16px 20px',
-                borderBottom: '1px solid #e5e7eb',
+                borderBottom: '1px solid var(--neutral-200)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
                 fontWeight: 600,
-                color: '#1f2937',
+                color: 'var(--neutral-800)',
               }}
             >
               <Users size={18} />
               Supervisor List
-              <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+              <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: 'var(--neutral-600)' }}>
                 {supervisorsLoad.initialLoading ? '' : `${supervisors.length} account${supervisors.length === 1 ? '' : 's'}`}
               </span>
             </div>
@@ -180,7 +180,7 @@ export const SupervisorAccessPage = () => {
             {supervisorsLoad.initialLoading ? (
               <SkeletonList show={supervisorsLoad.showSkeleton} label="Loading supervisors…" />
             ) : supervisors.length === 0 && !loadError ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--neutral-600)' }}>
                 No supervisors found. Run migration{' '}
                 <code>010_create_supervisors.sql</code> to create and seed the table.
               </div>
@@ -201,12 +201,12 @@ export const SupervisorAccessPage = () => {
                     {supervisors.map((s) => (
                       <tr key={s.id}>
                         <td style={td}>
-                          <span style={{ fontWeight: 600, color: '#1f2937' }}>{s.full_name}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--neutral-800)' }}>{s.full_name}</span>
                         </td>
                         <td style={td}>{s.department || '—'}</td>
                         <td style={td}>{s.position || '—'}</td>
                         <td style={td}>
-                          <code style={{ color: '#374151' }}>{s.username}</code>
+                          <code style={{ color: 'var(--neutral-800)' }}>{s.username}</code>
                         </td>
                         <td style={td}>
                           <StatusBadge supervisor={s} />
@@ -302,8 +302,8 @@ export const SupervisorAccessPage = () => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                background: '#f3f4f6',
-                border: '1px solid #e5e7eb',
+                background: 'var(--bg-page)',
+                border: '1px solid var(--neutral-200)',
                 borderRadius: '8px',
                 padding: '12px 14px',
                 marginBottom: '16px',
@@ -343,7 +343,7 @@ const StatusBadge = ({ supervisor }: { supervisor: Supervisor }) => {
           fontSize: '12px',
           fontWeight: 600,
           background: isActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(107, 114, 128, 0.15)',
-          color: isActive ? '#047857' : '#4b5563',
+          color: isActive ? '#047857' : 'var(--neutral-600)',
         }}
       >
         {supervisor.account_status}
@@ -357,7 +357,7 @@ const StatusBadge = ({ supervisor }: { supervisor: Supervisor }) => {
             fontSize: '11px',
             fontWeight: 600,
             background: 'rgba(245, 158, 11, 0.15)',
-            color: '#b45309',
+            color: 'var(--warning-700)',
           }}
         >
           Temporary password
@@ -391,8 +391,8 @@ const resetButton: React.CSSProperties = {
 const secondaryButton: React.CSSProperties = {
   padding: '8px 16px',
   background: '#fff',
-  color: '#374151',
-  border: '1px solid #d1d5db',
+  color: 'var(--neutral-800)',
+  border: '1px solid var(--neutral-200)',
   borderRadius: '8px',
   fontSize: '13px',
   fontWeight: 600,

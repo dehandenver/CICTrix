@@ -62,7 +62,7 @@
   <main>
     <h1>Plans</h1>
     <p class="lede">Feature plans and their session summaries. Newest first.</p>
-    <p class="counts">121 plans &middot; 100 done</p>
+    <p class="counts">133 plans &middot; 126 done</p>
 
     <section>
       <h2>Plans</h2>
@@ -72,6 +72,61 @@
       <tr>
         <td class="date">2026-11-14</td>
         <td><a href="2026-11-14-shared-combobox.md">Extract a shared Combobox from JobVacanciesPanel</a><p class="summary">Move the search-and-pick behavior in the Open Vacancy dialog into a reusable src/components/combobox, with no visible change to the dialog.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-14</td>
+        <td><a href="2026-11-14-pm-modals-and-feedback.md">Move the PM portal onto the shared Modal and action feedback</a><p class="summary">Finish standard-modal Phase 4 and loading-and-action-feedback Step 4 for the PM portal. Six hand-rolled overlays move to Modal or ConfirmModal, four untitled Dialogs get a header, and 27 alert() calls become inline form errors, toasts or useAsyncAction failures.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-05</td>
+        <td><a href="2026-11-05-remove-leaked-key-files.md">Remove leaked Supabase keys from tracked files</a><p class="summary">Untrack scratch/ and .claude/settings.local.json and scrub VERCEL_DEPLOYMENT.md so no tracked file holds a Supabase JWT. Does not stop the key working; rotation is Phase 1.2 of the security remediation plan.</p></td>
+        <td class="status"><span class="badge badge-info">In Progress</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-05</td>
+        <td><a href="2026-11-05-competency-position-list-limits.md">Remove the position list limits in the competency framework</a><p class="summary">The PM position dropdown stops at 50 of 197 positions, and whole-table reads of position_competency_requirements would silently truncate at the API's 1,000-row limit. Show every position and page those reads without changing what any caller receives.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-03</td>
+        <td><a href="2026-11-03-ipcr-return-lockout-and-audit-history.md">Fix the IPCR return-for-revision lockout and add an audit history tab</a><p class="summary">A returned Phase 1 IPCR stays locked for the employee and blocks Phase 2 because two status records disagree. Fix that, then give the Office Account console a History tab per phase that reads the existing audit log.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-03</td>
+        <td><a href="2026-11-03-ipcr-phase2-return-lockout.md">Keep a returned Phase 2 rating sheet editable</a><p class="summary">A Phase 2 sheet returned for revision stays editable and submittable after the rating window closes, and closing the period no longer locks it. Adds a phase2_returned_at marker and a pending-only guard on the return.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-03</td>
+        <td><a href="2026-11-03-design-identity-alignment.md">Align the non-RSP portals with the design identity (UI only)</a><p class="summary">Bring the Super Admin, PM, Office, L&amp;D, Interviewer, Employee and Public pages onto the DESIGN_IDENTITY.md colors, font and pill buttons by reusing the RSP utility remap and swapping inline literals for tokens, with no change to behavior, data or routing.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-02</td>
+        <td><a href="2026-11-02-ipcr-target-row-alignment.md">Top-align MFO and Success Indicator inputs in the employee IPCR targets form</a><p class="summary">The MFO input sits lower than the first Success Indicator input because the shared table rule centers cells vertically. Top-align the cells so the first MFO and first indicator share a baseline.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="2026-10-30-promotional-hiring-fixes.md">Repair the promotional hiring pipeline</a><p class="summary">Repair the active employee application and RSP promotion flow, including scheduled interviewer visibility, durable scores, selection visibility, appointment completion, and existing-account preservation. Security remediation and the unused PM promotion module are excluded.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="2026-10-30-promotional-hiring-audit.md">Verify the promotional hiring pipeline</a><p class="summary">Read-only audit of promotion applications, evaluation, selection, appointment, and employee updates. Approved in chat; no application code or live records will be changed.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="2026-10-30-interviewer-promotional-tag.md">Mark promotional applicants in interviewer candidate tables</a><p class="summary">Show a &quot;Promotional&quot; tag and the employee's current position on interviewer candidate rows, and make every interviewer screen decide promotional vs original from the application's own type, so hired external applicants stop reading as promotions.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="2026-10-30-applicant-status-and-score-writes.md">Fix applicant score and status writes, and the live-data seed test</a><p class="summary">Remove the unreachable RSP score path that writes a missing `applicants.total_score` column, move evaluated applicants to For Evaluation without overwriting a newer status, guard the interviewer Qualify and Disqualify writer, keep applications that share an email independent, and stop the training-attendance seed test from depending on live data.</p></td>
         <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
@@ -115,6 +170,11 @@
         <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
+        <td class="date">2026-10-29</td>
+        <td><a href="2026-10-29-application-submission-feedback.md">Fix application confirmation counts and position labels</a><p class="summary">Keep the submit confirmation's wording fixed while requests run, and lead the review cards and success rows with the position title, with the plantilla as smaller text beneath it.</p></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
+      </tr>
+      <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-succession-v2-auto-fallback.md">Succession Planning V2 Automated Fallbacks &amp; Review Bypass</a><p class="summary">Bypass manual evidence review gating in Succession V2 and add multi-tier database fallbacks (department name resolution, date_hired tenure, profile education and eligibility) so qualified successors load and rank immediately.</p></td>
         <td class="status"><span class="badge badge-success">Done</span></td>
@@ -122,7 +182,7 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-succession-v2-auto-and-reconnection-plan.md">Succession V2 Candidate Unblocking &amp; Evidence Review Reconnection Roadmap</a><p class="summary">Fix candidate discovery in Succession V2 using department text lookup and multi-tier PDS fallbacks to populate successors immediately, and outline the future roadmap for reconnecting manual reviews and Security Phase 4A.</p></td>
-        <td class="status"><span class="badge badge-neutral">Draft</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -132,7 +192,7 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-page-by-page-rollout-implementation-plan.md">Page-by-Page System Rollout Implementation Plan</a><p class="summary">Multi-agent sanity, smoke, and Vitest test audit certifying all 51 page surfaces across all 7 CICTrix HRIS portals on the main branch.</p></td>
-        <td class="status"><span class="badge badge-primary">Approved</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -152,7 +212,7 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-interviewer-scheduled-applicants-only.md">The interviewer portal shows only applicants who were scheduled</a><p class="summary">The Assigned job postings table counted every applicant whose position matched, not the ones scheduled for an interview, so a posting read 6 while the list behind it held 1. Count and list both filter on an interview schedule now, and the applicant dedupe stops merging distinct people who share a plantilla item number. The oral assessment table's SCORE column no longer stretches to its longest option label and squeeze REMARKS off the row.</p></td>
-        <td class="status"><span class="badge badge-primary">Approved</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -162,7 +222,7 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-for-hiring-scored-only.md">For Hiring lists only applicants who were scored</a><p class="summary">The ranked list showed anyone merely Qualified, so applicants with no interview or exam score sat in a table ordered by interview score. Visibility now requires both scores, with applicants already past selection kept regardless, and the page refreshes from Supabase realtime instead of two same-tab events.</p></td>
-        <td class="status"><span class="badge badge-primary">Approved</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -212,17 +272,17 @@
       <tr>
         <td class="date">2026-10-27</td>
         <td><a href="2026-10-27-sor-competency-breakdown.md">Populate the Summary of Ratings competency breakdown</a><p class="summary">Run the AI competency matcher/assessor into the mirror so Summary of Ratings shows a real per-competency breakdown, and render assessed competencies with a nullable required level so an unconfigured Competency Map no longer blanks the whole panel.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-27</td>
         <td><a href="2026-10-27-pds-education-succession.md">Feed PDS education into succession readiness</a><p class="summary">Succession reads `employee_education` directly, the way it already reads `employee_eligibility`, so an employee's PDS education edit changes their succession gate and education score. No migration, no backfill, no writes.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-27</td>
         <td><a href="2026-10-27-open-vacancy-with-no-vacant-plantilla.md">A vacancy with no vacant plantilla must say so</a><p class="summary">Job Vacancies called a position Open while its only plantilla was filled, so the public vacancy table — which lists one row per open plantilla — showed nothing. Give both surfaces the same predicate, label a fully filled vacancy as such instead of Open, and make open_vacancy refuse a position with no plantilla left to fill.</p></td>
-        <td class="status"><span class="badge badge-primary">Approved</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
@@ -287,7 +347,7 @@
       <tr>
         <td class="date">2026-10-26</td>
         <td><a href="2026-10-26-loading-and-error-states.md">Loading states and error handling across the system</a><p class="summary">Audit every fetch/action site, extend the shared loading/error building blocks, and fix every site module by module so failures say what went wrong, whether it completed, and what to do next.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
@@ -302,7 +362,7 @@
       <tr>
         <td class="date">2026-10-26</td>
         <td><a href="2026-10-26-ipcr-surface-sync.md">Sync every IPCR surface from the authoritative record</a><p class="summary">Make a finished Phase 1/2 IPCR land in every derived store, backfill the 272 seeded IPCRs through the same function, and fill the missing accomplishment text, so the Summary of Ratings, tracker, vault, PM dashboard, archive and RSP all read real data.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
@@ -362,7 +422,7 @@
       <tr>
         <td class="date">2026-10-25</td>
         <td><a href="2026-10-25-rsp-dashboard-succession.md">RSP dashboard succession section — ranked successors, drill-in, View all</a><p class="summary">The dashboard's succession section becomes one table (Key position, Incumbent leaves, Successors) whose counts come from the Succession Planning page's ranking engine; rows open the position on that page and a View all modal lists every key position.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-25</td>
@@ -392,7 +452,7 @@
       <tr>
         <td class="date">2026-10-23</td>
         <td><a href="2026-10-23-plantilla-per-row.md">Paginated application form, one posting per plantilla, plantilla and office cleanup</a><p class="summary">Split Step 2 of the application into pages with per-page validation. Split merged postings back into one posting per plantilla so each plantilla has its own status, details and delete. Soft-delete the duplicate plantillas 152, 159, 162, 163, 164, and the Legal and Information Technology postings, and deactivate those two departments.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-danger">Blocked</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-23</td>
@@ -407,7 +467,7 @@
       <tr>
         <td class="date">2026-10-22</td>
         <td><a href="2026-10-22-vacancy-open-close.md">Job Posts — two tabs, Open/Closed status, manual and automatic vacancy closing</a><p class="summary">Remove the Filled Positions tab and the Filled posting status. Job Positions shows every position as Open or Closed (derived). Job Vacancies lists only open vacancies, opened through Open Vacant Job Position and closed early through a Close Vacancy confirmation with a reason. Each opening is a job_vacancies row; RPCs enforce the RSP role, one active vacancy per position, and the audit trail. pg_cron and the application insert trigger close vacancies at the Manila deadline.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-22</td>
@@ -462,7 +522,7 @@
       <tr>
         <td class="date">2026-10-21</td>
         <td><a href="2026-10-21-gso-postings-fixup.md">Bring the General Services Office up to the imported-office standard</a><p class="summary">The 25 GSO seats exist live but went in bare. Add the office, weighting C and its divisions, fill every post's CSC qualifications, duties, documents and summary, and open the 5 vacant posts with dates, in one transactional SQL file.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-21</td>
@@ -492,7 +552,7 @@
       <tr>
         <td class="date">2026-10-20</td>
         <td><a href="2026-10-20-import-sheet-job-postings.md">Import the office plantilla sheet as job postings</a><p class="summary">Turn the four-office plantilla Google Sheet into job postings, plantilla slots, a new Social Welfare office and per-office divisions, with Faker filling the qualification fields inside CSC rules, and keep divisions out of office lists.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-20</td>
@@ -577,7 +637,7 @@
       <tr>
         <td class="date">2026-10-15</td>
         <td><a href="2026-10-15-one-reference-multi-plantilla.md">One Reference No. per applicant across plantillas, with hired-elsewhere state</a><p class="summary">An applicant keeps one Reference No. for every plantilla they apply to. Being hired on one plantilla withdraws their other open applications, which stay visible as &quot;Hired elsewhere&quot;. The tracker shows every application under the reference.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-15</td>
@@ -637,7 +697,7 @@
       <tr>
         <td class="date">2026-10-06</td>
         <td><a href="2026-10-06-real-vacancies-plantilla-form.md">Real vacancies only, per-plantilla salary, reference numbers in RSP</a><p class="summary">The landing page lists only open RSP postings; the Create Job form drops shared salary fields and reorder arrows; the applicant detail view shows the reference number. Database work (demo rebuild, atomic save) waits for approval.</p></td>
-        <td class="status"><span class="badge badge-info">In Progress</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-06</td>
@@ -688,6 +748,58 @@
         <td><a href="../session-summaries/2026-11-14-shared-combobox-summary.md">Shared Combobox extraction</a></td>
       </tr>
       <tr>
+        <td class="date">2026-11-14</td>
+        <td><a href="../session-summaries/2026-11-14-pm-modals-and-feedback-summary.md">Move the PM portal onto the shared Modal and action feedback (summary)</a><p class="meta">Plan: <a href="2026-11-14-pm-modals-and-feedback.md">2026-11-14-pm-modals-and-feedback.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-05</td>
+        <td><a href="../session-summaries/2026-11-05-remove-leaked-key-files-summary.md">Remove leaked Supabase keys from tracked files</a><p class="summary">No tracked file holds a Supabase JWT any more. The key is not revoked and stays in Git history until rotated. Nothing pushed yet.</p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-05</td>
+        <td><a href="../session-summaries/2026-11-05-competency-position-list-limits-summary.md">Competency position list limits: summary</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-03</td>
+        <td><a href="../session-summaries/2026-11-03-ipcr-return-lockout-and-audit-history-summary.md">IPCR return lockout fix and audit history tab</a><p class="summary">A returned Phase 1 IPCR is now editable and resubmittable, and each phase of the Office Account console has a History tab over the existing audit log. Type-check, lint and 1,340 src tests pass. The new screen was not checked in a browser.</p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-03</td>
+        <td><a href="../session-summaries/2026-11-03-ipcr-phase2-return-lockout-summary.md">Keep a returned Phase 2 rating sheet editable</a><p class="summary">A Phase 2 sheet returned for revision now stays editable and submittable after the rating window closes, and closing the period skips it. Type-check, lint, the migration check and 1,483 src tests pass, and a network-stubbed browser run confirmed both screens.</p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-03</td>
+        <td><a href="../session-summaries/2026-11-03-design-identity-alignment-summary.md">Design identity alignment of the non-RSP portals</a><p class="summary">Steps 1 to 7 of the alignment plan are done and merged in #11 and #12. The Super Admin, PM, L&amp;D, Interviewer, Employee and Public pages now use design tokens and the shared remap scope. Type-check, lint, build and tests pass apart from 2 failures that were already there. Before/after screenshots show only the intended colour changes.</p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-02</td>
+        <td><a href="../session-summaries/2026-11-02-ipcr-target-row-alignment-summary.md">IPCR target row alignment: summary</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="../session-summaries/2026-10-30-promotional-hiring-fixes-summary.md">Promotional hiring implementation progress</a><p class="summary">Tasks 1–7 are committed and verified. Task 8’s isolated acceptance passed for the promotion transaction (one employee, unchanged account, retry-safe, mixed batches correct). The defects it found that block the plan, F1–F3 and the pre-existing external-hire office failure F4, are fixed; F5–F8 are pre-existing and tracked separately. The 2026-11-02 failure-path run and branch review fixed the shared modal focus gap (`4a947ed`) and found F9–F12 in score saving and the uncertain-promotion message; all four are fixed (`3d60c60`, `0deca4a`) and rechecked on the local stack. A review of those fixes found two more gaps, I1 and M1, fixed in `40e0dc1`. Only `npm run build` remains, blocked by this machine.</p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="../session-summaries/2026-10-30-promotional-hiring-fixes-plan-summary.md">Promotional hiring fixes plan drafted</a><p class="summary">Drafted a functional implementation plan from the promotion audit; remediation work and the unused PM promotion module remain excluded. No implementation or deployment was performed.</p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="../session-summaries/2026-10-30-promotional-hiring-audit-summary.md">Promotional hiring pipeline audit</a><p class="summary">The promotion pipeline is partially implemented but not ready for end-to-end sign-off. Read-only evidence identifies selection, employee identity, account preservation, persistence, and authorization blockers.</p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="../session-summaries/2026-10-30-live-db-claims-verification-summary.md">Live database check of handoff claims</a><p class="summary">A read-only check of claims from another agent's handoff against the live Supabase database. applicants.total_score is missing and no applicants have status Reviewed. The training and IPCR counts match. The employee figures in the handoff and in the seed test don't measure the same thing as a plain employee count, so the test is the problem, not the data.</p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="../session-summaries/2026-10-30-interviewer-promotional-tag-summary.md">Mark promotional applicants in interviewer candidate tables — summary</a><p class="meta">Plan: <a href="2026-10-30-interviewer-promotional-tag.md">2026-10-30-interviewer-promotional-tag.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-30</td>
+        <td><a href="../session-summaries/2026-10-30-applicant-status-and-score-writes-summary.md">Applicant status and score writes: session summary</a></td>
+      </tr>
+      <tr>
         <td class="date">2026-10-29</td>
         <td><a href="../session-summaries/2026-10-29-ipcr-reload-hydration-summary.md">IPCR reload hydration</a></td>
       </tr>
@@ -720,8 +832,16 @@
         <td><a href="../session-summaries/2026-10-29-competency-assessment-queue-and-actions-summary.md">Session Summary: 2026-10-29 Drain Competency Assessment Queue and Setup GitHub Actions Automation</a></td>
       </tr>
       <tr>
+        <td class="date">2026-10-29</td>
+        <td><a href="../session-summaries/2026-10-29-application-submission-feedback-summary.md">Application submission feedback (summary)</a><p class="meta">Plan: <a href="2026-10-29-application-submission-feedback.md">2026-10-29-application-submission-feedback.md</a></p></td>
+      </tr>
+      <tr>
         <td class="date">2026-10-28</td>
         <td><a href="../session-summaries/2026-10-28-succession-v2-auto-fallback-summary.md">Session Summary: Succession V2 Automated Fallbacks &amp; Review Bypass</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-28</td>
+        <td><a href="../session-summaries/2026-10-28-succession-v2-auto-and-reconnection-summary.md">Succession V2 candidate unblocking and reconnection roadmap (summary)</a><p class="meta">Plan: <a href="2026-10-28-succession-v2-auto-and-reconnection-plan.md">2026-10-28-succession-v2-auto-and-reconnection-plan.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -730,6 +850,10 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="../session-summaries/2026-10-28-remote-applicant-scores-summary.md">Remote Applicant Scores &amp; Exam Scoring Migration Summary</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-28</td>
+        <td><a href="../session-summaries/2026-10-28-page-by-page-rollout-summary.md">Page-by-page system rollout (summary)</a><p class="meta">Plan: <a href="2026-10-28-page-by-page-rollout-implementation-plan.md">2026-10-28-page-by-page-rollout-implementation-plan.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -745,7 +869,15 @@
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
+        <td><a href="../session-summaries/2026-10-28-interviewer-scheduled-applicants-only-summary.md">The interviewer portal shows only applicants who were scheduled (summary)</a><p class="meta">Plan: <a href="2026-10-28-interviewer-scheduled-applicants-only.md">2026-10-28-interviewer-scheduled-applicants-only.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-28</td>
         <td><a href="../session-summaries/2026-10-28-for-hiring-selection-blocked-summary.md">For Hiring selection unblocked and plantilla resolution hardened — summary</a><p class="meta">Plan: <a href="2026-10-28-for-hiring-selection-blocked.md">2026-10-28-for-hiring-selection-blocked.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-28</td>
+        <td><a href="../session-summaries/2026-10-28-for-hiring-scored-only-summary.md">For Hiring lists only applicants who were scored (summary)</a><p class="meta">Plan: <a href="2026-10-28-for-hiring-scored-only.md">2026-10-28-for-hiring-scored-only.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -793,11 +925,19 @@
       </tr>
       <tr>
         <td class="date">2026-10-27</td>
+        <td><a href="../session-summaries/2026-10-27-sor-competency-breakdown-summary.md">SOR competency breakdown (summary)</a><p class="meta">Plan: <a href="2026-10-27-sor-competency-breakdown.md">2026-10-27-sor-competency-breakdown.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-27</td>
         <td><a href="../session-summaries/2026-10-27-security-review-summary.md">Security remediation plan review and expansion</a><p class="summary">Added 11 evidence-backed security findings, refreshed live permission evidence, corrected outdated remediation advice, and expanded containment and regression checks. Investigation complete; remediation remains Draft.</p></td>
       </tr>
       <tr>
         <td class="date">2026-10-27</td>
         <td><a href="../session-summaries/2026-10-27-pds-education-succession-summary.md">PDS education into succession readiness: session summary</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-27</td>
+        <td><a href="../session-summaries/2026-10-27-open-vacancy-with-no-vacant-plantilla-summary.md">A vacancy with no vacant plantilla must say so (summary)</a><p class="meta">Plan: <a href="2026-10-27-open-vacancy-with-no-vacant-plantilla.md">2026-10-27-open-vacancy-with-no-vacant-plantilla.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
@@ -849,11 +989,19 @@
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
+        <td><a href="../session-summaries/2026-10-26-loading-and-error-states-summary.md">Loading and error states (summary)</a><p class="meta">Plan: <a href="2026-10-26-loading-and-error-states.md">2026-10-26-loading-and-error-states.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-26</td>
         <td><a href="../session-summaries/2026-10-26-loading-action-feedback-summary.md">Loading and action feedback — first slice summary</a><p class="meta">Plan: <a href="2026-10-26-loading-and-action-feedback.md">2026-10-26-loading-and-action-feedback.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
         <td><a href="../session-summaries/2026-10-26-lint-green-summary.md">Lint green on current main (summary)</a><p class="meta">Plan: <a href="2026-10-26-lint-green.md">2026-10-26-lint-green.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-26</td>
+        <td><a href="../session-summaries/2026-10-26-ipcr-surface-sync-summary.md">Sync every IPCR surface from the authoritative record (summary)</a><p class="meta">Plan: <a href="2026-10-26-ipcr-surface-sync.md">2026-10-26-ipcr-surface-sync.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
@@ -969,6 +1117,10 @@
       </tr>
       <tr>
         <td class="date">2026-10-21</td>
+        <td><a href="../session-summaries/2026-10-21-gso-postings-fixup-summary.md">Bring the General Services Office up to the imported-office standard (summary)</a><p class="meta">Plan: <a href="2026-10-21-gso-postings-fixup.md">2026-10-21-gso-postings-fixup.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-21</td>
         <td><a href="../session-summaries/2026-10-21-appoint-department-head-modal-redesign-summary.md">Session Summary: Appoint Department Head Modal Redesign</a></td>
       </tr>
       <tr>
@@ -982,6 +1134,10 @@
       <tr>
         <td class="date">2026-10-20</td>
         <td><a href="../session-summaries/2026-10-20-migration-guard-summary.md">Migration guard: summary</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-20</td>
+        <td><a href="../session-summaries/2026-10-20-import-sheet-job-postings-summary.md">Import the office plantilla sheet as job postings (summary)</a><p class="meta">Plan: <a href="2026-10-20-import-sheet-job-postings.md">2026-10-20-import-sheet-job-postings.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-20</td>
@@ -1045,6 +1201,10 @@
       </tr>
       <tr>
         <td class="date">2026-10-15</td>
+        <td><a href="../session-summaries/2026-10-15-one-reference-multi-plantilla-summary.md">One Reference No. per applicant across plantillas (summary)</a><p class="meta">Plan: <a href="2026-10-15-one-reference-multi-plantilla.md">2026-10-15-one-reference-multi-plantilla.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-15</td>
         <td><a href="../session-summaries/2026-10-15-lnd-dashboard-layout-a-summary.md">L&amp;D Dashboard Layout A — summary</a></td>
       </tr>
       <tr>
@@ -1082,6 +1242,10 @@
       <tr>
         <td class="date">2026-10-07</td>
         <td><a href="../session-summaries/2026-10-07-applicant-review-nav-summary.md">Next/previous navigation in RSP applicant review — summary</a><p class="meta">Plan: <a href="2026-10-07-applicant-review-nav.md">2026-10-07-applicant-review-nav.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-06</td>
+        <td><a href="../session-summaries/2026-10-06-real-vacancies-plantilla-form-summary.md">Real vacancies and the plantilla form (summary)</a><p class="meta">Plan: <a href="2026-10-06-real-vacancies-plantilla-form.md">2026-10-06-real-vacancies-plantilla-form.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-06</td>
