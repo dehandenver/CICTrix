@@ -231,7 +231,7 @@ export const RspArchives = ({ records, onPurge, onOpenAssessment }: RspArchivesP
               {activeFilterCount > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-primary)] px-1.5 text-[11px] font-semibold text-white">{activeFilterCount}</span>}
             </button>
             {popover === 'filters' && (
-              <div role="dialog" aria-label="Filters" className="absolute left-0 top-[calc(100%+6px)] z-20 grid w-[300px] gap-3 rounded-lg border border-[var(--neutral-200)] bg-white p-4 shadow-[var(--shadow-2)]">
+              <div role="dialog" aria-label="Filters" className="absolute left-0 top-[calc(100%+6px)] z-20 grid w-[300px] gap-3 rounded-lg border border-[var(--neutral-200)] bg-white p-4 shadow-[shadow:var(--shadow-2)]">
                 <label className="grid gap-1.5 text-[13px] font-medium text-[var(--neutral-800)]">
                   Department
                   <select value={filters.department} onChange={(e) => update({ department: e.target.value })} className="h-9 w-full rounded-lg border border-[var(--neutral-200)] px-2.5 text-sm font-medium text-[var(--neutral-800)]">
@@ -274,7 +274,7 @@ export const RspArchives = ({ records, onPurge, onOpenAssessment }: RspArchivesP
               Export
             </button>
             {popover === 'export' && (
-              <div role="menu" className="absolute right-0 top-[calc(100%+6px)] z-20 w-[200px] rounded-lg border border-[var(--neutral-200)] bg-white p-1.5 shadow-[var(--shadow-2)]">
+              <div role="menu" className="absolute right-0 top-[calc(100%+6px)] z-20 w-[200px] rounded-lg border border-[var(--neutral-200)] bg-white p-1.5 shadow-[shadow:var(--shadow-2)]">
                 <button type="button" role="menuitem" onClick={exportCsv} className="flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-[var(--neutral-800)] hover:bg-[var(--color-primary-50)] hover:text-[var(--color-primary)]">
                   <FileText className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />Download CSV
                 </button>
@@ -425,7 +425,7 @@ export const RspArchives = ({ records, onPurge, onOpenAssessment }: RspArchivesP
 
       <div aria-live="polite" className="pointer-events-none fixed right-6 top-20 z-[1100]">
         {toast && (
-          <div role="status" className="pointer-events-auto w-[min(360px,calc(100vw-32px))] rounded-xl border-l-4 border-[var(--success-500)] bg-white p-4 text-sm font-medium text-[var(--neutral-800)] shadow-[var(--shadow-3)]">
+          <div role="status" className="pointer-events-auto w-[min(360px,calc(100vw-32px))] rounded-xl border-l-4 border-[var(--success-500)] bg-white p-4 text-sm font-medium text-[var(--neutral-800)] shadow-[shadow:var(--shadow-3)]">
             {toast}
           </div>
         )}
