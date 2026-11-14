@@ -1,7 +1,7 @@
 ---
 title: One Reference No. per applicant across plantillas, with hired-elsewhere state
 date: 2026-10-15
-status: In Progress
+status: Done
 summary: An applicant keeps one Reference No. for every plantilla they apply to. Being hired on one plantilla withdraws their other open applications, which stay visible as "Hired elsewhere". The tracker shows every application under the reference.
 spec: List option A in docs/mockups/2026-10-15-rsp-hired-elsewhere-row.html; tracker layout A in docs/mockups/2026-10-15-tracker-multi-application.html (both chosen 2026-10-15)
 ---
@@ -77,4 +77,4 @@ Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vi
 
 ## Status check 2026-11-14
 
-D8a built on `feat/reference-apps-chip` (chip and popover on the Applications tab and For Hiring). tsc, lint and the full Vitest suite pass. Still In Progress only for the browser check, which needs an RSP sign-in. Then mark Done. See `docs/session-summaries/2026-10-15-one-reference-multi-plantilla-summary.md`.
+D8a built on `feat/reference-apps-chip` (chip and popover on the Applications tab and For Hiring). tsc, lint and the full Vitest suite pass. Marked Done 2026-11-14. The user chose to skip the browser check, so the chip and popover have not been seen in a browser. See `docs/session-summaries/2026-10-15-one-reference-multi-plantilla-summary.md`.

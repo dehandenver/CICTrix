@@ -36,4 +36,4 @@ Covers the whole plan. Steps 1–4 shipped in October; this summary was written 
 - The 2026-11-12 full-suite counts (635 files) also included repo copies under `.worktrees/`. This run's count covers this repo only.
 - Live data (read-only): 1 hired-elsewhere application, and 5 references with 2 applications each.
 - **Not run:** the Step 6 migration double-run and the SQL hire/undo scenarios. Running them needs a copy of live data, and the migration has been applied since October.
-- **Browser check pending.** The RSP pages need a real RSP sign-in against the live Supabase project.
+- **Browser check skipped** at the user's choice. The chip and popover have not been seen in a browser; the component tests cover opening, closing, Esc focus return, the withdrawn badge and row-click isolation.
