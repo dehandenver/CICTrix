@@ -1,7 +1,7 @@
 ---
 title: One Reference No. per applicant across plantillas, with hired-elsewhere state
 date: 2026-10-15
-status: In Progress
+status: Done
 summary: An applicant keeps one Reference No. for every plantilla they apply to. Being hired on one plantilla withdraws their other open applications, which stay visible as "Hired elsewhere". The tracker shows every application under the reference.
 spec: List option A in docs/mockups/2026-10-15-rsp-hired-elsewhere-row.html; tracker layout A in docs/mockups/2026-10-15-tracker-multi-application.html (both chosen 2026-10-15)
 ---
@@ -52,8 +52,29 @@ The person is identified by normalised email, since the public portal has no acc
 - Search the tracker by primary reference, by an old alias, and by email. All three return the same full list, and the default-open rule picks the right row.
 - `npm run build`, `applicantStatus.test.ts`, then check the RSP list in the browser: the row is dimmed, actions are disabled, it's excluded from bulk select and counts, and the popover lists all applications.
 
+## Scope decision 2026-11-14
+
+A re-check of `main` (`9317e17`) corrected the 2026-11-12 note below:
+
+- **The Step 3 note in the application form is already built.** `ApplicantWizard.tsx` shows "Your N earlier application(s) are under this same Reference No." when the email already has applications.
+- **None of D8 was built.** Hired-elsewhere rows are hidden in every RSP list. The Applications tab drops them because `isQualifiedStatus` matches "hired". For Hiring drops all closed statuses on purpose.
+
+Decided with the user:
+
+| # | Decision |
+|---|---|
+| D8a | **Chip and popover only.** The Applications tab (main and Shortlisted tables) and For Hiring get the "N apps" chip. Its popover lists every application under the reference (position, plantilla, status). Withdrawn rows stay hidden from the lists; RSP sees them through the popover and RSP Archives. The dimmed in-place row from mockup option A is **dropped**, so the counts and bulk-select parts of D8 no longer apply. |
+| D8b | **Neutral colour.** A hired-elsewhere application shows the §10 Neutral badge ("Withdrawn: hired on <plantilla>"), not the mockup's green pill. Green stays reserved for the actual hire. |
+| D7 | The "Current employee – promotion" tag is covered by the `application_type` Promotional badge that the promotional hiring work added. Nothing more is built for it here. |
+
+Implementation: branch `feat/reference-apps-chip`.
+
 ## Status check 2026-11-12
 
 Still In Progress. Done: migration (applied live), the "Withdrawn - Hired Elsewhere" status, the wizard reference label, and the tracker. Left: the D8 "N apps" chip and popover on RSP lists, the wizard note that an application was "added under the same reference", and recording the Step 6 checks (migration double-run, SQL scenarios).
 
 Automated checks on `origin/main` (`cd71e17`): `npx tsc --noEmit` clean; `npx vitest run` passes 635 files and 5,479 tests, including the promotion smoke tests; `npm run check:migrations` OK (130 files). Vercel built and deployed `cd71e17` to production on 2026-11-05. A local `npm run build` fails on this machine because esbuild cannot delete its own temp files; the code compiles.
+
+## Status check 2026-11-14
+
+D8a built on `feat/reference-apps-chip` (chip and popover on the Applications tab and For Hiring). tsc, lint and the full Vitest suite pass. Marked Done 2026-11-14. The user chose to skip the browser check, so the chip and popover have not been seen in a browser. See `docs/session-summaries/2026-10-15-one-reference-multi-plantilla-summary.md`.
