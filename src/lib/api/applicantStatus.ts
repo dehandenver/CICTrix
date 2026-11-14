@@ -181,6 +181,34 @@ export function normalizeStatus(raw: string | null | undefined): ApplicantWorkfl
   return LEGACY_MAP[key] ?? null;
 }
 
+/** Badge variants from DESIGN_IDENTITY §9.8, matching the `.badge-<variant>` classes. */
+export type StatusBadgeVariant = 'success' | 'warning' | 'error' | 'info' | 'neutral';
+
+/**
+ * The §10 application status colour. Withdrawn - Hired Elsewhere is Neutral, so
+ * green stays on the application that was actually hired. Unknown values are
+ * Neutral too: a colour should never suggest an outcome the status doesn't have.
+ */
+const STATUS_VARIANT: Record<ApplicantWorkflowStatus, StatusBadgeVariant> = {
+  Submitted: 'info',
+  'Under Initial Screening': 'warning',
+  Pending: 'warning',
+  Shortlisted: 'info',
+  'Interview/Exam Scheduled': 'warning',
+  'For Evaluation': 'warning',
+  Qualified: 'success',
+  'For Contract Signing': 'warning',
+  Selected: 'success',
+  Disqualified: 'error',
+  'Not Selected': 'error',
+  'Withdrawn - Hired Elsewhere': 'neutral',
+};
+
+export function applicationStatusVariant(raw: string | null | undefined): StatusBadgeVariant {
+  const status = normalizeStatus(raw);
+  return status ? STATUS_VARIANT[status] : 'neutral';
+}
+
 /**
  * Which statuses may follow a given one.
  *

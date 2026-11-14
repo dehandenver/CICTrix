@@ -34,6 +34,10 @@ import {
   type EvaluationSnapshot,
 } from '../lib/evaluationScores';
 import { fetchApplicantScoreSummaries, isUuid } from '../lib/api/applicantScores';
+import { fetchApplicationsByReference } from '../lib/api/applicants';
+import { normalizeReference } from '../lib/applicantTracker';
+import type { ReferenceApplication } from '../lib/referenceApplications';
+import { ReferenceAppsChip } from './ReferenceAppsChip';
 import { fetchWrittenExamTotals } from '../lib/api/examTotalPoints';
 import { TopScorerBadge, topScorerIds, topScorerRowClass } from './data-table';
 import { convertExamScore, totalForPosition } from '../lib/examTotalPoints';
@@ -55,6 +59,8 @@ interface HiringRow {
   id: string;
   fullName: string;
   email: string;
+  /** One per person across plantillas; '' for legacy rows without one. */
+  referenceNo: string;
   position: string;
   department: string;
   /** Oral interview rating, kept for original applicants only. */
@@ -76,6 +82,7 @@ interface LoadedApplicant {
   id: string;
   fullName: string;
   email: string;
+  referenceNo: string;
   position: string;
   department: string;
   status: string;
@@ -136,6 +143,10 @@ const fmtScore = (v: number | null) => (v != null ? v.toFixed(2) : '—');
 
 export const ForHiringPage = () => {
   const [rows, setRows]                         = useState<HiringRow[]>([]);
+  // Every application under each listed Reference No., for the "N apps" chip,
+  // including the hired-elsewhere ones this list leaves out. Loaded with the
+  // rows; a failed read only hides the chips.
+  const [referenceGroups, setReferenceGroups]   = useState<Map<string, ReferenceApplication[]>>(new Map());
   const [loading, setLoading]                   = useState(true);
   // The applicant list failed to load; never shown as "No qualified applicants".
   const [loadError, setLoadError]               = useState<unknown>(null);
@@ -298,7 +309,7 @@ export const ForHiringPage = () => {
             // Only columns public.applicants has: naming a missing one makes
             // PostgREST reject the whole query. The row mapping below already
             // treats the scores as optional.
-            .select('id,first_name,last_name,middle_name,email,position,office,status,application_type,deleted_at');
+            .select('id,first_name,last_name,middle_name,email,reference_no,position,office,status,application_type,deleted_at');
           if (error) throw error;
           if (Array.isArray(data)) remoteData.push(...data);
         } catch (error) {
@@ -322,6 +333,7 @@ export const ForHiringPage = () => {
             fullName: [a.personalInfo.firstName, a.personalInfo.lastName].filter(Boolean).join(' ')
               || a.personalInfo.email?.split('@')[0] || '—',
             email: String(a.personalInfo.email ?? ''),
+            referenceNo: String((a as any).reference_no ?? ''),
             position,
             department: resolveOffice(position, (a as any).office, (a as any).department),
             status,
@@ -345,6 +357,7 @@ export const ForHiringPage = () => {
             id,
             fullName: fullName || (r.email ? String(r.email).split('@')[0] : '—'),
             email: String(r.email ?? ''),
+            referenceNo: String(r.reference_no ?? ''),
             position,
             department: resolveOffice(position, r.office, r.department),
             status,
@@ -419,6 +432,7 @@ export const ForHiringPage = () => {
             id: candidate.id,
             fullName: candidate.fullName,
             email: candidate.email,
+            referenceNo: candidate.referenceNo,
             position: candidate.position,
             department: candidate.department,
             interviewScore,
@@ -448,6 +462,9 @@ export const ForHiringPage = () => {
           (a.department || 'zzz').localeCompare(b.department || 'zzz') ||
           (a.position   || 'zzz').localeCompare(b.position   || 'zzz')
         );
+        const references = await fetchApplicationsByReference(all.map((row) => row.referenceNo));
+        if (references.error) console.warn('[ForHiringPage] applications by reference failed to load:', references.error);
+        setReferenceGroups(references.data ?? new Map());
         setRows(all);
 
         if (!context.ok) {
@@ -833,7 +850,12 @@ export const ForHiringPage = () => {
                         />
                       </td>
                       <td className="px-5 py-4">
-                        <span className="abyan-cell-primary flex flex-wrap items-center gap-2">{row.fullName}{isTop && <TopScorerBadge />}</span>
+                        <span className="abyan-cell-primary flex flex-wrap items-center gap-2">
+                          {row.fullName}{isTop && <TopScorerBadge />}
+                          <ReferenceAppsChip applicantName={row.fullName} referenceNo={row.referenceNo}
+                            applications={referenceGroups.get(normalizeReference(row.referenceNo)) ?? []}
+                            currentApplicationId={row.id} />
+                        </span>
                         <span className="abyan-cell-secondary">{row.email}</span>
                         {row.selectionRevokedAt && !reserved && (
                           <p className="mt-0.5 text-xs text-[var(--neutral-600)]">

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   APPLICANT_MESSAGES,
   APPLICANT_STATUSES,
+  applicationStatusVariant,
   canTransition,
   funnelBucket,
   isTerminal,
@@ -227,5 +228,37 @@ describe('Pending and Shortlisted are opposites', () => {
     expect(nextStatuses('Pending')).toContain('Under Initial Screening');
     expect(canTransition('Pending', 'Interview/Exam Scheduled')).toBe(false);
     expect(canTransition('Pending', 'Qualified')).toBe(false);
+  });
+});
+
+describe('applicationStatusVariant (DESIGN_IDENTITY §10 application status map)', () => {
+  it.each([
+    ['Submitted', 'info'],
+    ['Shortlisted', 'info'],
+    ['Under Initial Screening', 'warning'],
+    ['Pending', 'warning'],
+    ['Interview/Exam Scheduled', 'warning'],
+    ['For Evaluation', 'warning'],
+    ['For Contract Signing', 'warning'],
+    ['Qualified', 'success'],
+    ['Selected', 'success'],
+    ['Disqualified', 'error'],
+    ['Not Selected', 'error'],
+    ['Withdrawn - Hired Elsewhere', 'neutral'],
+  ] as const)('%s is %s', (status, variant) => {
+    expect(applicationStatusVariant(status)).toBe(variant);
+  });
+
+  it('covers every workflow status', () => {
+    for (const status of APPLICANT_STATUSES) {
+      expect(['success', 'warning', 'error', 'info', 'neutral']).toContain(applicationStatusVariant(status));
+    }
+  });
+
+  it('resolves legacy values and treats unknown ones as neutral', () => {
+    expect(applicationStatusVariant('withdrawn – hired elsewhere')).toBe('neutral');
+    expect(applicationStatusVariant('rejected')).toBe('error');
+    expect(applicationStatusVariant('something new')).toBe('neutral');
+    expect(applicationStatusVariant(null)).toBe('neutral');
   });
 });

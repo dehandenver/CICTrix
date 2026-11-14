@@ -21,6 +21,8 @@ import { TableRefreshBar, TableSkeletonRows, tableBodyClass, useTableLoading } f
 import { ErrorBanner } from './ErrorBanner';
 import { useFeedback } from './action-feedback';
 import { describeActionFailure } from '../lib/friendlyErrors';
+import { groupByReference, type ReferenceApplication } from '../lib/referenceApplications';
+import { ReferenceAppsChip } from './ReferenceAppsChip';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -48,6 +50,9 @@ interface Applicant {
   plantilla_slot_id: string | null;
   job_posting_id: string | null;
   linked_slot_ids: string[];
+  /** Set when a hire on another plantilla withdrew this application. */
+  hired_elsewhere_application_id: string | null;
+  deleted_at: string | null;
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -150,9 +155,9 @@ export const ApplicationsListPage = () => {
           fetchApplicantSlotLinks(),
           fetchSlotsByJobPosting(),
         ]);
-        const slotById = new Map<string, { slotNumber: number; itemNumber: string }>();
+        const slotById = new Map<string, { slotNumber: number; itemNumber: string; label?: string }>();
         slotsByJob.forEach(slots => slots.forEach(slot =>
-          slotById.set(slot.id, { slotNumber: slot.slotNumber, itemNumber: slot.itemNumber })));
+          slotById.set(slot.id, { slotNumber: slot.slotNumber, itemNumber: slot.itemNumber, label: slot.label })));
         setSlotIdsByPosition(new Map([...slotsByJob].map(([jobId, slots]) => [jobId, new Set(slots.map(slot => slot.id))])));
 
         const rows: Applicant[] = (data ?? []).map((r: any) => ({
@@ -174,6 +179,8 @@ export const ApplicationsListPage = () => {
           plantilla_slot_id: r.plantilla_slot_id ? String(r.plantilla_slot_id) : null,
           job_posting_id:   r.job_posting_id ? String(r.job_posting_id) : null,
           linked_slot_ids:  (slotLinks.get(String(r.id ?? '')) ?? []).map(link => link.slotId),
+          hired_elsewhere_application_id: r.hired_elsewhere_application_id ? String(r.hired_elsewhere_application_id) : null,
+          deleted_at:       r.deleted_at ? String(r.deleted_at) : null,
         }));
         setApplicants(rows);
         setLoadError(null);
@@ -225,6 +232,23 @@ export const ApplicationsListPage = () => {
   }, [positionId, slotIdsByPosition, applicants]);
 
   const clearPositionFilter = () => { setSearchParams({}); setPage(1); };
+
+  // Every application under each Reference No., for the "N apps" chip. Built
+  // from all loaded rows, including the hired-elsewhere ones the lists hide.
+  const referenceGroups = useMemo(() => groupByReference(
+    applicants
+      .filter(a => !a.deleted_at)
+      .map((a): ReferenceApplication => ({
+        id: a.id,
+        referenceNo: a.reference_no,
+        position: a.position,
+        plantillaLabel: a.plantilla_slots.length > 0 ? a.plantilla_slots.map(plantillaLabel).join(', ') : null,
+        status: a.status,
+        hiredElsewhereApplicationId: a.hired_elsewhere_application_id,
+        createdAt: a.created_at,
+      })),
+  ), [applicants]);
+  const referenceApps = (a: Applicant) => referenceGroups.get(normalizeReference(a.reference_no)) ?? [];
 
   const offices   = useMemo(() => [...new Set(applicants.map(a => a.office).filter(Boolean))].sort(),    [applicants]);
   const positions = useMemo(() => [...new Set(applicants.map(a => a.position).filter(Boolean))].sort(), [applicants]);
@@ -471,8 +495,10 @@ export const ApplicationsListPage = () => {
 
                       {/* Reference No. — what an applicant quotes when they
                           write in asking about their status */}
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-4 whitespace-nowrap">
                         <span className="font-mono text-xs text-slate-600">{a.reference_no || '—'}</span>
+                        <ReferenceAppsChip applicantName={a.full_name} referenceNo={a.reference_no}
+                          applications={referenceApps(a)} currentApplicationId={a.id} />
                       </td>
 
                       {/* Position */}
@@ -597,8 +623,10 @@ export const ApplicationsListPage = () => {
                             <p className="mt-0.5 text-xs text-slate-400">{a.email || '—'}</p>
                           </button>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-5 py-4 whitespace-nowrap">
                           <span className="font-mono text-xs text-slate-600">{a.reference_no || '—'}</span>
+                          <ReferenceAppsChip applicantName={a.full_name} referenceNo={a.reference_no}
+                            applications={referenceApps(a)} currentApplicationId={a.id} />
                         </td>
                         <td className="px-5 py-4 text-sm text-slate-700">
                           {a.position || '—'}
