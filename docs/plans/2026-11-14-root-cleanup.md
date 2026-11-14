@@ -1,7 +1,7 @@
 ---
 title: Clean up stray files in the repo root
 date: 2026-11-14
-status: In Progress
+status: Done
 summary: Delete or move about 50 tracked root files that nothing references (empty accidental files, one-off debug scripts, dumps, stale troubleshooting docs) and stop tracking scratch/. No application code changes.
 ---
 
@@ -46,7 +46,7 @@ Every file below was checked on 2026-11-14: its size and last commit, and a `git
 - **A deleted script is still run by hand.** Step 1 covers it. If one is missed, `git show <commit>^:<file>` restores it.
 - **Untracking `scratch/` looks like a key fix but isn't.** The service-role key stays in history and in other clones until F1 is done. The summary must say so.
 - **Moved `.ps1` scripts resolve paths relative to their own folder.** Before moving them, check each for `$PSScriptRoot` or relative paths and adjust them, or leave the script in the root.
-- **Teammates' local copies.** Deleted tracked files disappear from their checkouts on pull. Files under `scratch/` stay on their disks because only the index changes.
+- **Teammates' local copies.** Deleted tracked files disappear from their checkouts on pull. This includes `scratch/`: `git rm --cached` keeps the files only in the checkout where it ran, and pulling the commit deletes them everywhere else. Copy `scratch/` aside before pulling if anything in it is still wanted.
 
 ## Checks to run
 
