@@ -26,11 +26,11 @@ Occurrences (from `grep -rnE 'shadow-\[var\(' src`):
 
 1. Replace each class with the `shadow:` hint form, keeping any `focus:` prefix. End state: the grep returns nothing.
 2. Compile a sample through PostCSS + Tailwind and confirm the output contains `box-shadow`.
-3. Check the shared `Modal` in the dev server and confirm its computed `box-shadow` is `--shadow-3`.
+3. Check the shared `Modal` in the dev server and confirm its computed `box-shadow` is `--shadow-3`. Deviation: the worktree has no `.env`, so the app stops at the Supabase credential check and the `Modal` could not be opened. Checked the dev server's served CSS and a test element's computed `box-shadow` instead.
 
 ## Risks
 
-- Elements that silently had no shadow now have one. That is the intended design, but it is a visible change; the dev-server check covers the most-used surface (`Modal`).
+- Elements that silently had no shadow now have one. That is the intended design, but it is a visible change. No surface was opened in a running app (see Step 3), so the new shadows on the `Modal`, popovers and focus rings are verified in compiled CSS, not seen on screen.
 
 ## Checks to run
 
