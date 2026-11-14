@@ -1,7 +1,7 @@
 ---
 title: Succession V2 Candidate Unblocking & Evidence Review Reconnection Roadmap
 date: 2026-10-28
-status: Draft
+status: Done
 summary: Fix candidate discovery in Succession V2 using department text lookup and multi-tier PDS fallbacks to populate successors immediately, and outline the future roadmap for reconnecting manual reviews and Security Phase 4A.
 ---
 
@@ -49,3 +49,7 @@ Succession Planning V2 immediately discovers eligible department employees and p
 - `npm test`
 - `npm run check:migrations`
 - `npm run build`
+
+## Status check 2026-11-14
+
+Done for Steps 1–6, through `2026-10-28-succession-v2-auto-fallback.md` (code `8aa7a3f`; summary `docs/session-summaries/2026-10-28-succession-v2-auto-fallback-summary.md`). `fetchSuccessionPoolV2` in `src/lib/api/successionPipelineV2.ts` reads `date_hired`, `highest_educational_attainment` and `eligibility`, with the tenure fallback. The reconnection roadmap (granular PDS collection, Security Phase 4A, Provisional/Audited badges, staleness checks) is future work and was not started. Its Phase 2 is the security plan's Phase 4A. A docs-only copy is on branch `docs/succession-v2-reconnection-roadmap`.

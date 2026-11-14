@@ -1,7 +1,7 @@
 ---
 title: A vacancy with no vacant plantilla must say so
 date: 2026-10-27
-status: Approved
+status: Done
 summary: Job Vacancies called a position Open while its only plantilla was filled, so the public vacancy table — which lists one row per open plantilla — showed nothing. Give both surfaces the same predicate, label a fully filled vacancy as such instead of Open, and make open_vacancy refuse a position with no plantilla left to fill.
 spec: Reported 2026-10-27 — "Admin Aide VI (Clerk III)" reopened in Job Posts, absent from the landing page
 ---
@@ -74,3 +74,7 @@ in the admin, where someone can act on it, not to a job seeker.
 - `npm test`
 - `npm run build`
 - `npm run check:migrations`
+
+## Status check 2026-11-14
+
+Done. Shipped in `4e161ae` (PR #58): `hasOpenPlantilla` and `isAdvertised` in `src/lib/vacancySearch.ts`, with tests; the landing page filters with `isAdvertised`; and migration `20261027134156_open_vacancy_requires_vacant_plantilla` makes `open_vacancy` refuse a fully filled position. The existing Admin Aide VI row was left alone, as the Risks section planned. See `docs/session-summaries/2026-10-27-open-vacancy-with-no-vacant-plantilla-summary.md`.
