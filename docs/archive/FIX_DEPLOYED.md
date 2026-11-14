@@ -75,7 +75,7 @@ code .
 ### Test 2: Verify Diagnostics (5 minutes)
 ```powershell
 # Run manual diagnostics
-powershell -ExecutionPolicy Bypass -File diagnostic-startup.ps1
+powershell -ExecutionPolicy Bypass -File scripts/windows/diagnostic-startup.ps1
 
 # You should see:
 # ✓ Environment Validation - all checks pass
@@ -140,7 +140,7 @@ If ANY step fails, the process stops and shows exactly what failed.
 ### Browser Opens But Shows "Cannot Reach..."
 ```powershell
 # Run diagnostics
-powershell -ExecutionPolicy Bypass -File diagnostic-startup.ps1
+powershell -ExecutionPolicy Bypass -File scripts/windows/diagnostic-startup.ps1
 
 # If backend is not responding:
 .\.venv\Scripts\Activate.ps1
@@ -224,7 +224,7 @@ Access your application:
 
 ## 📞 If Issues Still Occur
 
-1. **Run diagnostics**: `powershell -ExecutionPolicy Bypass -File diagnostic-startup.ps1`
+1. **Run diagnostics**: `powershell -ExecutionPolicy Bypass -File scripts/windows/diagnostic-startup.ps1`
 2. **Check troubleshooting**: See `STARTUP_TROUBLESHOOTING.md`
 3. **Manual startup**: Follow "Advanced Troubleshooting" in that guide
 4. **Note any errors**: Screenshot console output, browser console (F12), terminal output
