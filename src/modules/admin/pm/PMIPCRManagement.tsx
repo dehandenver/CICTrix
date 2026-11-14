@@ -1089,6 +1089,9 @@ const PhaseConfirmModal = ({
     await change.run({
       action: `${isOpenAction ? 'open' : 'close'} ${phaseName}`,
       failureChannel: 'toast',
+      // A toast retry would run after this dialog has closed, without reloading
+      // the phase state. Reopening the confirmation does both.
+      canRetry: false,
       run: () => {
         const email = getCurrentAdminEmail();
         return isOpenAction

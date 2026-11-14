@@ -34,3 +34,17 @@ Commit `efa5088` on `feat/pm-modals-feedback`.
 - No `fixed inset-0` left in PMIPCRManagement or OfficeTrainingCourses. No `alert(` left in any reachable PM code.
 - **Not checked in a browser.** The local app loads, but the PM portal needs a sign-in to the hosted Supabase project, which was not done. The header colour, Esc and focus return rely on the shared `Modal`'s own tests.
 - DESIGN_IDENTITY §16: popups use the shared `Modal`/`ConfirmModal` (§9.10), and destructive confirmations use the destructive tone. Mobile and tablet widths were not checked in a browser.
+
+## Code review 2026-11-14
+
+A reviewer checked `9317e17..36100a4` and found nothing Critical. It confirmed the hook order, the dismissal block while loading, that the PMDashboard request and review modals can't be opened, and that removing the panel headings is safe. It found two Important issues, both now fixed:
+
+- **A Remove failure was invisible.** Toasts sit at z-index 600 and the Modal overlay at 1000, so a toast fired while the Remove dialog stayed open was hidden. The error now shows inside the dialog with Try again. The same layering affects any toast fired while a Modal is open, in every portal; raising `.afb-viewport` above 1000 would fix that globally and is left as a separate decision.
+- **Phase change retry left the page stale.** The failure toast's Try again ran after the dialog closed, without reloading the phase state. The toast has no retry now (`canRetry: false`); the user reopens the confirmation instead.
+
+Not addressed:
+
+- No tests were added. The most useful ones would cover the Remove failure inside the dialog, a phase change that fails still reloading, and inline cycle validation.
+- Minor items left as they were: indentation in the Training details body, `confirm()` before deleting a cycle, the shared `busySession` spinner, and the duplicated `reportFailure` helper.
+
+Checks after the fixes: `npx tsc --noEmit` clean, eslint clean on both files, and `npx vitest run src/modules/admin/pm` passes 45 files and 171 tests.

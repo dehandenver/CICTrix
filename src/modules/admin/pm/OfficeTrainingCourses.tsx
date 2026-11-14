@@ -28,8 +28,8 @@ import { CATEGORY_COLORS } from '../trainingCategories';
 import type { LifecycleStatus } from '../../../lib/api/trainingLifecycle';
 import { TableSkeletonRows, tableBodyClass, useTableLoading } from '../../../components/table-loading';
 import { ConfirmModal, Modal } from '../../../components/modal';
-import { useFeedback } from '../../../components/action-feedback';
-import { describeActionFailure } from '../../../lib/friendlyErrors';
+import { ActionFeedback, useFeedback } from '../../../components/action-feedback';
+import { describeActionFailure, type ActionFailure } from '../../../lib/friendlyErrors';
 
 const supabase = supabaseClient as any;
 const POLL_MS = 12000;
@@ -124,6 +124,8 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
   const [pipeline, setPipeline] = useState<PipelineRecFull[]>([]);
   const [removeTarget, setRemoveTarget] = useState<PipelineRecFull | null>(null);
   const [removeReason, setRemoveReason] = useState('');
+  // Shown inside the Remove dialog: a toast would sit under the modal overlay.
+  const [removeError, setRemoveError] = useState<ActionFailure | null>(null);
   const [employees, setEmployees] = useState<EmployeePick[]>([]);
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [empSearch, setEmpSearch] = useState('');
@@ -232,7 +234,8 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
       actorDepartment: officeName,
     });
     setBusySession(null);
-    if (!res.ok) { reportFailure('remove the employee', res.error); return; }
+    if (!res.ok) { setRemoveError(describeActionFailure('remove the employee', res.error)); return; }
+    setRemoveError(null);
     setRemoveTarget(null);
     setRemoveReason('');
     feedback.success(`${removedName} removed`, 'L&D will see your reason when the batch comes back.');
@@ -424,7 +427,7 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => { setRemoveTarget(r); setRemoveReason(''); }}
+                                  onClick={() => { setRemoveTarget(r); setRemoveReason(''); setRemoveError(null); }}
                                   className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:border-rose-400 hover:text-rose-600"
                                 >
                                   <X className="h-3 w-3" /> Remove
@@ -457,8 +460,17 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
             loading={Boolean(removeTarget) && busySession === removeTarget?.sessionId}
             confirmDisabled={!removeReason.trim()}
             onConfirm={() => void confirmRemove()}
-            onCancel={() => { setRemoveTarget(null); setRemoveReason(''); }}
+            onCancel={() => { setRemoveTarget(null); setRemoveReason(''); setRemoveError(null); }}
           >
+            {removeError && (
+              <div className="mt-4">
+                <ActionFeedback
+                  {...removeError}
+                  onRetry={() => void confirmRemove()}
+                  onDismiss={() => setRemoveError(null)}
+                />
+              </div>
+            )}
             <label htmlFor="office-remove-reason" className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Reason (required)
             </label>
