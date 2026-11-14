@@ -63,4 +63,4 @@ Done in `efa5088`. Deviations:
 - **Panel headings:** `OfficeWeightingPanel` and `RatingScalePanel` lost their own heading, which moved into the modal header. Both are only rendered inside those modals.
 - **One commit instead of two.** Several files carry both changes, so they landed together.
 - **`window.confirm` stays** before deleting an evaluation cycle. It is not an overlay or an `alert()`, so it was out of scope.
-- **Parent plans:** `2026-10-25-standard-modal.md` Phase 4 and the PM part of `2026-10-26-loading-and-action-feedback.md` Step 4 are covered here. Their status-check notes get updated after PR #100 merges, which edits the same files.
+- **Parent plans:** `2026-10-25-standard-modal.md` Phase 4 and the PM part of `2026-10-26-loading-and-action-feedback.md` Step 4 now carry a 2026-11-14 status check pointing here.

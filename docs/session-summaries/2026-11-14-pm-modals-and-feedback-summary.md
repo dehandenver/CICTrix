@@ -24,7 +24,7 @@ Commit `efa5088` on `feat/pm-modals-feedback`.
 
 - 11 `alert()` calls and 2 overlays remain in PMDashboard code that nothing opens: Request Document, Bulk Request and document review. Left alone, as Phase 2 did for unreachable RSP modals.
 - One commit instead of two, since several files carry both changes.
-- The parent plans' notes wait for PR #100 to merge.
+- The parent plans got their status checks after rebasing onto `main` (PR #100 merged).
 
 ## Checks run
 
