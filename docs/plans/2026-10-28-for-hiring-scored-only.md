@@ -1,7 +1,7 @@
 ---
 title: For Hiring lists only applicants who were scored
 date: 2026-10-28
-status: Approved
+status: Done
 summary: The ranked list showed anyone merely Qualified, so applicants with no interview or exam score sat in a table ordered by interview score. Visibility now requires both scores, with applicants already past selection kept regardless, and the page refreshes from Supabase realtime instead of two same-tab events.
 spec: Reported 2026-10-28 with a screenshot of Engineer II (Civil / Structural) · Plantilla 38
 ---
@@ -73,3 +73,7 @@ debounces and catches up on tab visibility, which the old wiring did not.
 - `npm test`
 - `npm run lint`
 - `npm run build`
+
+## Status check 2026-11-14
+
+Done. Shipped in `0180fa6` (PR #69): `ForHiringPage.tsx` keeps a row only with complete scores or once past selection (`isPastSelection`), and refreshes through `useRealtimeRefresh` on `applicants`, `evaluations`, `plantilla_slots` and `newly_hired`. `ForHiringPage.scored.test.tsx` was added. Exam scores still live in localStorage, an open risk outside this plan. See `docs/session-summaries/2026-10-28-for-hiring-scored-only-summary.md`.

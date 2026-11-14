@@ -62,7 +62,7 @@
   <main>
     <h1>Plans</h1>
     <p class="lede">Feature plans and their session summaries. Newest first.</p>
-    <p class="counts">131 plans &middot; 118 done</p>
+    <p class="counts">131 plans &middot; 123 done</p>
 
     <section>
       <h2>Plans</h2>
@@ -172,7 +172,7 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-succession-v2-auto-and-reconnection-plan.md">Succession V2 Candidate Unblocking &amp; Evidence Review Reconnection Roadmap</a><p class="summary">Fix candidate discovery in Succession V2 using department text lookup and multi-tier PDS fallbacks to populate successors immediately, and outline the future roadmap for reconnecting manual reviews and Security Phase 4A.</p></td>
-        <td class="status"><span class="badge badge-neutral">Draft</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -182,7 +182,7 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-page-by-page-rollout-implementation-plan.md">Page-by-Page System Rollout Implementation Plan</a><p class="summary">Multi-agent sanity, smoke, and Vitest test audit certifying all 51 page surfaces across all 7 CICTrix HRIS portals on the main branch.</p></td>
-        <td class="status"><span class="badge badge-primary">Approved</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -202,7 +202,7 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-interviewer-scheduled-applicants-only.md">The interviewer portal shows only applicants who were scheduled</a><p class="summary">The Assigned job postings table counted every applicant whose position matched, not the ones scheduled for an interview, so a posting read 6 while the list behind it held 1. Count and list both filter on an interview schedule now, and the applicant dedupe stops merging distinct people who share a plantilla item number. The oral assessment table's SCORE column no longer stretches to its longest option label and squeeze REMARKS off the row.</p></td>
-        <td class="status"><span class="badge badge-primary">Approved</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -212,7 +212,7 @@
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="2026-10-28-for-hiring-scored-only.md">For Hiring lists only applicants who were scored</a><p class="summary">The ranked list showed anyone merely Qualified, so applicants with no interview or exam score sat in a table ordered by interview score. Visibility now requires both scores, with applicants already past selection kept regardless, and the page refreshes from Supabase realtime instead of two same-tab events.</p></td>
-        <td class="status"><span class="badge badge-primary">Approved</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -272,7 +272,7 @@
       <tr>
         <td class="date">2026-10-27</td>
         <td><a href="2026-10-27-open-vacancy-with-no-vacant-plantilla.md">A vacancy with no vacant plantilla must say so</a><p class="summary">Job Vacancies called a position Open while its only plantilla was filled, so the public vacancy table — which lists one row per open plantilla — showed nothing. Give both surfaces the same predicate, label a fully filled vacancy as such instead of Open, and make open_vacancy refuse a position with no plantilla left to fill.</p></td>
-        <td class="status"><span class="badge badge-primary">Approved</span></td>
+        <td class="status"><span class="badge badge-success">Done</span></td>
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
@@ -823,11 +823,19 @@
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
+        <td><a href="../session-summaries/2026-10-28-succession-v2-auto-and-reconnection-summary.md">Succession V2 candidate unblocking and reconnection roadmap (summary)</a><p class="meta">Plan: <a href="2026-10-28-succession-v2-auto-and-reconnection-plan.md">2026-10-28-succession-v2-auto-and-reconnection-plan.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-28</td>
         <td><a href="../session-summaries/2026-10-28-succession-scoring-v2-integration-summary.md">Integrate Succession Scoring V2 and Evidence Review Workflow</a><p class="summary">Completed Tasks 2–4 of Succession Scoring V2. Added evidence reviews schema, review service layer with snapshot staleness detection, end-to-end V2 candidate evaluation and ranking pipeline, and candidate review modal integrated into SuccessionPlanningPage. All 989 tests, lint, and build verified locally.</p><p class="meta">Plan: <a href="2026-10-27-succession-scoring-v2.md">2026-10-27-succession-scoring-v2.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
         <td><a href="../session-summaries/2026-10-28-remote-applicant-scores-summary.md">Remote Applicant Scores &amp; Exam Scoring Migration Summary</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-28</td>
+        <td><a href="../session-summaries/2026-10-28-page-by-page-rollout-summary.md">Page-by-page system rollout (summary)</a><p class="meta">Plan: <a href="2026-10-28-page-by-page-rollout-implementation-plan.md">2026-10-28-page-by-page-rollout-implementation-plan.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -843,7 +851,15 @@
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
+        <td><a href="../session-summaries/2026-10-28-interviewer-scheduled-applicants-only-summary.md">The interviewer portal shows only applicants who were scheduled (summary)</a><p class="meta">Plan: <a href="2026-10-28-interviewer-scheduled-applicants-only.md">2026-10-28-interviewer-scheduled-applicants-only.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-28</td>
         <td><a href="../session-summaries/2026-10-28-for-hiring-selection-blocked-summary.md">For Hiring selection unblocked and plantilla resolution hardened — summary</a><p class="meta">Plan: <a href="2026-10-28-for-hiring-selection-blocked.md">2026-10-28-for-hiring-selection-blocked.md</a></p></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-28</td>
+        <td><a href="../session-summaries/2026-10-28-for-hiring-scored-only-summary.md">For Hiring lists only applicants who were scored (summary)</a><p class="meta">Plan: <a href="2026-10-28-for-hiring-scored-only.md">2026-10-28-for-hiring-scored-only.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-28</td>
@@ -900,6 +916,10 @@
       <tr>
         <td class="date">2026-10-27</td>
         <td><a href="../session-summaries/2026-10-27-pds-education-succession-summary.md">PDS education into succession readiness: session summary</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-10-27</td>
+        <td><a href="../session-summaries/2026-10-27-open-vacancy-with-no-vacant-plantilla-summary.md">A vacancy with no vacant plantilla must say so (summary)</a><p class="meta">Plan: <a href="2026-10-27-open-vacancy-with-no-vacant-plantilla.md">2026-10-27-open-vacancy-with-no-vacant-plantilla.md</a></p></td>
       </tr>
       <tr>
         <td class="date">2026-10-26</td>
