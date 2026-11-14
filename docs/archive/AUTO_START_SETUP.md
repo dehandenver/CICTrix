@@ -95,8 +95,8 @@ Tasks: Run Task → 4. Health Check
 
 ## 📝 File Locations
 
-- **Startup script**: `./start_dev.ps1`
-- **Health check**: `./health_check.ps1`
+- **Startup script**: `./scripts/windows/start_dev.ps1`
+- **Health check**: `./scripts/windows/health_check.ps1`
 - **Task config**: `./.vscode/tasks.json`
 
 ## ✨ Zero-Touch Benefits
