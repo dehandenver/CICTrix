@@ -105,6 +105,67 @@ describe('Combobox', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 
+  it('leaves Esc alone when the menu is already closed, so a surrounding modal can close', () => {
+    render(<Harness />);
+    type('a');
+    press('Escape');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    act(() => { input().dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('reopens the menu with ArrowDown after Esc closed it', () => {
+    render(<Harness />);
+    type('a');
+    press('Escape');
+    press('ArrowDown');
+    expect(screen.getByRole('listbox')).toBeTruthy();
+  });
+
+  it('closes the menu shortly after blur, but not if focus comes back first', () => {
+    vi.useFakeTimers();
+    try {
+      render(<Harness />);
+      type('a');
+      fireEvent.blur(input());
+      fireEvent.focus(input());
+      act(() => { vi.advanceTimersByTime(500); });
+      expect(screen.getByRole('listbox')).toBeTruthy();
+
+      fireEvent.blur(input());
+      act(() => { vi.advanceTimersByTime(500); });
+      expect(screen.queryByRole('listbox')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the empty state alongside the rows when every match is disabled', () => {
+    render(<Harness />);
+    type('apri');
+    expect(screen.getByText('No fruit found.')).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Apricot' }).getAttribute('aria-disabled')).toBe('true');
+    expect(input().hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
+  it('renders no menu at all when nothing matches and there is no empty state', () => {
+    render(
+      <Combobox<Fruit>
+        id="bare"
+        query="zzz"
+        onQueryChange={() => {}}
+        items={[]}
+        getKey={(f) => f.name}
+        onSelect={() => {}}
+        renderOption={(f) => f.name}
+      />,
+    );
+    fireEvent.focus(screen.getByRole('combobox'));
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.getByRole('combobox').getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('shows the empty state when nothing can be picked', () => {
     render(<Harness />);
     type('zzz');

@@ -1,10 +1,10 @@
 import { Search } from 'lucide-react';
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 
 /** How long the menu stays open after the input blurs, so a click on an option still lands. */
 const BLUR_CLOSE_DELAY_MS = 120;
 
-const FIELD_CLASS = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-[3px] focus:ring-[rgba(54,62,232,.15)]';
+const FIELD_CLASS = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:shadow-[shadow:var(--ring-input)]';
 
 export interface ComboboxOptionState {
   highlighted: boolean;
@@ -44,6 +44,10 @@ export function Combobox<T>({
   const [menuOpen, setMenuOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
   const listId = useId();
+  const blurTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const cancelBlurClose = () => { clearTimeout(blurTimer.current); blurTimer.current = undefined; };
+  useEffect(() => cancelBlurClose, []);
 
   const selectable = items.map((item, i) => (isDisabled(item) ? -1 : i)).filter((i) => i >= 0);
 
@@ -72,7 +76,9 @@ export function Combobox<T>({
     else if (event.key === 'Escape' && menuOpen) { event.preventDefault(); setMenuOpen(false); }
   };
 
-  const showMenu = menuOpen && query.trim().length > 0;
+  const showEmptyState = selectable.length === 0 && emptyState != null;
+  // Never open an empty bordered box: a caller without `emptyState` gets no menu when nothing matches.
+  const showMenu = menuOpen && query.trim().length > 0 && (items.length > 0 || showEmptyState);
 
   return (
     <div className="relative">
@@ -89,13 +95,16 @@ export function Combobox<T>({
         aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
         value={query}
         onChange={(event) => { onQueryChange(event.target.value); setMenuOpen(true); }}
-        onFocus={() => setMenuOpen(true)}
-        onBlur={() => setTimeout(() => setMenuOpen(false), BLUR_CLOSE_DELAY_MS)}
+        onFocus={() => { cancelBlurClose(); setMenuOpen(true); }}
+        onBlur={() => {
+          cancelBlurClose();
+          blurTimer.current = setTimeout(() => setMenuOpen(false), BLUR_CLOSE_DELAY_MS);
+        }}
         onKeyDown={onKeyDown}
       />
       {showMenu && (
-        <div id={`${listId}-list`} role="listbox" className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 max-h-[300px] overflow-auto rounded-lg border border-slate-200 bg-white shadow-[0_4px_12px_rgba(16,30,41,.10)]">
-          {selectable.length === 0 ? emptyState : null}
+        <div id={`${listId}-list`} role="listbox" className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 max-h-[300px] overflow-auto rounded-lg border border-slate-200 bg-white shadow-[shadow:var(--shadow-2)]">
+          {showEmptyState ? emptyState : null}
           {items.length > 0 && (
             <>
               {items.map((item, index) => {
