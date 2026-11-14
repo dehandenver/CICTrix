@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Check, ListChecks } from 'lucide-react';
+import { AlertTriangle, Check } from 'lucide-react';
 import {
   DEFAULT_RATING_SCALE,
   listRatingScale,
@@ -61,16 +61,6 @@ export const RatingScalePanel = () => {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2.5">
-        <ListChecks className="h-6 w-6 text-blue-600" />
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">IPCR Rating Scale</h2>
-          <p className="text-sm text-slate-500">
-            What each rating means. Employees see this while rating their accomplishments in Phase 2.
-          </p>
-        </div>
-      </div>
-
       <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
         <p className="text-xs text-amber-800">

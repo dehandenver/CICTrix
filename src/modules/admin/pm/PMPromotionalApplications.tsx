@@ -426,9 +426,8 @@ const NewApplicationModal = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose}>
-      <div className="w-[420px] max-w-full space-y-3 p-1">
-        <h3 className="text-lg font-bold text-slate-900">New Promotional Application</h3>
+    <Dialog open={open} onClose={onClose} title="New Promotional Application">
+      <div className="space-y-3">
 
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">Employee</label>
