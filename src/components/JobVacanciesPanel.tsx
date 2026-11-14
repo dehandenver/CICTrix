@@ -1,4 +1,5 @@
 import { Briefcase, ChevronLeft, ChevronRight, Lock, Search, Users, XCircle } from 'lucide-react';
+import { Combobox } from './combobox';
 import { Modal } from './modal';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { formatOfficeLabel, formatOfficeName } from '../constants/positions';
@@ -224,8 +225,6 @@ const OpenVacancyDialog = ({ jobs, onCancel, onCreatePosition, onSubmit }: OpenV
   const today = manilaToday();
   const [picked, setPicked] = useState<JobPosting | null>(null);
   const [query, setQuery] = useState('');
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [highlight, setHighlight] = useState(-1);
   const [deadline, setDeadline] = useState('');
   const [openedOn, setOpenedOn] = useState(today);
   const [remarks, setRemarks] = useState('');
@@ -234,30 +233,12 @@ const OpenVacancyDialog = ({ jobs, onCancel, onCreatePosition, onSubmit }: OpenV
   const listId = useId();
 
   const results = useMemo(() => searchPositions(jobs, query), [jobs, query]);
-  const selectable = results.map((r, i) => (r.eligibility === 'available' ? i : -1)).filter((i) => i >= 0);
 
-  useEffect(() => { setHighlight(selectable[0] ?? -1); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!picked) inputRef.current?.focus(); }, [picked]);
 
-  const choose = (match: PositionMatch | undefined) => {
-    if (!match || match.eligibility !== 'available') return;
+  const choose = (match: PositionMatch) => {
     setPicked(match.job);
-    setMenuOpen(false);
     setQuery('');
-  };
-
-  const moveHighlight = (step: number) => {
-    if (selectable.length === 0) return;
-    const at = selectable.indexOf(highlight);
-    const next = at < 0 ? 0 : (at + step + selectable.length) % selectable.length;
-    setHighlight(selectable[next]);
-  };
-
-  const onSearchKey = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'ArrowDown') { event.preventDefault(); setMenuOpen(true); moveHighlight(1); }
-    else if (event.key === 'ArrowUp') { event.preventDefault(); moveHighlight(-1); }
-    else if (event.key === 'Enter') { event.preventDefault(); choose(results[highlight]); }
-    else if (event.key === 'Escape' && menuOpen) { event.preventDefault(); setMenuOpen(false); }
   };
 
   const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -272,7 +253,6 @@ const OpenVacancyDialog = ({ jobs, onCancel, onCreatePosition, onSubmit }: OpenV
     try { await onSubmit(picked, { deadline, openedOn, remarks }); } finally { setSaving(false); }
   };
 
-  const showMenu = menuOpen && query.trim().length > 0;
   const fieldClass = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-[3px] focus:ring-[rgba(54,62,232,.15)]';
 
   const readOnly = (label: string, value: string, wide = false) => (
@@ -311,74 +291,48 @@ const OpenVacancyDialog = ({ jobs, onCancel, onCreatePosition, onSubmit }: OpenV
         {!picked && (
           <div>
             <label htmlFor={`${listId}-q`} className="mb-1.5 block text-[13px] font-medium text-slate-700">Job position <span className="text-rose-500">*</span></label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={inputRef}
-                id={`${listId}-q`}
-                className={`${fieldClass} pl-10`}
-                placeholder="Search by title or plantilla number"
-                autoComplete="off"
-                role="combobox"
-                aria-expanded={showMenu}
-                aria-controls={`${listId}-list`}
-                aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
-                value={query}
-                onChange={(event) => { setQuery(event.target.value); setMenuOpen(true); }}
-                onFocus={() => setMenuOpen(true)}
-                onBlur={() => setTimeout(() => setMenuOpen(false), 120)}
-                onKeyDown={onSearchKey}
-              />
-              {showMenu && (
-                <div id={`${listId}-list`} role="listbox" className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 max-h-[300px] overflow-auto rounded-lg border border-slate-200 bg-white shadow-[0_4px_12px_rgba(16,30,41,.10)]">
-                  {selectable.length === 0 ? (
-                    <div className="px-3 py-5 text-center text-sm text-slate-500">
-                      <p className="!mb-1">No matching job position found.</p>
-                      <button
-                        type="button"
-                        className="text-sm font-medium text-[var(--color-primary)] hover:underline"
-                        onMouseDown={(event) => { event.preventDefault(); onCreatePosition(); }}
-                      >
-                        Create Job Position
-                      </button>
-                    </div>
-                  ) : null}
-                  {results.length > 0 && (
-                    <>
-                      {results.map((match, index) => {
-                        const disabled = match.eligibility !== 'available';
-                        return (
-                          <div
-                            key={match.job.id}
-                            id={`${listId}-opt-${index}`}
-                            role="option"
-                            aria-selected={index === highlight}
-                            aria-disabled={disabled}
-                            onMouseDown={(event) => { event.preventDefault(); choose(match); }}
-                            onMouseEnter={() => { if (!disabled) setHighlight(index); }}
-                            className={`flex items-center gap-3 border-t border-slate-100 px-3 py-2.5 first:border-t-0 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} ${index === highlight ? 'bg-[var(--color-primary-50)]' : ''}`}
-                          >
-                            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${disabled ? 'bg-slate-100 text-slate-400' : 'bg-[var(--color-primary-50)] text-[var(--color-primary)]'}`}>
-                              <Briefcase className="h-4 w-4" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className={`block text-sm font-semibold ${disabled ? 'text-slate-400' : HEADING}`}>{match.job.title}</span>
-                              <span className={`block truncate text-xs ${disabled ? 'text-slate-400' : 'text-slate-500'}`}>
-                                {plantillaNumbers(match.job).length > 0 ? `Plantilla ${plantillaNumbers(match.job).join(', ')} · ` : ''}{formatOfficeLabel(match.job.department, match.job.division)}
-                              </span>
-                            </span>
-                            {disabled && <span className="badge badge-success">Already open</span>}
-                          </div>
-                        );
-                      })}
-                      <p className="!mb-0 border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                        {results.length} match{results.length === 1 ? '' : 'es'} · ↑↓ to move · Enter to select · Esc to close
-                      </p>
-                    </>
-                  )}
+            <Combobox<PositionMatch>
+              id={`${listId}-q`}
+              inputRef={inputRef}
+              placeholder="Search by title or plantilla number"
+              query={query}
+              onQueryChange={setQuery}
+              items={results}
+              getKey={(match) => match.job.id}
+              isDisabled={(match) => match.eligibility !== 'available'}
+              onSelect={choose}
+              renderOption={(match, { disabled }) => (
+                <>
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${disabled ? 'bg-slate-100 text-slate-400' : 'bg-[var(--color-primary-50)] text-[var(--color-primary)]'}`}>
+                    <Briefcase className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className={`block text-sm font-semibold ${disabled ? 'text-slate-400' : HEADING}`}>{match.job.title}</span>
+                    <span className={`block truncate text-xs ${disabled ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {plantillaNumbers(match.job).length > 0 ? `Plantilla ${plantillaNumbers(match.job).join(', ')} · ` : ''}{formatOfficeLabel(match.job.department, match.job.division)}
+                    </span>
+                  </span>
+                  {disabled && <span className="badge badge-success">Already open</span>}
+                </>
+              )}
+              emptyState={(
+                <div className="px-3 py-5 text-center text-sm text-slate-500">
+                  <p className="!mb-1">No matching job position found.</p>
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-[var(--color-primary)] hover:underline"
+                    onMouseDown={(event) => { event.preventDefault(); onCreatePosition(); }}
+                  >
+                    Create Job Position
+                  </button>
                 </div>
               )}
-            </div>
+              footer={(items) => (
+                <p className="!mb-0 border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  {items.length} match{items.length === 1 ? '' : 'es'} · ↑↓ to move · Enter to select · Esc to close
+                </p>
+              )}
+            />
             <p className="!mb-0 mt-1 text-xs text-slate-500">Only closed positions can be opened. Open ones are listed but can't be picked.</p>
           </div>
         )}
