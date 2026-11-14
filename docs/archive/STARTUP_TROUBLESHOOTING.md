@@ -6,7 +6,7 @@ If you see **"This site can't be reached"**, follow these steps in order:
 
 ### Step 1: Run Diagnostics (60 seconds)
 ```powershell
-powershell -ExecutionPolicy Bypass -File diagnostic-startup.ps1
+powershell -ExecutionPolicy Bypass -File scripts/windows/diagnostic-startup.ps1
 ```
 This will tell you exactly what's wrong.
 
@@ -213,7 +213,7 @@ pip install -r backend/requirements.txt
 ## Getting Help
 
 When reporting issues, provide:
-1. **Diagnostic output**: `powershell -ExecutionPolicy Bypass -File diagnostic-startup.ps1`
+1. **Diagnostic output**: `powershell -ExecutionPolicy Bypass -File scripts/windows/diagnostic-startup.ps1`
 2. **Terminal logs**: Screenshot of all 3 terminal panels
 3. **Browser console**: Press F12, take screenshot of Console tab
 4. **Error messages**: Full text, not paraphrased
