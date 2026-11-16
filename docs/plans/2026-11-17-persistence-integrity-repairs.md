@@ -33,7 +33,7 @@ The full step-by-step contracts are in the approved specification; execution bri
 
 | Task | Owned change boundary | Depends on | State |
 | --- | --- | --- | --- |
-| 1 | `personalDataSheet.ts`, employee types, PDS section, focused validation/preservation tests | Baseline | Pending |
+| 1 | `personalDataSheet.ts`, employee types, PDS section, focused validation/preservation tests | Baseline | Complete |
 | 2 | PDS RPC service integration, scalar mapper if needed, CLI-generated migration, SQL/concurrency tests | 1 | Pending |
 | 3 | Checked profile writes, nullable numeric clears, local-only parent callback, wizard/draft behavior | 1, 2 | Pending |
 | 4 | PDS load/retry/conflict/uncertain states and canonical save snapshots | 2, 3 | Pending |
@@ -69,3 +69,9 @@ Execution ledger: `.superpowers/sdd/2026-11-17-persistence-integrity-repairs/pro
 - Rendered UI/keyboard/responsive checks and `DESIGN_IDENTITY.md` section 16 for affected surfaces.
 
 Baseline and final results are recorded in the ledger; only observed passing checks count. Repository test discovery otherwise includes old nested worktrees, so use `--dir src`.
+
+### Task 1 checkpoint
+
+Education grouping/editor preserves repeated qualifications and Doctorate. All seven PDS list saves reject meaningful incomplete rows before external writes; wholly blank new placeholders remain allowed. Row/field validation errors use the existing feedback surface. No migrations or transactional save changes are included yet.
+
+DeepSeek/max implemented; parent Sol/medium reviewed and independently verified 172 files/1,619 tests, TypeScript, scoped lint, production build, and diff whitespace checks. No corrective dispatches. Database atomicity and rendered-browser acceptance remain for later tasks. See `docs/session-summaries/2026-11-17-persistence-integrity-task-1-summary.md`.

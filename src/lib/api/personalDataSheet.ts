@@ -21,11 +21,305 @@ import {
   type EmployeeVoluntaryWork,
   type EmployeeLdIntervention,
   type EmployeeReference,
+  type PdsFieldIssue,
+  type PdsListSection,
 } from '../../types/employee.types';
+
+// Re-exported so callers of the PDS service do not need a second import path
+// for the validator's shared types.
+export type { PdsFieldIssue, PdsListSection } from '../../types/employee.types';
 
 const supabase = supabaseClient as any;
 
-export type PdsResult<T> = { ok: true; data: T } | { ok: false; error: string };
+export type PdsResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; fieldIssues?: PdsFieldIssue[] };
+
+// ---------------------------------------------------------------------------
+// Row validation shared by every PDS list
+//
+// The editor seeds blank rows so the printed sheet's fixed layout is visible.
+// Those placeholders only carry their level/sort order, which are not input.
+// A row with real input is validated and either saved or rejected loudly; an
+// existing row (one with an id) is never dropped just because a field is
+// empty. The same function runs inside each save service, before any delete
+// or insert, so a partially filled row can never reach the database.
+// ---------------------------------------------------------------------------
+
+type PdsRowBySection = {
+  children: EmployeeChild;
+  education: EmployeeEducation;
+  eligibility: EmployeeEligibility;
+  workExperience: EmployeeWorkExperience;
+  voluntaryWork: EmployeeVoluntaryWork;
+  training: EmployeeLdIntervention;
+  references: EmployeeReference;
+};
+
+export function validatePdsRows<S extends PdsListSection>(
+  section: S,
+  rows: readonly PdsRowBySection[S][],
+): PdsFieldIssue[] {
+  switch (section) {
+    case 'children':
+      return validateChildrenRows(rows as readonly EmployeeChild[]);
+    case 'education':
+      return validateEducationRows(rows as readonly EmployeeEducation[]);
+    case 'eligibility':
+      return validateEligibilityRows(rows as readonly EmployeeEligibility[]);
+    case 'workExperience':
+      return validateWorkExperienceRows(rows as readonly EmployeeWorkExperience[]);
+    case 'voluntaryWork':
+      return validateVoluntaryWorkRows(rows as readonly EmployeeVoluntaryWork[]);
+    case 'training':
+      return validateLdInterventionRows(rows as readonly EmployeeLdIntervention[]);
+    case 'references':
+      return validateReferenceRows(rows as readonly EmployeeReference[]);
+  }
+}
+
+const MEANINGFUL_FIELDS: Record<PdsListSection, readonly string[]> = {
+  children: ['fullName', 'dateOfBirth'],
+  // level and sortOrder describe the placeholder row, not employee input.
+  education: ['school', 'degree', 'periodFrom', 'periodTo', 'highestLevelUnits', 'yearGraduated', 'scholarshipHonors'],
+  eligibility: ['eligibilityName', 'rating', 'examDate', 'examPlace', 'licenseNumber', 'licenseValidUntil'],
+  workExperience: ['dateFrom', 'dateTo', 'positionTitle', 'departmentAgencyOfficeCompany', 'statusOfAppointment', 'govtService'],
+  voluntaryWork: ['orgNameAddress', 'dateFrom', 'dateTo', 'numberOfHours', 'positionNatureOfWork'],
+  training: ['title', 'dateFrom', 'dateTo', 'numberOfHours', 'ldType', 'conductedBy'],
+  references: ['name', 'address', 'contactInfo'],
+};
+
+const hasInput = (value: unknown): boolean => {
+  if (value == null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  return true;
+};
+
+function hasMeaningfulInput(section: PdsListSection, row: object): boolean {
+  const record = row as Record<string, unknown>;
+  // An existing row is never treated as disposable input.
+  if (hasInput(record.id)) return true;
+  return MEANINGFUL_FIELDS[section].some((field) => hasInput(record[field]));
+}
+
+function validateRequiredText(
+  issues: PdsFieldIssue[],
+  rowIndex: number,
+  field: string,
+  label: string,
+  value: unknown,
+): void {
+  if (!hasInput(value)) {
+    issues.push({ rowIndex, field, message: `${label} is required.` });
+  }
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function calendarDateValue(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!ISO_DATE.test(text)) return null;
+  const [year, month, day] = text.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date.getTime();
+}
+
+function validateDateField(
+  issues: PdsFieldIssue[],
+  rowIndex: number,
+  field: string,
+  label: string,
+  value: unknown,
+): number | null {
+  if (!hasInput(value)) return null;
+  const time = calendarDateValue(value);
+  if (time == null) {
+    issues.push({
+      rowIndex,
+      field,
+      message: `${label} must be a valid calendar date (YYYY-MM-DD).`,
+    });
+  }
+  return time;
+}
+
+function validateNumberField(
+  issues: PdsFieldIssue[],
+  rowIndex: number,
+  field: string,
+  label: string,
+  value: unknown,
+  integerOnly = false,
+): void {
+  if (!hasInput(value)) return;
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number)) {
+    issues.push({ rowIndex, field, message: `${label} must be a finite number.` });
+    return;
+  }
+  if (integerOnly && !Number.isInteger(number)) {
+    issues.push({ rowIndex, field, message: `${label} must be a whole number.` });
+  }
+}
+
+function validateDateRange(
+  issues: PdsFieldIssue[],
+  rowIndex: number,
+  fromLabel: string,
+  fromTime: number | null,
+  toField: string,
+  toLabel: string,
+  toTime: number | null,
+): void {
+  if (fromTime != null && toTime != null && toTime < fromTime) {
+    issues.push({
+      rowIndex,
+      field: toField,
+      message: `${toLabel} cannot be earlier than ${fromLabel}.`,
+    });
+  }
+}
+
+function validateChildrenRows(rows: readonly EmployeeChild[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('children', row)) return;
+    validateRequiredText(issues, rowIndex, 'fullName', 'Full name', row.fullName);
+    validateDateField(issues, rowIndex, 'dateOfBirth', 'Date of birth', row.dateOfBirth);
+  });
+  return issues;
+}
+
+function validateEducationRows(rows: readonly EmployeeEducation[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('education', row)) return;
+    validateRequiredText(issues, rowIndex, 'school', 'Name of school', row.school);
+    validateNumberField(issues, rowIndex, 'periodFrom', 'Year attended from', row.periodFrom, true);
+    validateNumberField(issues, rowIndex, 'periodTo', 'Year attended to', row.periodTo, true);
+    validateNumberField(issues, rowIndex, 'highestLevelUnits', 'Units earned', row.highestLevelUnits, true);
+    validateNumberField(issues, rowIndex, 'yearGraduated', 'Year graduated', row.yearGraduated, true);
+    if (
+      typeof row.periodFrom === 'number' &&
+      typeof row.periodTo === 'number' &&
+      Number.isInteger(row.periodFrom) &&
+      Number.isInteger(row.periodTo)
+    ) {
+      validateDateRange(
+        issues,
+        rowIndex,
+        'Year attended from',
+        row.periodFrom,
+        'periodTo',
+        'Year attended to',
+        row.periodTo,
+      );
+    }
+  });
+  return issues;
+}
+
+function validateEligibilityRows(rows: readonly EmployeeEligibility[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('eligibility', row)) return;
+    validateRequiredText(issues, rowIndex, 'eligibilityName', 'Eligibility', row.eligibilityName);
+    validateNumberField(issues, rowIndex, 'rating', 'Rating', row.rating);
+    validateDateField(issues, rowIndex, 'examDate', 'Date of examination', row.examDate);
+    validateDateField(issues, rowIndex, 'licenseValidUntil', 'License validity date', row.licenseValidUntil);
+  });
+  return issues;
+}
+
+function validateWorkExperienceRows(rows: readonly EmployeeWorkExperience[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('workExperience', row)) return;
+    validateRequiredText(issues, rowIndex, 'dateFrom', 'Date From', row.dateFrom);
+    validateRequiredText(issues, rowIndex, 'positionTitle', 'Position title', row.positionTitle);
+    validateRequiredText(
+      issues,
+      rowIndex,
+      'departmentAgencyOfficeCompany',
+      'Department/Agency/Office/Company',
+      row.departmentAgencyOfficeCompany,
+    );
+    const fromTime = validateDateField(issues, rowIndex, 'dateFrom', 'Date From', row.dateFrom);
+    const toTime = validateDateField(issues, rowIndex, 'dateTo', 'Date To', row.dateTo);
+    validateDateRange(issues, rowIndex, 'Date From', fromTime, 'dateTo', 'Date To', toTime);
+  });
+  return issues;
+}
+
+function validateVoluntaryWorkRows(rows: readonly EmployeeVoluntaryWork[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('voluntaryWork', row)) return;
+    validateRequiredText(issues, rowIndex, 'orgNameAddress', 'Name & address of organization', row.orgNameAddress);
+    const fromTime = validateDateField(issues, rowIndex, 'dateFrom', 'Date From', row.dateFrom);
+    const toTime = validateDateField(issues, rowIndex, 'dateTo', 'Date To', row.dateTo);
+    validateDateRange(issues, rowIndex, 'Date From', fromTime, 'dateTo', 'Date To', toTime);
+    validateNumberField(issues, rowIndex, 'numberOfHours', 'Number of hours', row.numberOfHours);
+  });
+  return issues;
+}
+
+function validateLdInterventionRows(rows: readonly EmployeeLdIntervention[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('training', row)) return;
+    validateRequiredText(issues, rowIndex, 'title', 'Title of L&D intervention/training program', row.title);
+    const fromTime = validateDateField(issues, rowIndex, 'dateFrom', 'Date From', row.dateFrom);
+    const toTime = validateDateField(issues, rowIndex, 'dateTo', 'Date To', row.dateTo);
+    validateDateRange(issues, rowIndex, 'Date From', fromTime, 'dateTo', 'Date To', toTime);
+    validateNumberField(issues, rowIndex, 'numberOfHours', 'Number of hours', row.numberOfHours);
+  });
+  return issues;
+}
+
+function validateReferenceRows(rows: readonly EmployeeReference[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('references', row)) return;
+    validateRequiredText(issues, rowIndex, 'name', 'Name', row.name);
+  });
+  return issues;
+}
+
+function meaningfulRows<S extends PdsListSection>(
+  section: S,
+  rows: readonly PdsRowBySection[S][],
+): PdsRowBySection[S][] {
+  return rows.filter((row) => hasMeaningfulInput(section, row));
+}
+
+function validationFailure(issues: PdsFieldIssue[]): { ok: false; error: string; fieldIssues: PdsFieldIssue[] } {
+  const detail = issues.map((issue) => `Row ${issue.rowIndex + 1}: ${issue.message}`).join(' ');
+  return {
+    ok: false,
+    error: `Fix the following entries before saving. ${detail}`,
+    fieldIssues: issues,
+  };
+}
+
+const toNullableNumber = (value: number | null | undefined): number | null => {
+  if (value == null || (value as unknown) === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const toNullableInt = (value: number | null | undefined): number | null => {
+  const number = toNullableNumber(value);
+  return number == null ? null : Math.trunc(number);
+};
 
 // ---------------------------------------------------------------------------
 // 23. Children
@@ -63,16 +357,17 @@ export async function saveChildren(
 ): Promise<PdsResult<null>> {
   if (!employeeId) return { ok: false, error: 'No employee id.' };
 
-  // A row with no name is an empty form line the employee never filled in,
-  // not a child — dropping it here keeps blank rows out of the printed sheet.
-  const rows = children
-    .filter((c) => c.fullName?.trim())
-    .map((c, i) => ({
-      employee_id: employeeId,
-      full_name: c.fullName.trim(),
-      date_of_birth: c.dateOfBirth || null,
-      sort_order: i,
-    }));
+  const issues = validatePdsRows('children', children);
+  if (issues.length > 0) return validationFailure(issues);
+
+  // Wholly blank new rows are empty form lines the employee never filled in,
+  // not children — dropping them keeps blank rows out of the printed sheet.
+  const rows = meaningfulRows('children', children).map((c, i) => ({
+    employee_id: employeeId,
+    full_name: c.fullName.trim(),
+    date_of_birth: c.dateOfBirth || null,
+    sort_order: i,
+  }));
 
   try {
     const { error: delError } = await supabase
@@ -141,27 +436,23 @@ export async function saveEducation(
 ): Promise<PdsResult<null>> {
   if (!employeeId) return { ok: false, error: 'No employee id.' };
 
-  const asIntOrNull = (v: number | null | undefined) =>
-    Number.isFinite(Number(v)) && v != null ? Number(v) : null;
+  const issues = validatePdsRows('education', rows);
+  if (issues.length > 0) return validationFailure(issues);
 
-  // Keep a level's row only when it has a school name — school_name is
-  // NOT NULL on the real table, so a row without one can't be inserted at
-  // all, not just "would print as a stray blank row" as the education-only
-  // fields further down would.
-  const payload = rows
-    .filter((r) => r.school?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      level: r.level || null,
-      school_name: r.school!.trim(),
-      course: r.degree?.trim() || null,
-      year_attended_from: asIntOrNull(r.periodFrom),
-      year_attended_to: asIntOrNull(r.periodTo),
-      units_earned: asIntOrNull(r.highestLevelUnits),
-      year_graduated: asIntOrNull(r.yearGraduated),
-      honors_awards: r.scholarshipHonors?.trim() || null,
-      sort_order: i,
-    }));
+  // school_name is NOT NULL on the real table, so a row with real input but
+  // no school name is rejected above rather than silently dropped here.
+  const payload = meaningfulRows('education', rows).map((r, i) => ({
+    employee_id: employeeId,
+    level: r.level || null,
+    school_name: r.school!.trim(),
+    course: r.degree?.trim() || null,
+    year_attended_from: toNullableInt(r.periodFrom),
+    year_attended_to: toNullableInt(r.periodTo),
+    units_earned: toNullableInt(r.highestLevelUnits),
+    year_graduated: toNullableInt(r.yearGraduated),
+    honors_awards: r.scholarshipHonors?.trim() || null,
+    sort_order: i,
+  }));
 
   try {
     const { error: delError } = await supabase
@@ -182,29 +473,55 @@ export async function saveEducation(
 }
 
 /**
- * The five form rows, pre-filled from whatever is stored.
+ * The six schema levels, in the order the form prints them. Doctorate is a
+ * stored value in `employee_education` even though the printed form folds it
+ * under Graduate Studies; it is never rewritten into that level here.
+ */
+const PDS_EDUCATION_SCHEMA_LEVELS = [...EDUCATION_LEVELS, 'Doctorate'] as const;
+
+/**
+ * The form rows, pre-filled from whatever is stored.
  *
- * The sheet always prints all five levels in a fixed order whether or not the
- * employee attended them, so the editor is seeded the same way instead of
- * starting empty and asking the employee to add rows.
+ * The sheet prints every level in a fixed order whether or not the employee
+ * attended it, so the editor is seeded the same way instead of starting empty
+ * and asking the employee to add rows. Every stored row is preserved,
+ * including repeated levels and Doctorate; a blank placeholder is added only
+ * for a level with no stored row.
  */
 export function buildEducationRows(stored: EmployeeEducation[]): EmployeeEducation[] {
-  return EDUCATION_LEVELS.map((level, i) => {
-    const match = stored.find((r) => r.level === level);
-    return (
-      match ?? {
-        level,
-        school: '',
-        degree: '',
-        periodFrom: null,
-        periodTo: null,
-        highestLevelUnits: null,
-        yearGraduated: null,
-        scholarshipHonors: '',
-        sortOrder: i,
-      }
-    );
-  });
+  const grouped = new Map<string, EmployeeEducation[]>();
+  for (const row of stored) {
+    const level = row.level ?? '';
+    const bucket = grouped.get(level);
+    if (bucket) bucket.push(row);
+    else grouped.set(level, [row]);
+  }
+
+  const rows: EmployeeEducation[] = [];
+  for (const level of PDS_EDUCATION_SCHEMA_LEVELS) {
+    const matches = grouped.get(level);
+    if (matches?.length) {
+      rows.push(...matches);
+      grouped.delete(level);
+      continue;
+    }
+    rows.push({
+      level,
+      school: '',
+      degree: '',
+      periodFrom: null,
+      periodTo: null,
+      highestLevelUnits: null,
+      yearGraduated: null,
+      scholarshipHonors: '',
+      sortOrder: rows.length,
+    });
+  }
+
+  // Preserve any stored level outside the schema list instead of dropping an
+  // existing qualification on the floor.
+  for (const matches of grouped.values()) rows.push(...matches);
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,18 +569,19 @@ export async function saveEligibility(
 ): Promise<PdsResult<null>> {
   if (!employeeId) return { ok: false, error: 'No employee id.' };
 
-  const payload = rows
-    .filter((r) => r.eligibilityName?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      eligibility_type: r.eligibilityName.trim(),
-      rating: Number.isFinite(Number(r.rating)) && r.rating != null ? Number(r.rating) : null,
-      date_of_exam: r.examDate || null,
-      place_of_examination: r.examPlace?.trim() || null,
-      license_number: r.licenseNumber?.trim() || null,
-      validity_date: r.licenseValidUntil || null,
-      sort_order: i,
-    }));
+  const issues = validatePdsRows('eligibility', rows);
+  if (issues.length > 0) return validationFailure(issues);
+
+  const payload = meaningfulRows('eligibility', rows).map((r, i) => ({
+    employee_id: employeeId,
+    eligibility_type: r.eligibilityName.trim(),
+    rating: toNullableNumber(r.rating),
+    date_of_exam: r.examDate || null,
+    place_of_examination: r.examPlace?.trim() || null,
+    license_number: r.licenseNumber?.trim() || null,
+    validity_date: r.licenseValidUntil || null,
+    sort_order: i,
+  }));
 
   try {
     const { error: delError } = await supabase
@@ -328,18 +646,19 @@ export async function saveWorkExperience(
 ): Promise<PdsResult<null>> {
   if (!employeeId) return { ok: false, error: 'No employee id.' };
 
-  const payload = rows
-    .filter((r) => r.positionTitle?.trim() && r.departmentAgencyOfficeCompany?.trim() && r.dateFrom)
-    .map((r, i) => ({
-      employee_id: employeeId,
-      from_date: r.dateFrom,
-      to_date: r.dateTo || null,
-      position_title: r.positionTitle.trim(),
-      company_name: r.departmentAgencyOfficeCompany!.trim(),
-      status_of_appointment: r.statusOfAppointment?.trim() || null,
-      is_government_service: r.govtService ?? null,
-      sort_order: i,
-    }));
+  const issues = validatePdsRows('workExperience', rows);
+  if (issues.length > 0) return validationFailure(issues);
+
+  const payload = meaningfulRows('workExperience', rows).map((r, i) => ({
+    employee_id: employeeId,
+    from_date: r.dateFrom!,
+    to_date: r.dateTo || null,
+    position_title: r.positionTitle.trim(),
+    company_name: r.departmentAgencyOfficeCompany!.trim(),
+    status_of_appointment: r.statusOfAppointment?.trim() || null,
+    is_government_service: r.govtService ?? null,
+    sort_order: i,
+  }));
 
   try {
     const { error: delError } = await supabase
@@ -398,19 +717,18 @@ export async function saveVoluntaryWork(
 ): Promise<PdsResult<null>> {
   if (!employeeId) return { ok: false, error: 'No employee id.' };
 
-  const payload = rows
-    .filter((r) => r.orgNameAddress?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      org_name_address: r.orgNameAddress.trim(),
-      date_from: r.dateFrom || null,
-      date_to: r.dateTo || null,
-      number_of_hours: Number.isFinite(Number(r.numberOfHours)) && r.numberOfHours != null
-        ? Number(r.numberOfHours)
-        : null,
-      position_nature_of_work: r.positionNatureOfWork?.trim() || null,
-      sort_order: i,
-    }));
+  const issues = validatePdsRows('voluntaryWork', rows);
+  if (issues.length > 0) return validationFailure(issues);
+
+  const payload = meaningfulRows('voluntaryWork', rows).map((r, i) => ({
+    employee_id: employeeId,
+    org_name_address: r.orgNameAddress.trim(),
+    date_from: r.dateFrom || null,
+    date_to: r.dateTo || null,
+    number_of_hours: toNullableNumber(r.numberOfHours),
+    position_nature_of_work: r.positionNatureOfWork?.trim() || null,
+    sort_order: i,
+  }));
 
   try {
     const { error: delError } = await supabase
@@ -470,20 +788,19 @@ export async function saveLdInterventions(
 ): Promise<PdsResult<null>> {
   if (!employeeId) return { ok: false, error: 'No employee id.' };
 
-  const payload = rows
-    .filter((r) => r.title?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      title: r.title.trim(),
-      date_from: r.dateFrom || null,
-      date_to: r.dateTo || null,
-      number_of_hours: Number.isFinite(Number(r.numberOfHours)) && r.numberOfHours != null
-        ? Number(r.numberOfHours)
-        : null,
-      ld_type: r.ldType?.trim() || null,
-      conducted_by: r.conductedBy?.trim() || null,
-      sort_order: i,
-    }));
+  const issues = validatePdsRows('training', rows);
+  if (issues.length > 0) return validationFailure(issues);
+
+  const payload = meaningfulRows('training', rows).map((r, i) => ({
+    employee_id: employeeId,
+    title: r.title.trim(),
+    date_from: r.dateFrom || null,
+    date_to: r.dateTo || null,
+    number_of_hours: toNullableNumber(r.numberOfHours),
+    ld_type: r.ldType?.trim() || null,
+    conducted_by: r.conductedBy?.trim() || null,
+    sort_order: i,
+  }));
 
   try {
     const { error: delError } = await supabase
@@ -540,15 +857,16 @@ export async function saveReferences(
 ): Promise<PdsResult<null>> {
   if (!employeeId) return { ok: false, error: 'No employee id.' };
 
-  const payload = rows
-    .filter((r) => r.name?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      name: r.name.trim(),
-      address: r.address?.trim() || null,
-      contact_info: r.contactInfo?.trim() || null,
-      sort_order: i,
-    }));
+  const issues = validatePdsRows('references', rows);
+  if (issues.length > 0) return validationFailure(issues);
+
+  const payload = meaningfulRows('references', rows).map((r, i) => ({
+    employee_id: employeeId,
+    name: r.name.trim(),
+    address: r.address?.trim() || null,
+    contact_info: r.contactInfo?.trim() || null,
+    sort_order: i,
+  }));
 
   try {
     const { error: delError } = await supabase

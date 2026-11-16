@@ -34,6 +34,7 @@ import type {
   EmployeeVoluntaryWork,
   EmployeeLdIntervention,
   EmployeeReference,
+  PdsFieldIssue,
 } from '../../types/employee.types';
 import { emptyAddress, EDUCATION_LEVEL_LABELS } from '../../types/employee.types';
 import { PdsStepList } from './PdsStepList';
@@ -46,6 +47,7 @@ import {
   listVoluntaryWork, saveVoluntaryWork,
   listLdInterventions, saveLdInterventions,
   listReferences, saveReferences,
+  validatePdsRows,
 } from '../../lib/api/personalDataSheet';
 
 const BRAND = { blue: '#363EE8', navy: '#040E6B', line: '#C8D1FF' };
@@ -348,6 +350,9 @@ interface LoadedLists {
 
 const hasText = (v: string | null | undefined) => !!v && v.trim() !== '';
 
+const describePdsIssues = (issues: PdsFieldIssue[]) =>
+  issues.map((issue) => `Row ${issue.rowIndex + 1}: ${issue.message}`).join(' ');
+
 /**
  * Sections that already hold saved data. Adjust the field choices here.
  * Scalar sections read `profile`; list sections read only the lists passed in
@@ -590,6 +595,13 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     setSaveError(null);
     setSaveSuccess(null);
 
+    const childIssues = validatePdsRows('children', children);
+    if (childIssues.length > 0) {
+      setSaveError(describePdsIssues(childIssues));
+      setSaving(false);
+      return;
+    }
+
     const scalarPatch: Partial<Employee> = {
       spouseSurname: draft.spouseSurname.trim(),
       spouseFirstName: draft.spouseFirstName.trim(),
@@ -614,11 +626,12 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     ]);
 
     if (scalarRes.ok === false || childrenRes.ok === false) {
+      const fieldIssues = childrenRes.ok === false ? childrenRes.fieldIssues : undefined;
       const error =
         (scalarRes.ok === false && scalarRes.error) ||
         (childrenRes.ok === false && childrenRes.error) ||
         'Failed to save Family Background. Please try again.';
-      setSaveError(error);
+      setSaveError(fieldIssues?.length ? describePdsIssues(fieldIssues) : error);
       setSaving(false);
       return;
     }
@@ -634,9 +647,20 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     setSaveError(null);
     setSaveSuccess(null);
 
+    const issues = validatePdsRows('education', education);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
+      setSaving(false);
+      return;
+    }
+
     const res = await saveEducation(employeeId, education);
     if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Educational Background. Please try again.');
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Educational Background. Please try again.',
+      );
       setSaving(false);
       return;
     }
@@ -652,9 +676,20 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     setSaveError(null);
     setSaveSuccess(null);
 
+    const issues = validatePdsRows('eligibility', eligibility);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
+      setSaving(false);
+      return;
+    }
+
     const res = await saveEligibility(employeeId, eligibility);
     if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Civil Service Eligibility. Please try again.');
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Civil Service Eligibility. Please try again.',
+      );
       setSaving(false);
       return;
     }
@@ -670,9 +705,20 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     setSaveError(null);
     setSaveSuccess(null);
 
+    const issues = validatePdsRows('workExperience', workExperience);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
+      setSaving(false);
+      return;
+    }
+
     const res = await saveWorkExperience(employeeId, workExperience);
     if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Work Experience. Please try again.');
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Work Experience. Please try again.',
+      );
       setSaving(false);
       return;
     }
@@ -688,9 +734,20 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     setSaveError(null);
     setSaveSuccess(null);
 
+    const issues = validatePdsRows('voluntaryWork', voluntaryWork);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
+      setSaving(false);
+      return;
+    }
+
     const res = await saveVoluntaryWork(employeeId, voluntaryWork);
     if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Voluntary Work. Please try again.');
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Voluntary Work. Please try again.',
+      );
       setSaving(false);
       return;
     }
@@ -706,9 +763,20 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     setSaveError(null);
     setSaveSuccess(null);
 
+    const issues = validatePdsRows('training', ldInterventions);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
+      setSaving(false);
+      return;
+    }
+
     const res = await saveLdInterventions(employeeId, ldInterventions);
     if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Learning & Development history. Please try again.');
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Learning & Development history. Please try again.',
+      );
       setSaving(false);
       return;
     }
@@ -748,6 +816,13 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     setSaveError(null);
     setSaveSuccess(null);
 
+    const referenceIssues = validatePdsRows('references', references);
+    if (referenceIssues.length > 0) {
+      setSaveError(describePdsIssues(referenceIssues));
+      setSaving(false);
+      return;
+    }
+
     const scalarPatch: Partial<Employee> = {
       relatedThirdDegree: draft.relatedThirdDegree,
       relatedFourthDegree: draft.relatedFourthDegree,
@@ -785,11 +860,12 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     ]);
 
     if (scalarRes.ok === false || referencesRes.ok === false) {
+      const fieldIssues = referencesRes.ok === false ? referencesRes.fieldIssues : undefined;
       const error =
         (scalarRes.ok === false && scalarRes.error) ||
         (referencesRes.ok === false && referencesRes.error) ||
         'Failed to save Background Information. Please try again.';
-      setSaveError(error);
+      setSaveError(fieldIssues?.length ? describePdsIssues(fieldIssues) : error);
       setSaving(false);
       return;
     }
@@ -958,13 +1034,13 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       )}
 
       {activeTab === 'education' && (
-      <SectionCard title="III. Educational Background" description="Elementary through Graduate Studies.">
+      <SectionCard title="III. Educational Background" description="Elementary through Doctorate.">
         {listsLoading ? (
           <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
         ) : (
           <div className="space-y-4">
             {education.map((row, i) => (
-              <div key={row.level} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
+              <div key={row.id ?? `${row.level}-${i}`} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
                 <p className="mb-2 text-xs font-bold uppercase tracking-wide" style={{ color: BRAND.blue }}>{EDUCATION_LEVEL_LABELS[row.level] ?? row.level}</p>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                   <Field label="Name of School" value={row.school || ''} onChange={(v) => updateEducation(i, { school: v })} />
