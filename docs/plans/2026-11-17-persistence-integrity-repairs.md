@@ -35,7 +35,7 @@ The full step-by-step contracts are in the approved specification; execution bri
 | --- | --- | --- | --- |
 | 1 | `personalDataSheet.ts`, employee types, PDS section, focused validation/preservation tests | Baseline | Complete |
 | 2 | PDS RPC service integration, scalar mapper if needed, CLI-generated migration, SQL/concurrency tests | 1 | Implemented; database acceptance blocked |
-| 3 | Checked profile writes, nullable numeric clears, local-only parent callback, wizard/draft behavior | 1, 2 | Pending |
+| 3 | Checked profile writes, nullable numeric clears, local-only parent callback, wizard/draft behavior | 1, 2 | Complete locally; integration/browser acceptance outstanding |
 | 4 | PDS load/retry/conflict/uncertain states and canonical save snapshots | 2, 3 | Pending |
 | 5 | Succession evidence query/schema mismatch and PDS downstream regressions | 1–4 | Pending |
 | 6 | External hire RPC, browser/backend routing, SQL/concurrency/service/backend tests | Phase 1 | Pending |
@@ -81,3 +81,11 @@ DeepSeek/max implemented; parent Sol/medium reviewed and independently verified 
 Replaced PDS list delete/reinsert services with canonical snapshot/revision RPC calls. Authored invoker reconciliation migration and rollback, permission, membership, and two-session tests; family/background scalar changes now share the list save request. Existing IDs and unowned metadata are retained by the transaction design. No legacy fallback remains.
 
 Parent reviewed the full changes and two corrections, and independently verified 172 files/1,630 tests, targeted 30 tests, TypeScript, scoped lint, production build, migration versions, shell syntax, and whitespace. PostgreSQL compilation, rollback, permissions and concurrency have **not run** because Docker is unavailable; Task 2 is not fully accepted or release-ready. Further local implementation may proceed under the recorded preflight ruling, but this database gate must close before release.
+
+Docker later became available: the exact migration compiled and the SQL suite passed on the older isolated local schema. After reproducing the known live required employee columns, both unmodified suites failed on missing `department` in their fixtures. Concurrency and production-shaped permission acceptance remain open; Docker availability is no longer the immediate blocker.
+
+### Task 3 checkpoint
+
+Profile saves now check the returned employee row before updating local state; clearing height/weight writes null, and PDS does not write twice through its parent. Unsaved drafts survive unrelated saves, previous-employee lists/revisions are cleared, and setup saves await confirmation before advancing. Optional Skip still permits closing after an attempted partial save, with failures shown.
+
+Parent reviewed the implementation and independently reran 52 affected tests, the full 173-file/1,645-test suite, TypeScript, scoped lint, and production build at completion. Real PostgREST and rendered-browser acceptance remain outstanding. See `docs/session-summaries/2026-11-17-persistence-integrity-task-3-summary.md`. Task 4 is not started.

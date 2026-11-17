@@ -457,11 +457,16 @@ function mapPatchToColumns(patch: Partial<Employee>): Record<string, unknown> {
     row[column] = value === '' ? null : value;
   }
 
-  // Item 3's height/weight are numeric columns; a cleared box arrives as '' and
-  // would be rejected as invalid input syntax if passed straight through.
+  // Item 3's height/weight are numeric columns; a cleared box arrives as null
+  // (or '' from older callers) and must be stored as NULL rather than being
+  // silently omitted, or the previous measurement survives the edit.
   for (const numeric of ['heightM', 'weightKg'] as const) {
     if (patch[numeric] === undefined) continue;
-    const raw = patch[numeric];
+    const raw = patch[numeric] as unknown;
+    if (raw == null || (typeof raw === 'string' && raw.trim() === '')) {
+      row[PDS_SCALAR_COLUMNS[numeric]] = null;
+      continue;
+    }
     const parsed = typeof raw === 'number' ? raw : Number.parseFloat(String(raw));
     row[PDS_SCALAR_COLUMNS[numeric]] = Number.isFinite(parsed) ? parsed : null;
   }
@@ -572,27 +577,37 @@ export async function fetchPortalEmployeeByNumber(
 /**
  * Persist a partial patch to the `employees` row identified by the Supabase UUID.
  * Only the fields present in `patch` are sent — no full-object replacement.
+ *
+ * The update requests the written row back and maps it, so callers only update
+ * saved state from what the database actually stored. An update that matches no
+ * row (wrong id, or RLS hiding it) is a failure, not a quiet success.
  */
 export async function patchPortalEmployee(
   supabaseId: string,
   patch: Partial<Employee>,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: Employee } | { ok: false; error: string }> {
   if (!supabaseId) return { ok: false, error: 'No supabase ID — cannot save.' };
 
   const columns = mapPatchToColumns(patch);
   if (Object.keys(columns).length <= 1) {
-    // Only modified_at was set — nothing to write.
-    return { ok: true };
+    // Only modified_at was set — nothing to write. Read the checked row so the
+    // caller still gets confirmed state instead of an unverified success.
+    return fetchPortalEmployeeById(supabaseId);
   }
 
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('employees')
       .update(columns)
-      .eq('id', supabaseId);
+      .eq('id', supabaseId)
+      .select('*')
+      .maybeSingle();
 
     if (error) throw error;
-    return { ok: true };
+    if (!data) {
+      return { ok: false, error: 'No employee row matched this save. Nothing was changed.' };
+    }
+    return { ok: true, data: mapSupabaseRowToEmployee(data) };
   } catch (err: any) {
     console.error('[employeePortal] patchPortalEmployee error:', err);
     return { ok: false, error: err?.message ?? 'Failed to save to database.' };

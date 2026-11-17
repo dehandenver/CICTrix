@@ -60,8 +60,8 @@ export interface Employee {
   firstName?: string;
   middleName?: string;
   nameExtension?: string; // JR., SR.
-  heightM?: number;
-  weightKg?: number;
+  heightM?: number | null;
+  weightKg?: number | null;
   bloodType?: string;
   umidNumber?: string;
   philsysNumber?: string;

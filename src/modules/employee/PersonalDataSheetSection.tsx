@@ -21,7 +21,7 @@
  * not a data-entry field.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { ActionFeedback } from '../../components/action-feedback';
 import type {
@@ -434,6 +434,24 @@ const SaveBar: React.FC<{ saving: boolean; onSave: () => void; label: string; la
   </div>
 );
 
+/** Compare two address blocks field by field, treating a missing part as blank. */
+const addressEquals = (a: AddressParts, b: AddressParts) =>
+  (Object.keys(emptyAddress()) as Array<keyof AddressParts>).every(
+    (key) => (a[key] || '') === (b[key] || ''),
+  );
+
+/** Only the fields the caller submitted, taken from the checked returned row. */
+const pickConfirmedFields = (
+  confirmed: Employee,
+  submitted: Partial<Employee>,
+): Partial<Employee> => {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(submitted)) {
+    out[key] = (confirmed as unknown as Record<string, unknown>)[key];
+  }
+  return out as Partial<Employee>;
+};
+
 export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile, onSaved }) => {
   const [activeTab, setActiveTab] = useState<SubTab>('personal');
   const [draft, setDraft] = useState<ScalarDraft>(getScalarDraft(profile));
@@ -456,13 +474,67 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<SubTab>>(() => getInitiallySavedSections(profile, profile));
 
+  // Which scalar inputs the employee has touched. A confirmed save or a new
+  // profile snapshot may refresh only fields that are still clean, so a save in
+  // one section can never erase unsaved edits in another.
+  const identityKey = employeeId || profile.supabaseId || profile.employeeId;
+  const dirtyScalarFields = useRef(new Set<keyof ScalarDraft>());
+  const residentialDirty = useRef(false);
+  const permanentDirty = useRef(false);
+  const loadedIdentity = useRef(identityKey);
+  const residentialRef = useRef(residential);
+  const permanentRef = useRef(permanent);
+  residentialRef.current = residential;
+  permanentRef.current = permanent;
+
   const markSaved = (...ids: SubTab[]) =>
     setSavedIds((prev) => (ids.every((id) => prev.has(id)) ? prev : new Set([...prev, ...ids])));
 
+  // A different employee means nothing from the previous one may remain: clear
+  // the lists, revisions, saved markers and dirty drafts before the new reads.
   useEffect(() => {
+    if (loadedIdentity.current === identityKey) return;
+    loadedIdentity.current = identityKey;
+    dirtyScalarFields.current.clear();
+    residentialDirty.current = false;
+    permanentDirty.current = false;
     setDraft(getScalarDraft(profile));
     setResidential(profile.residential || emptyAddress());
     setPermanent(profile.permanent || emptyAddress());
+    setSameAsResidential(false);
+    setChildren([]);
+    setEducation([]);
+    setEligibility([]);
+    setWorkExperience([]);
+    setVoluntaryWork([]);
+    setLdInterventions([]);
+    setReferences([]);
+    setRevisions({});
+    setSavedIds(getInitiallySavedSections(profile, {}));
+    setSaveError(null);
+    setSaveSuccess(null);
+    // Identity is the trigger; profile is read only for the new initial values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identityKey]);
+
+  // Hydrate clean fields from the canonical profile, including after a
+  // confirmed save. Dirty fields keep their unsaved input.
+  useEffect(() => {
+    const fresh = getScalarDraft(profile);
+    setDraft((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(fresh) as Array<keyof ScalarDraft>) {
+        if (dirtyScalarFields.current.has(key)) continue;
+        if (prev[key] !== fresh[key]) {
+          (next as Record<string, unknown>)[key] = fresh[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    if (!residentialDirty.current) setResidential(profile.residential || emptyAddress());
+    if (!permanentDirty.current) setPermanent(profile.permanent || emptyAddress());
     markSaved(...getInitiallySavedSections(profile, {}));
   }, [profile]);
 
@@ -520,13 +592,94 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         ldInterventions: ldInterventionsRes.ok !== false ? ldInterventionsRes.data.rows : undefined,
         references: referencesRes.ok !== false ? referencesRes.data.rows : undefined,
       }));
+
+      // Children and references reads also carry their section's scalar
+      // columns. Seed clean draft fields from that canonical snapshot so the
+      // form baseline matches what the paired save will compare against.
+      const canonicalScalars: Partial<Employee> = {
+        ...(childrenRes.ok !== false ? childrenRes.data.scalars : {}),
+        ...(referencesRes.ok !== false ? referencesRes.data.scalars : {}),
+      };
+      if (Object.keys(canonicalScalars).length > 0) {
+        const fresh = getScalarDraft(canonicalScalars as Employee);
+        setDraft((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const key of Object.keys(fresh) as Array<keyof ScalarDraft>) {
+            if (!(key in canonicalScalars) || dirtyScalarFields.current.has(key)) continue;
+            if (prev[key] !== fresh[key]) {
+              (next as Record<string, unknown>)[key] = fresh[key];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      }
       setListsLoading(false);
     })();
     return () => { cancelled = true; };
   }, [employeeId]);
 
-  const set = <K extends keyof ScalarDraft>(key: K, value: ScalarDraft[K]) =>
+  const set = <K extends keyof ScalarDraft>(key: K, value: ScalarDraft[K]) => {
+    dirtyScalarFields.current.add(key);
     setDraft((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const editResidential = (value: AddressParts) => {
+    residentialDirty.current = true;
+    setResidential(value);
+  };
+
+  const editPermanent = (value: AddressParts) => {
+    permanentDirty.current = true;
+    setPermanent(value);
+  };
+
+  /**
+   * Apply values from the checked returned row to the draft. A field the
+   * employee changed while the write was in flight is left alone, so a slow
+   * response cannot overwrite newer typing.
+   */
+  const applyConfirmedValues = (
+    confirmed: Partial<Employee>,
+    submitted: Partial<Employee>,
+    submittedDraft: ScalarDraft,
+    submittedAddresses?: { residential: AddressParts; permanent: AddressParts },
+  ) => {
+    const confirmedDraft = getScalarDraft({ ...profile, ...confirmed } as Employee);
+    setDraft((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(submitted) as Array<keyof Employee>) {
+        const draftKey = key as keyof ScalarDraft;
+        if (!(key in confirmed) || !(draftKey in confirmedDraft)) continue;
+        if (prev[draftKey] !== submittedDraft[draftKey]) continue;
+        dirtyScalarFields.current.delete(draftKey);
+        if (next[draftKey] !== confirmedDraft[draftKey]) {
+          (next as Record<string, unknown>)[draftKey] = confirmedDraft[draftKey];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    if (
+      submittedAddresses &&
+      confirmed.residential !== undefined &&
+      addressEquals(residentialRef.current, submittedAddresses.residential)
+    ) {
+      residentialDirty.current = false;
+      setResidential(confirmed.residential);
+    }
+    if (
+      submittedAddresses &&
+      confirmed.permanent !== undefined &&
+      addressEquals(permanentRef.current, submittedAddresses.permanent)
+    ) {
+      permanentDirty.current = false;
+      setPermanent(confirmed.permanent);
+    }
+  };
 
   const addChild = () => setChildren((prev) => [...prev, { fullName: '', dateOfBirth: '' }]);
   const removeChild = (i: number) => setChildren((prev) => prev.filter((_, idx) => idx !== i));
@@ -583,8 +736,8 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       placeOfBirth: draft.placeOfBirth.trim(),
       gender: draft.gender,
       civilStatus: draft.civilStatus,
-      heightM: draft.heightM ? Number.parseFloat(draft.heightM) : undefined,
-      weightKg: draft.weightKg ? Number.parseFloat(draft.weightKg) : undefined,
+      heightM: draft.heightM.trim() ? Number.parseFloat(draft.heightM) : null,
+      weightKg: draft.weightKg.trim() ? Number.parseFloat(draft.weightKg) : null,
       bloodType: draft.bloodType.trim(),
       umidNumber: draft.umidNumber.trim(),
       philsysNumber: draft.philsysNumber.trim(),
@@ -601,6 +754,8 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       residential,
       permanent: effectivePermanent,
     };
+    const submittedDraft = { ...draft };
+    const submittedAddresses = { residential, permanent: effectivePermanent };
 
     const res = await patchPortalEmployee(employeeId, scalarPatch);
     if (res.ok === false) {
@@ -609,7 +764,8 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    onSaved(scalarPatch);
+    applyConfirmedValues(res.data, scalarPatch, submittedDraft, submittedAddresses);
+    onSaved(pickConfirmedFields(res.data, scalarPatch));
     setSaveSuccess('Personal Information saved.');
     markSaved('personal');
     setSaving(false);
@@ -652,6 +808,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
+    const submittedDraft = { ...draft };
     const res = await saveChildren(employeeId, children, revision, scalarPatch);
     if (res.ok === false) {
       setSaveError(
@@ -663,9 +820,11 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
+    const confirmedScalars = res.data.scalars ?? {};
     setChildren(res.data.rows);
     setRevisions((prev) => ({ ...prev, children: res.data.revision }));
-    onSaved(res.data.scalars ?? scalarPatch);
+    applyConfirmedValues(confirmedScalars, scalarPatch, submittedDraft);
+    onSaved(confirmedScalars);
     setSaveSuccess('Family Background saved.');
     markSaved('family');
     setSaving(false);
@@ -871,6 +1030,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       nonAcademicDistinctions: draft.nonAcademicDistinctions.trim(),
       membershipAssociations: draft.membershipAssociations.trim(),
     };
+    const submittedDraft = { ...draft };
 
     const res = await patchPortalEmployee(employeeId, scalarPatch);
     if (res.ok === false) {
@@ -879,7 +1039,8 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    onSaved(scalarPatch);
+    applyConfirmedValues(res.data, scalarPatch, submittedDraft);
+    onSaved(pickConfirmedFields(res.data, scalarPatch));
     setSaveSuccess('Other Information saved.');
     markSaved('otherInfo');
     setSaving(false);
@@ -935,6 +1096,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
+    const submittedDraft = { ...draft };
     const res = await saveReferences(employeeId, references, revision, scalarPatch);
     if (res.ok === false) {
       setSaveError(
@@ -946,9 +1108,11 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
+    const confirmedScalars = res.data.scalars ?? {};
     setReferences(res.data.rows);
     setRevisions((prev) => ({ ...prev, references: res.data.revision }));
-    onSaved(res.data.scalars ?? scalarPatch);
+    applyConfirmedValues(confirmedScalars, scalarPatch, submittedDraft);
+    onSaved(confirmedScalars);
     setSaveSuccess('Background Information saved.');
     markSaved('background');
     setSaving(false);
@@ -1007,7 +1171,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
         <div>
           <h3 className="mb-2 text-sm font-bold" style={{ color: BRAND.navy }}>Residential Address</h3>
-          <AddressFields value={residential} onChange={setResidential} />
+          <AddressFields value={residential} onChange={editResidential} />
         </div>
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -1021,7 +1185,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
               Same as residential
             </label>
           </div>
-          {!sameAsResidential && <AddressFields value={permanent} onChange={setPermanent} />}
+          {!sameAsResidential && <AddressFields value={permanent} onChange={editPermanent} />}
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">

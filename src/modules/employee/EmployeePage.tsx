@@ -1142,6 +1142,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   };
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [wizardTryNext, setWizardTryNext] = useState(false);
+  const [wizardSaving, setWizardSaving] = useState(false);
+  const wizardSavingRef = useRef(false);
   const [wContact, setWContact] = useState<ContactDraft>({ email: '', mobileNumber: '', homeAddress: '' });
   const [wEmergency, setWEmergency] = useState<EmergencyDraft>({ emergencyContactName: '', emergencyRelationship: '', emergencyContactNumber: '' });
   const [wGovt, setWGovt] = useState<GovernmentDraft>({ sssNumber: '', philhealthNumber: '', pagibigNumber: '', tinNumber: '' });
@@ -1320,27 +1322,49 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     navigate(tab.route);
   };
 
-  const persistProfilePatch = async (patch: Partial<Employee>) => {
-    const nowIso = new Date().toISOString();
-    // Optimistic local update.
-    const nextProfile = { ...profile, ...patch, updatedAt: nowIso };
-    setProfile(nextProfile);
+  /**
+   * Merge data the database has already confirmed. Local only: it must never
+   * trigger a second write, because PDS section saves write their own scalars.
+   */
+  const applySavedProfile = useCallback((patch: Partial<Employee>) => {
+    if (Object.keys(patch).length === 0) return;
+    setProfile((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const persistProfilePatch = async (patch: Partial<Employee>): Promise<boolean> => {
     setSaveError(null);
     setProfileSaveSuccess(null);
 
-    if (currentUser.supabaseId) {
-      // Write to Supabase.
-      const result = await patchPortalEmployee(currentUser.supabaseId, patch);
-      if (result.ok === false) {
-        setSaveError(result.error ?? 'Failed to save changes. Please try again.');
-        // Rollback optimistic update.
-        setProfile(profile);
-        return;
-      }
-      setProfileSaveSuccess('Changes saved successfully.');
-    } else {
+    if (!currentUser.supabaseId) {
       // Fallback: demo account — persist to localStorage only.
       updateEmployeePortalEmployee(profile.employeeId, patch);
+      applySavedProfile(patch);
+      setProfileSaveSuccess('Changes saved successfully.');
+      return true;
+    }
+
+    const result = await patchPortalEmployee(currentUser.supabaseId, patch);
+    if (result.ok === false) {
+      setSaveError(result.error ?? 'Failed to save changes. Please try again.');
+      return false;
+    }
+
+    applySavedProfile(result.data);
+    setProfileSaveSuccess('Changes saved successfully.');
+    return true;
+  };
+
+  /** One wizard write at a time; the caller awaits the confirmed result. */
+  const saveWizardPatch = async (patch: Partial<Employee>): Promise<boolean> => {
+    if (wizardSavingRef.current) return false;
+    if (Object.keys(patch).length === 0) return true;
+    wizardSavingRef.current = true;
+    setWizardSaving(true);
+    try {
+      return await persistProfilePatch(patch);
+    } finally {
+      wizardSavingRef.current = false;
+      setWizardSaving(false);
     }
   };
 
@@ -1511,7 +1535,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             <PersonalDataSheetSection
               employeeId={currentUser.supabaseId ?? ''}
               profile={profile}
-              onSaved={(patch) => void persistProfilePatch(patch)}
+              onSaved={applySavedProfile}
             />
           </div>
         )}
@@ -2456,37 +2480,52 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         const fieldWrap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 0 };
         const errMsg: React.CSSProperties = { fontSize: '0.72rem', color: 'var(--error-700)', marginTop: '0.2rem', fontWeight: 600 };
 
-        // Partial save helper for Step 3 (only saves filled fields)
-        const saveStep3Partial = () => {
+        // Step 3 saves only the fields the employee filled in; empty boxes are
+        // left untouched. The wizard awaits the checked result before closing.
+        const buildStep3Patch = (): Partial<Employee> => {
           const patch: Partial<Employee> = {};
           if (wGovt.sssNumber.trim()) patch.sssNumber = wGovt.sssNumber.trim();
           if (wGovt.philhealthNumber.trim()) patch.philhealthNumber = wGovt.philhealthNumber.trim();
           if (wGovt.pagibigNumber.trim()) patch.pagibigNumber = wGovt.pagibigNumber.trim();
           if (wGovt.tinNumber.trim()) patch.tinNumber = wGovt.tinNumber.trim();
-          if (Object.keys(patch).length > 0) void persistProfilePatch(patch);
+          return patch;
         };
 
-        const handleNext = () => {
+        const handleNext = async () => {
+          if (wizardSavingRef.current) return;
           setWizardTryNext(true);
           if (wizardStep === 1) {
             if (!wContact.email.trim() || !wContact.mobileNumber.trim() || !wContact.homeAddress.trim()) return;
-            void persistProfilePatch({ email: wContact.email.trim(), mobileNumber: wContact.mobileNumber.trim(), homeAddress: wContact.homeAddress.trim() });
+            const saved = await saveWizardPatch({ email: wContact.email.trim(), mobileNumber: wContact.mobileNumber.trim(), homeAddress: wContact.homeAddress.trim() });
+            if (!saved) return;
             setWizardStep(2); setWizardTryNext(false);
           } else if (wizardStep === 2) {
             if (!wEmergency.emergencyContactName.trim() || !wEmergency.emergencyRelationship.trim() || !wEmergency.emergencyContactNumber.trim()) return;
-            void persistProfilePatch({ emergencyContactName: wEmergency.emergencyContactName.trim(), emergencyRelationship: wEmergency.emergencyRelationship.trim(), emergencyContactNumber: wEmergency.emergencyContactNumber.trim() });
+            const saved = await saveWizardPatch({ emergencyContactName: wEmergency.emergencyContactName.trim(), emergencyRelationship: wEmergency.emergencyRelationship.trim(), emergencyContactNumber: wEmergency.emergencyContactNumber.trim() });
+            if (!saved) return;
             setWizardStep(3); setWizardTryNext(false);
           } else {
-            // Step 3 — soft: save whatever is filled, close regardless of empty fields
-            saveStep3Partial();
-            closeSetupWizard();
+            // Step 3 — soft: save whatever is filled, but only close on success.
+            const patch = buildStep3Patch();
+            if (Object.keys(patch).length === 0) {
+              closeSetupWizard();
+              return;
+            }
+            const saved = await saveWizardPatch(patch);
+            if (saved) closeSetupWizard();
           }
         };
 
         const handleSkip = () => {
-          // Explicit escape: save partial, close without showing validation red
-          saveStep3Partial();
-          closeSetupWizard();
+          // Explicit escape: save partial, close without showing validation red.
+          // A failure still closes and is reported by the page's error banner.
+          if (wizardSavingRef.current) return;
+          const patch = buildStep3Patch();
+          if (Object.keys(patch).length === 0) {
+            closeSetupWizard();
+            return;
+          }
+          void saveWizardPatch(patch).then(() => closeSetupWizard());
         };
 
         const StepColumn = ({ n }: { n: number }) => {
@@ -2670,6 +2709,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   )}
                 </div>
 
+                {saveError && (
+                  <p
+                    role="alert"
+                    style={{ margin: '0 1.5rem 1rem', padding: '0.6rem 0.85rem', borderRadius: 8, background: 'var(--error-100)', color: 'var(--error-700)', fontSize: '0.8rem', fontWeight: 600 }}
+                  >
+                    {saveError}
+                  </p>
+                )}
+
                 {/* Footer */}
                 <div style={{ padding: '1rem 1.5rem', borderTop: '1.5px solid var(--color-primary-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
                   <button
@@ -2692,8 +2740,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     <button
                       type="button"
                       onClick={handleNext}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', cursor: 'pointer', boxShadow: '0 4px 14px rgba(54,62,232,0.3)' }}
+                      disabled={wizardSaving}
+                      aria-busy={wizardSaving || undefined}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', cursor: wizardSaving ? 'not-allowed' : 'pointer', opacity: wizardSaving ? 0.7 : 1, boxShadow: '0 4px 14px rgba(54,62,232,0.3)' }}
                     >
+                      {wizardSaving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                       {wizardStep < 3 ? 'Save & Continue →' : 'Save Changes ✓'}
                     </button>
                   </div>
