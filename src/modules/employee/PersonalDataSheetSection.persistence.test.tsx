@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Employee, EmployeeEducation } from '../../types/employee.types';
+import type { Employee, EmployeeChild, EmployeeEducation } from '../../types/employee.types';
 
 const pdsApi = vi.hoisted(() => ({
   listChildren: vi.fn(),
@@ -26,17 +26,28 @@ vi.mock('../../lib/api/personalDataSheet', async (importOriginal) => {
   return { ...actual, ...pdsApi };
 });
 
+const portalApi = vi.hoisted(() => ({
+  patchPortalEmployee: vi.fn(),
+}));
+
 vi.mock('../../lib/api/employeePortal', () => ({
-  patchPortalEmployee: vi.fn(async () => ({ ok: true })),
+  patchPortalEmployee: portalApi.patchPortalEmployee,
 }));
 
 import { PersonalDataSheetSection } from './PersonalDataSheetSection';
 
-const emptyResult = async () => ({ ok: true, data: [] });
-const savedResult = async () => ({ ok: true, data: null });
+const emptyResult = async () => ({
+  ok: true,
+  data: { rows: [], revision: 'loaded-revision', scalars: {} },
+});
+const savedResult = async () => ({
+  ok: true,
+  data: { rows: [], revision: 'saved-revision', scalars: {} },
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
+  portalApi.patchPortalEmployee.mockResolvedValue({ ok: true });
   pdsApi.listChildren.mockImplementation(emptyResult);
   pdsApi.listEducation.mockImplementation(emptyResult);
   pdsApi.listEligibility.mockImplementation(emptyResult);
@@ -71,7 +82,10 @@ describe('Personal Data Sheet persistence', () => {
       { id: 'edu-doctorate', level: 'Doctorate', school: 'Doctorate School', degree: 'PhD', sortOrder: 5 },
       { id: 'edu-college-2', level: 'College', school: 'College Two School', degree: 'BSB', sortOrder: 4 },
     ];
-    pdsApi.listEducation.mockResolvedValue({ ok: true, data: education });
+    pdsApi.listEducation.mockResolvedValue({
+      ok: true,
+      data: { rows: education, revision: 'education-revision', scalars: {} },
+    });
 
     renderSection();
 
@@ -89,6 +103,26 @@ describe('Personal Data Sheet persistence', () => {
     expect(savedRows.map((row) => row.id).filter(Boolean)).toEqual(
       expect.arrayContaining(['edu-college-1', 'edu-college-2', 'edu-doctorate']),
     );
+    expect(pdsApi.saveEducation.mock.calls[0][2]).toBe('education-revision');
+  });
+
+  it('saves children and family scalars in one RPC with the loaded revision', async () => {
+    renderSection();
+
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Family Background/ }));
+    await waitFor(() => expect(pdsApi.listChildren).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /Add child/ }));
+    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Test Child' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Family Background' }));
+
+    await waitFor(() => expect(pdsApi.saveChildren).toHaveBeenCalledTimes(1));
+    const [employeeId, rows, revision, scalarPatch] = pdsApi.saveChildren.mock.calls[0];
+    expect(employeeId).toBe('emp-1');
+    expect((rows as EmployeeChild[]).map((row) => row.fullName)).toEqual(['Test Child']);
+    expect(revision).toBe('loaded-revision');
+    expect(scalarPatch).toMatchObject({ spouseSurname: '', fatherSurname: '', motherSurname: '' });
+    expect(portalApi.patchPortalEmployee).not.toHaveBeenCalled();
   });
 
   it('rejectsPartiallyCompletedRowsBeforeAnyWrite', async () => {

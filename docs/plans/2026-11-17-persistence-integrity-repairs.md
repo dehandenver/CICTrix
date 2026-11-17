@@ -34,7 +34,7 @@ The full step-by-step contracts are in the approved specification; execution bri
 | Task | Owned change boundary | Depends on | State |
 | --- | --- | --- | --- |
 | 1 | `personalDataSheet.ts`, employee types, PDS section, focused validation/preservation tests | Baseline | Complete |
-| 2 | PDS RPC service integration, scalar mapper if needed, CLI-generated migration, SQL/concurrency tests | 1 | Pending |
+| 2 | PDS RPC service integration, scalar mapper if needed, CLI-generated migration, SQL/concurrency tests | 1 | Implemented; database acceptance blocked |
 | 3 | Checked profile writes, nullable numeric clears, local-only parent callback, wizard/draft behavior | 1, 2 | Pending |
 | 4 | PDS load/retry/conflict/uncertain states and canonical save snapshots | 2, 3 | Pending |
 | 5 | Succession evidence query/schema mismatch and PDS downstream regressions | 1–4 | Pending |
@@ -75,3 +75,9 @@ Baseline and final results are recorded in the ledger; only observed passing che
 Education grouping/editor preserves repeated qualifications and Doctorate. All seven PDS list saves reject meaningful incomplete rows before external writes; wholly blank new placeholders remain allowed. Row/field validation errors use the existing feedback surface. No migrations or transactional save changes are included yet.
 
 DeepSeek/max implemented; parent Sol/medium reviewed and independently verified 172 files/1,619 tests, TypeScript, scoped lint, production build, and diff whitespace checks. No corrective dispatches. Database atomicity and rendered-browser acceptance remain for later tasks. See `docs/session-summaries/2026-11-17-persistence-integrity-task-1-summary.md`.
+
+### Task 2 checkpoint
+
+Replaced PDS list delete/reinsert services with canonical snapshot/revision RPC calls. Authored invoker reconciliation migration and rollback, permission, membership, and two-session tests; family/background scalar changes now share the list save request. Existing IDs and unowned metadata are retained by the transaction design. No legacy fallback remains.
+
+Parent reviewed the full changes and two corrections, and independently verified 172 files/1,630 tests, targeted 30 tests, TypeScript, scoped lint, production build, migration versions, shell syntax, and whitespace. PostgreSQL compilation, rollback, permissions and concurrency have **not run** because Docker is unavailable; Task 2 is not fully accepted or release-ready. Further local implementation may proceed under the recorded preflight ruling, but this database gate must close before release.

@@ -103,6 +103,102 @@ const PDS_SCALAR_COLUMNS = {
   pdsSignedAt: 'pds_signed_at',
 } as const satisfies Record<string, string>;
 
+/**
+ * The two PDS list sections whose saves commit a scalar patch with the list:
+ * children with the family-background names, references with the disclosure
+ * answers and government ID. Keeping the field lists here means the service
+ * layer and the SQL allowlist can be checked against one readable source.
+ */
+export type PdsScalarPairing = 'family' | 'background';
+
+const PDS_FAMILY_SCALAR_FIELDS = [
+  'spouseSurname',
+  'spouseFirstName',
+  'spouseMiddleName',
+  'spouseNameExtension',
+  'spouseOccupation',
+  'spouseEmployer',
+  'spouseBusinessAddress',
+  'spouseTelephone',
+  'fatherSurname',
+  'fatherFirstName',
+  'fatherMiddleName',
+  'fatherNameExtension',
+  'motherSurname',
+  'motherFirstName',
+  'motherMiddleName',
+] as const satisfies readonly (keyof typeof PDS_SCALAR_COLUMNS)[];
+
+const PDS_BACKGROUND_SCALAR_FIELDS = [
+  'relatedThirdDegree',
+  'relatedFourthDegree',
+  'relatedDetails',
+  'adminOffenseGuilty',
+  'adminOffenseDetails',
+  'criminallyCharged',
+  'criminalChargeDetails',
+  'criminalCaseDateFiled',
+  'criminalCaseStatus',
+  'convictedOfCrime',
+  'convictedDetails',
+  'separatedFromService',
+  'separatedDetails',
+  'electionCandidate',
+  'electionCandidateDetails',
+  'resignedToCampaign',
+  'resignedToCampaignDetails',
+  'immigrantStatus',
+  'immigrantCountry',
+  'indigenousGroupMember',
+  'indigenousGroupSpecify',
+  'personWithDisability',
+  'pwdIdNumber',
+  'soloParent',
+  'soloParentIdNumber',
+  'govIdType',
+  'govIdNumber',
+  'govIdIssuedDatePlace',
+] as const satisfies readonly (keyof typeof PDS_SCALAR_COLUMNS)[];
+
+const PDS_SCALAR_FIELDS_BY_PAIRING = {
+  family: PDS_FAMILY_SCALAR_FIELDS,
+  background: PDS_BACKGROUND_SCALAR_FIELDS,
+} as const;
+
+/**
+ * Map a partial `Employee` patch for one PDS pair onto `employees` columns.
+ * Empty strings clear the column (NULL), matching `mapPatchToColumns`.
+ */
+export function mapPdsScalarPatchToColumns(
+  pairing: PdsScalarPairing,
+  patch: Partial<Employee>,
+): Record<string, unknown> {
+  const columns: Record<string, unknown> = {};
+  for (const field of PDS_SCALAR_FIELDS_BY_PAIRING[pairing]) {
+    if (!(field in patch)) continue;
+    columns[PDS_SCALAR_COLUMNS[field]] = patch[field] === '' ? null : patch[field];
+  }
+  return columns;
+}
+
+/**
+ * Map the section-owned scalar columns returned by `read_pds_section` /
+ * `save_pds_section` back to `Employee` fields. Only columns present in the
+ * row are returned, so a section that owns no scalar columns maps to `{}`.
+ */
+export function mapPdsScalarColumnsToEmployee(
+  pairing: PdsScalarPairing,
+  row: Record<string, unknown>,
+): Partial<Employee> {
+  const mapped = mapSupabaseRowToEmployee(row);
+  const out: Record<string, unknown> = {};
+  for (const field of PDS_SCALAR_FIELDS_BY_PAIRING[pairing]) {
+    if (!(PDS_SCALAR_COLUMNS[field] in row)) continue;
+    out[field] = mapped[field];
+  }
+  return out as Partial<Employee>;
+}
+
 /** Suffixes of the seven columns each address block is stored across. */
 const ADDRESS_PART_COLUMNS = {
   houseLot: 'house_lot',

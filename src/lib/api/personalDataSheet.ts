@@ -1,19 +1,23 @@
 /**
- * Personal Data Sheet — the two repeating lists on CS Form 212 page 1.
+ * Personal Data Sheet repeating lists on CS Form 212.
  *
- * Item 23 (NAME of CHILDREN) and item 26 (EDUCATIONAL BACKGROUND) are lists,
- * so they live in their own tables rather than as columns on `employees`.
- * Everything else on page 1 is a scalar and goes through `employeePortal.ts`.
+ * Every list is read and saved through one pair of transactional RPCs:
+ * `read_pds_section` returns a canonical snapshot plus a revision, and
+ * `save_pds_section` reconciles the submitted rows against that revision
+ * inside a single database transaction. The service never deletes and
+ * re-inserts a list, so row IDs, creation metadata, and legacy columns such
+ * as work-experience duties survive an edit.
  *
- * Both lists use replace-all semantics: the form edits the whole list at once,
- * and rows carry no meaning outside their position in it, so reconciling
- * individual inserts/updates/deletes against what the user happens to have
- * typed would add a lot of matching logic for no behavioural difference.
+ * Children and references also own family/background scalar columns on
+ * `employees`; those travel in the same RPC call so a scalar failure rolls
+ * the list back and a list failure rolls the scalars back. Other PDS scalars
+ * still go through `employeePortal.ts`.
  */
 
 import { supabase as supabaseClient } from '../supabase';
 import {
   EDUCATION_LEVELS,
+  type Employee,
   type EmployeeChild,
   type EmployeeEducation,
   type EmployeeEligibility,
@@ -24,12 +28,24 @@ import {
   type PdsFieldIssue,
   type PdsListSection,
 } from '../../types/employee.types';
+import {
+  mapPdsScalarColumnsToEmployee,
+  mapPdsScalarPatchToColumns,
+  type PdsScalarPairing,
+} from './employeePortal';
 
 // Re-exported so callers of the PDS service do not need a second import path
 // for the validator's shared types.
 export type { PdsFieldIssue, PdsListSection } from '../../types/employee.types';
 
 const supabase = supabaseClient as any;
+
+/** Canonical section state returned by both PDS RPCs. */
+export type PdsSectionSnapshot<T> = {
+  rows: T[];
+  revision: string;
+  scalars?: Partial<Employee>;
+};
 
 export type PdsResult<T> =
   | { ok: true; data: T }
@@ -322,69 +338,313 @@ const toNullableInt = (value: number | null | undefined): number | null => {
 };
 
 // ---------------------------------------------------------------------------
-// 23. Children
+// Snapshot transport
 // ---------------------------------------------------------------------------
 
-export async function listChildren(employeeId: string): Promise<PdsResult<EmployeeChild[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_children')
-      .select('id, full_name, date_of_birth, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
+function pairingForSection(section: PdsListSection): PdsScalarPairing | null {
+  if (section === 'children') return 'family';
+  if (section === 'references') return 'background';
+  return null;
+}
 
-    if (error) throw error;
+function mapChildRow(row: any): EmployeeChild {
+  return {
+    id: row.id,
+    fullName: row.full_name ?? '',
+    dateOfBirth: row.date_of_birth ?? undefined,
+    sortOrder: row.sort_order ?? 0,
+  };
+}
 
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        fullName: r.full_name ?? '',
-        dateOfBirth: r.date_of_birth ?? undefined,
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listChildren error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load children.' };
+function mapEducationRow(row: any): EmployeeEducation {
+  return {
+    id: row.id,
+    level: row.level ?? '',
+    school: row.school_name ?? '',
+    degree: row.course ?? '',
+    periodFrom: row.year_attended_from ?? null,
+    periodTo: row.year_attended_to ?? null,
+    highestLevelUnits: row.units_earned ?? null,
+    yearGraduated: row.year_graduated ?? null,
+    scholarshipHonors: row.honors_awards ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapEligibilityRow(row: any): EmployeeEligibility {
+  return {
+    id: row.id,
+    eligibilityName: row.eligibility_type ?? '',
+    rating: row.rating ?? null,
+    examDate: row.date_of_exam ?? '',
+    examPlace: row.place_of_examination ?? '',
+    licenseNumber: row.license_number ?? '',
+    licenseValidUntil: row.validity_date ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapWorkExperienceRow(row: any): EmployeeWorkExperience {
+  return {
+    id: row.id,
+    dateFrom: row.from_date ?? '',
+    dateTo: row.to_date ?? '',
+    positionTitle: row.position_title ?? '',
+    departmentAgencyOfficeCompany: row.company_name ?? '',
+    statusOfAppointment: row.status_of_appointment ?? '',
+    govtService: row.is_government_service ?? null,
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapVoluntaryWorkRow(row: any): EmployeeVoluntaryWork {
+  return {
+    id: row.id,
+    orgNameAddress: row.org_name_address ?? '',
+    dateFrom: row.date_from ?? '',
+    dateTo: row.date_to ?? '',
+    numberOfHours: row.number_of_hours ?? null,
+    positionNatureOfWork: row.position_nature_of_work ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapLdInterventionRow(row: any): EmployeeLdIntervention {
+  return {
+    id: row.id,
+    title: row.title ?? '',
+    dateFrom: row.date_from ?? '',
+    dateTo: row.date_to ?? '',
+    numberOfHours: row.number_of_hours ?? null,
+    ldType: row.ld_type ?? '',
+    conductedBy: row.conducted_by ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapReferenceRow(row: any): EmployeeReference {
+  return {
+    id: row.id,
+    name: row.name ?? '',
+    address: row.address ?? '',
+    contactInfo: row.contact_info ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapSectionRows<S extends PdsListSection>(
+  section: S,
+  rows: any[],
+): PdsRowBySection[S][] {
+  switch (section) {
+    case 'children':
+      return rows.map(mapChildRow) as PdsRowBySection[S][];
+    case 'education':
+      return rows.map(mapEducationRow) as PdsRowBySection[S][];
+    case 'eligibility':
+      return rows.map(mapEligibilityRow) as PdsRowBySection[S][];
+    case 'workExperience':
+      return rows.map(mapWorkExperienceRow) as PdsRowBySection[S][];
+    case 'voluntaryWork':
+      return rows.map(mapVoluntaryWorkRow) as PdsRowBySection[S][];
+    case 'training':
+      return rows.map(mapLdInterventionRow) as PdsRowBySection[S][];
+    case 'references':
+      return rows.map(mapReferenceRow) as PdsRowBySection[S][];
   }
 }
 
-export async function saveChildren(
+/**
+ * Convert the editor's rows to the database column names the RPC expects.
+ * sort_order is deliberately omitted: the server assigns it from the submitted
+ * order, so the returned snapshot is the canonical order even if the editor
+ * was showing placeholders.
+ */
+function rowPayload<S extends PdsListSection>(
+  section: S,
+  rows: readonly PdsRowBySection[S][],
+): Record<string, unknown>[] {
+  return meaningfulRows(section, rows).map((row) => {
+    const r = row as any;
+    const withId: Record<string, unknown> = r.id ? { id: r.id } : {};
+    switch (section) {
+      case 'children':
+        return {
+          ...withId,
+          full_name: r.fullName.trim(),
+          date_of_birth: r.dateOfBirth || null,
+        };
+      case 'education':
+        return {
+          ...withId,
+          level: r.level || null,
+          school_name: r.school!.trim(),
+          course: r.degree?.trim() || null,
+          year_attended_from: toNullableInt(r.periodFrom),
+          year_attended_to: toNullableInt(r.periodTo),
+          units_earned: toNullableInt(r.highestLevelUnits),
+          year_graduated: toNullableInt(r.yearGraduated),
+          honors_awards: r.scholarshipHonors?.trim() || null,
+        };
+      case 'eligibility':
+        return {
+          ...withId,
+          eligibility_type: r.eligibilityName.trim(),
+          rating: toNullableNumber(r.rating),
+          date_of_exam: r.examDate || null,
+          place_of_examination: r.examPlace?.trim() || null,
+          license_number: r.licenseNumber?.trim() || null,
+          validity_date: r.licenseValidUntil || null,
+        };
+      case 'workExperience':
+        return {
+          ...withId,
+          from_date: r.dateFrom!,
+          to_date: r.dateTo || null,
+          position_title: r.positionTitle.trim(),
+          company_name: r.departmentAgencyOfficeCompany!.trim(),
+          status_of_appointment: r.statusOfAppointment?.trim() || null,
+          is_government_service: r.govtService ?? null,
+        };
+      case 'voluntaryWork':
+        return {
+          ...withId,
+          org_name_address: r.orgNameAddress.trim(),
+          date_from: r.dateFrom || null,
+          date_to: r.dateTo || null,
+          number_of_hours: toNullableNumber(r.numberOfHours),
+          position_nature_of_work: r.positionNatureOfWork?.trim() || null,
+        };
+      case 'training':
+        return {
+          ...withId,
+          title: r.title.trim(),
+          date_from: r.dateFrom || null,
+          date_to: r.dateTo || null,
+          number_of_hours: toNullableNumber(r.numberOfHours),
+          ld_type: r.ldType?.trim() || null,
+          conducted_by: r.conductedBy?.trim() || null,
+        };
+      case 'references':
+        return {
+          ...withId,
+          name: r.name.trim(),
+          address: r.address?.trim() || null,
+          contact_info: r.contactInfo?.trim() || null,
+        };
+    }
+  });
+}
+
+function snapshotFailure(
+  error: any,
+  fallback: string,
+): { ok: false; error: string } {
+  const message = String(error?.message ?? '');
+  if (error?.code === '40001' || message.includes('pds_revision_conflict')) {
+    return {
+      ok: false,
+      error: 'This section changed since it was loaded. Reload it before saving again.',
+    };
+  }
+  return { ok: false, error: error?.message ?? fallback };
+}
+
+function parseSnapshot<S extends PdsListSection>(
+  section: S,
+  payload: any,
+  fallback: string,
+): PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>> {
+  if (!payload || !Array.isArray(payload.rows) || typeof payload.revision !== 'string') {
+    return { ok: false, error: fallback };
+  }
+
+  const pairing = pairingForSection(section);
+  const scalars =
+    pairing && payload.scalars && typeof payload.scalars === 'object'
+      ? mapPdsScalarColumnsToEmployee(pairing, payload.scalars as Record<string, unknown>)
+      : {};
+
+  return {
+    ok: true,
+    data: {
+      rows: mapSectionRows(section, payload.rows),
+      revision: payload.revision,
+      scalars,
+    },
+  };
+}
+
+async function readPdsSection<S extends PdsListSection>(
   employeeId: string,
-  children: EmployeeChild[],
-): Promise<PdsResult<null>> {
+  section: S,
+): Promise<PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>>> {
   if (!employeeId) return { ok: false, error: 'No employee id.' };
 
-  const issues = validatePdsRows('children', children);
+  try {
+    const { data, error } = await supabase.rpc('read_pds_section', {
+      p_employee_id: employeeId,
+      p_section: section,
+    });
+    if (error) return snapshotFailure(error, `Failed to load ${section}.`);
+    return parseSnapshot(section, data, `Failed to load ${section}.`);
+  } catch (err: any) {
+    console.error(`[personalDataSheet] read ${section} error:`, err);
+    return snapshotFailure(err, `Failed to load ${section}.`);
+  }
+}
+
+async function writePdsSection<S extends PdsListSection>(
+  employeeId: string,
+  section: S,
+  rows: readonly PdsRowBySection[S][],
+  expectedRevision: string,
+  scalarPatch: Partial<Employee> = {},
+): Promise<PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>>> {
+  if (!employeeId) return { ok: false, error: 'No employee id.' };
+  if (!expectedRevision) {
+    return { ok: false, error: 'This section has not been loaded. Reload it before saving.' };
+  }
+
+  const issues = validatePdsRows(section, rows);
   if (issues.length > 0) return validationFailure(issues);
 
-  // Wholly blank new rows are empty form lines the employee never filled in,
-  // not children — dropping them keeps blank rows out of the printed sheet.
-  const rows = meaningfulRows('children', children).map((c, i) => ({
-    employee_id: employeeId,
-    full_name: c.fullName.trim(),
-    date_of_birth: c.dateOfBirth || null,
-    sort_order: i,
-  }));
+  const pairing = pairingForSection(section);
+  const columns = pairing ? mapPdsScalarPatchToColumns(pairing, scalarPatch) : {};
 
   try {
-    const { error: delError } = await supabase
-      .from('employee_children')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (rows.length > 0) {
-      const { error: insError } = await supabase.from('employee_children').insert(rows);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
+    const { data, error } = await supabase.rpc('save_pds_section', {
+      p_employee_id: employeeId,
+      p_section: section,
+      p_rows: rowPayload(section, rows),
+      p_expected_revision: expectedRevision,
+      p_scalar_patch: columns,
+    });
+    if (error) return snapshotFailure(error, `Failed to save ${section}.`);
+    return parseSnapshot(section, data, `Failed to save ${section}.`);
   } catch (err: any) {
-    console.error('[personalDataSheet] saveChildren error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save children.' };
+    console.error(`[personalDataSheet] save ${section} error:`, err);
+    return snapshotFailure(err, `Failed to save ${section}.`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// 23. Children
+// ---------------------------------------------------------------------------
+
+export function listChildren(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeChild>>> {
+  return readPdsSection(employeeId, 'children');
+}
+
+export function saveChildren(
+  employeeId: string,
+  children: EmployeeChild[],
+  expectedRevision: string,
+  scalarPatch: Partial<Employee> = {},
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeChild>>> {
+  return writePdsSection(employeeId, 'children', children, expectedRevision, scalarPatch);
 }
 
 // ---------------------------------------------------------------------------
@@ -398,78 +658,18 @@ export async function saveChildren(
 // EDUCATION_LEVELS's comment) rather than PDS-invented column names.
 // ---------------------------------------------------------------------------
 
-export async function listEducation(employeeId: string): Promise<PdsResult<EmployeeEducation[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_education')
-      .select('id, level, school_name, course, year_attended_from, year_attended_to, units_earned, year_graduated, honors_awards, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        level: r.level ?? '',
-        school: r.school_name ?? '',
-        degree: r.course ?? '',
-        periodFrom: r.year_attended_from ?? null,
-        periodTo: r.year_attended_to ?? null,
-        highestLevelUnits: r.units_earned ?? null,
-        yearGraduated: r.year_graduated ?? null,
-        scholarshipHonors: r.honors_awards ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listEducation error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load education.' };
-  }
+export function listEducation(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeEducation>>> {
+  return readPdsSection(employeeId, 'education');
 }
 
-export async function saveEducation(
+export function saveEducation(
   employeeId: string,
   rows: EmployeeEducation[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const issues = validatePdsRows('education', rows);
-  if (issues.length > 0) return validationFailure(issues);
-
-  // school_name is NOT NULL on the real table, so a row with real input but
-  // no school name is rejected above rather than silently dropped here.
-  const payload = meaningfulRows('education', rows).map((r, i) => ({
-    employee_id: employeeId,
-    level: r.level || null,
-    school_name: r.school!.trim(),
-    course: r.degree?.trim() || null,
-    year_attended_from: toNullableInt(r.periodFrom),
-    year_attended_to: toNullableInt(r.periodTo),
-    units_earned: toNullableInt(r.highestLevelUnits),
-    year_graduated: toNullableInt(r.yearGraduated),
-    honors_awards: r.scholarshipHonors?.trim() || null,
-    sort_order: i,
-  }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_education')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_education').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveEducation error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save education.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeEducation>>> {
+  return writePdsSection(employeeId, 'education', rows, expectedRevision);
 }
 
 /**
@@ -533,72 +733,18 @@ export function buildEducationRows(stored: EmployeeEducation[]): EmployeeEducati
 // validity_date) rather than PDS-invented ones.
 // ---------------------------------------------------------------------------
 
-export async function listEligibility(employeeId: string): Promise<PdsResult<EmployeeEligibility[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_eligibility')
-      .select('id, eligibility_type, rating, date_of_exam, place_of_examination, license_number, validity_date, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        eligibilityName: r.eligibility_type ?? '',
-        rating: r.rating ?? null,
-        examDate: r.date_of_exam ?? '',
-        examPlace: r.place_of_examination ?? '',
-        licenseNumber: r.license_number ?? '',
-        licenseValidUntil: r.validity_date ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listEligibility error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load eligibility.' };
-  }
+export function listEligibility(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeEligibility>>> {
+  return readPdsSection(employeeId, 'eligibility');
 }
 
-export async function saveEligibility(
+export function saveEligibility(
   employeeId: string,
   rows: EmployeeEligibility[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const issues = validatePdsRows('eligibility', rows);
-  if (issues.length > 0) return validationFailure(issues);
-
-  const payload = meaningfulRows('eligibility', rows).map((r, i) => ({
-    employee_id: employeeId,
-    eligibility_type: r.eligibilityName.trim(),
-    rating: toNullableNumber(r.rating),
-    date_of_exam: r.examDate || null,
-    place_of_examination: r.examPlace?.trim() || null,
-    license_number: r.licenseNumber?.trim() || null,
-    validity_date: r.licenseValidUntil || null,
-    sort_order: i,
-  }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_eligibility')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_eligibility').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveEligibility error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save eligibility.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeEligibility>>> {
+  return writePdsSection(employeeId, 'eligibility', rows, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
@@ -606,282 +752,74 @@ export async function saveEligibility(
 //
 // employee_work_experience is also pre-existing (same admin read path).
 // position_title, company_name and from_date are NOT NULL on that table, so
-// a row missing any of the three is dropped rather than sent — a partially
-// filled row would otherwise fail the whole save with a DB constraint error.
+// a row missing any of the three is rejected before the database sees it.
 // ---------------------------------------------------------------------------
 
-export async function listWorkExperience(employeeId: string): Promise<PdsResult<EmployeeWorkExperience[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_work_experience')
-      .select('id, from_date, to_date, position_title, company_name, status_of_appointment, is_government_service, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        dateFrom: r.from_date ?? '',
-        dateTo: r.to_date ?? '',
-        positionTitle: r.position_title ?? '',
-        departmentAgencyOfficeCompany: r.company_name ?? '',
-        statusOfAppointment: r.status_of_appointment ?? '',
-        govtService: r.is_government_service ?? null,
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listWorkExperience error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load work experience.' };
-  }
+export function listWorkExperience(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeWorkExperience>>> {
+  return readPdsSection(employeeId, 'workExperience');
 }
 
-export async function saveWorkExperience(
+export function saveWorkExperience(
   employeeId: string,
   rows: EmployeeWorkExperience[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const issues = validatePdsRows('workExperience', rows);
-  if (issues.length > 0) return validationFailure(issues);
-
-  const payload = meaningfulRows('workExperience', rows).map((r, i) => ({
-    employee_id: employeeId,
-    from_date: r.dateFrom!,
-    to_date: r.dateTo || null,
-    position_title: r.positionTitle.trim(),
-    company_name: r.departmentAgencyOfficeCompany!.trim(),
-    status_of_appointment: r.statusOfAppointment?.trim() || null,
-    is_government_service: r.govtService ?? null,
-    sort_order: i,
-  }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_work_experience')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_work_experience').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveWorkExperience error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save work experience.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeWorkExperience>>> {
+  return writePdsSection(employeeId, 'workExperience', rows, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
 // 29. Voluntary Work
 // ---------------------------------------------------------------------------
 
-export async function listVoluntaryWork(employeeId: string): Promise<PdsResult<EmployeeVoluntaryWork[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_voluntary_work')
-      .select('id, org_name_address, date_from, date_to, number_of_hours, position_nature_of_work, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        orgNameAddress: r.org_name_address ?? '',
-        dateFrom: r.date_from ?? '',
-        dateTo: r.date_to ?? '',
-        numberOfHours: r.number_of_hours ?? null,
-        positionNatureOfWork: r.position_nature_of_work ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listVoluntaryWork error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load voluntary work.' };
-  }
+export function listVoluntaryWork(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeVoluntaryWork>>> {
+  return readPdsSection(employeeId, 'voluntaryWork');
 }
 
-export async function saveVoluntaryWork(
+export function saveVoluntaryWork(
   employeeId: string,
   rows: EmployeeVoluntaryWork[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const issues = validatePdsRows('voluntaryWork', rows);
-  if (issues.length > 0) return validationFailure(issues);
-
-  const payload = meaningfulRows('voluntaryWork', rows).map((r, i) => ({
-    employee_id: employeeId,
-    org_name_address: r.orgNameAddress.trim(),
-    date_from: r.dateFrom || null,
-    date_to: r.dateTo || null,
-    number_of_hours: toNullableNumber(r.numberOfHours),
-    position_nature_of_work: r.positionNatureOfWork?.trim() || null,
-    sort_order: i,
-  }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_voluntary_work')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_voluntary_work').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveVoluntaryWork error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save voluntary work.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeVoluntaryWork>>> {
+  return writePdsSection(employeeId, 'voluntaryWork', rows, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
 // 30. Learning & Development Interventions
 // ---------------------------------------------------------------------------
 
-export async function listLdInterventions(employeeId: string): Promise<PdsResult<EmployeeLdIntervention[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_ld_interventions')
-      .select('id, title, date_from, date_to, number_of_hours, ld_type, conducted_by, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        title: r.title ?? '',
-        dateFrom: r.date_from ?? '',
-        dateTo: r.date_to ?? '',
-        numberOfHours: r.number_of_hours ?? null,
-        ldType: r.ld_type ?? '',
-        conductedBy: r.conducted_by ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listLdInterventions error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load L&D interventions.' };
-  }
+export function listLdInterventions(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeLdIntervention>>> {
+  return readPdsSection(employeeId, 'training');
 }
 
-export async function saveLdInterventions(
+export function saveLdInterventions(
   employeeId: string,
   rows: EmployeeLdIntervention[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const issues = validatePdsRows('training', rows);
-  if (issues.length > 0) return validationFailure(issues);
-
-  const payload = meaningfulRows('training', rows).map((r, i) => ({
-    employee_id: employeeId,
-    title: r.title.trim(),
-    date_from: r.dateFrom || null,
-    date_to: r.dateTo || null,
-    number_of_hours: toNullableNumber(r.numberOfHours),
-    ld_type: r.ldType?.trim() || null,
-    conducted_by: r.conductedBy?.trim() || null,
-    sort_order: i,
-  }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_ld_interventions')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_ld_interventions').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveLdInterventions error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save L&D interventions.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeLdIntervention>>> {
+  return writePdsSection(employeeId, 'training', rows, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
 // 41. References
 // ---------------------------------------------------------------------------
 
-export async function listReferences(employeeId: string): Promise<PdsResult<EmployeeReference[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_references')
-      .select('id, name, address, contact_info, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        name: r.name ?? '',
-        address: r.address ?? '',
-        contactInfo: r.contact_info ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listReferences error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load references.' };
-  }
+export function listReferences(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeReference>>> {
+  return readPdsSection(employeeId, 'references');
 }
 
-export async function saveReferences(
+export function saveReferences(
   employeeId: string,
   rows: EmployeeReference[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const issues = validatePdsRows('references', rows);
-  if (issues.length > 0) return validationFailure(issues);
-
-  const payload = meaningfulRows('references', rows).map((r, i) => ({
-    employee_id: employeeId,
-    name: r.name.trim(),
-    address: r.address?.trim() || null,
-    contact_info: r.contactInfo?.trim() || null,
-    sort_order: i,
-  }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_references')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_references').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveReferences error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save references.' };
-  }
+  expectedRevision: string,
+  scalarPatch: Partial<Employee> = {},
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeReference>>> {
+  return writePdsSection(employeeId, 'references', rows, expectedRevision, scalarPatch);
 }

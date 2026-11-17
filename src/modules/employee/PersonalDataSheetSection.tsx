@@ -35,6 +35,7 @@ import type {
   EmployeeLdIntervention,
   EmployeeReference,
   PdsFieldIssue,
+  PdsListSection,
 } from '../../types/employee.types';
 import { emptyAddress, EDUCATION_LEVEL_LABELS } from '../../types/employee.types';
 import { PdsStepList } from './PdsStepList';
@@ -447,6 +448,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const [voluntaryWork, setVoluntaryWork] = useState<EmployeeVoluntaryWork[]>(profile.voluntaryWork || []);
   const [ldInterventions, setLdInterventions] = useState<EmployeeLdIntervention[]>(profile.ldInterventions || []);
   const [references, setReferences] = useState<EmployeeReference[]>(profile.references || []);
+  const [revisions, setRevisions] = useState<Partial<Record<PdsListSection, string>>>({});
 
   const [listsLoading, setListsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -479,21 +481,44 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         listReferences(employeeId),
       ]);
       if (cancelled) return;
-      if (childrenRes.ok !== false) setChildren(childrenRes.data);
-      if (educationRes.ok !== false) setEducation(buildEducationRows(educationRes.data));
-      if (eligibilityRes.ok !== false) setEligibility(eligibilityRes.data);
-      if (workExperienceRes.ok !== false) setWorkExperience(workExperienceRes.data);
-      if (voluntaryWorkRes.ok !== false) setVoluntaryWork(voluntaryWorkRes.data);
-      if (ldInterventionsRes.ok !== false) setLdInterventions(ldInterventionsRes.data);
-      if (referencesRes.ok !== false) setReferences(referencesRes.data);
+      const nextRevisions: Partial<Record<PdsListSection, string>> = {};
+      if (childrenRes.ok !== false) {
+        setChildren(childrenRes.data.rows);
+        nextRevisions.children = childrenRes.data.revision;
+      }
+      if (educationRes.ok !== false) {
+        setEducation(buildEducationRows(educationRes.data.rows));
+        nextRevisions.education = educationRes.data.revision;
+      }
+      if (eligibilityRes.ok !== false) {
+        setEligibility(eligibilityRes.data.rows);
+        nextRevisions.eligibility = eligibilityRes.data.revision;
+      }
+      if (workExperienceRes.ok !== false) {
+        setWorkExperience(workExperienceRes.data.rows);
+        nextRevisions.workExperience = workExperienceRes.data.revision;
+      }
+      if (voluntaryWorkRes.ok !== false) {
+        setVoluntaryWork(voluntaryWorkRes.data.rows);
+        nextRevisions.voluntaryWork = voluntaryWorkRes.data.revision;
+      }
+      if (ldInterventionsRes.ok !== false) {
+        setLdInterventions(ldInterventionsRes.data.rows);
+        nextRevisions.training = ldInterventionsRes.data.revision;
+      }
+      if (referencesRes.ok !== false) {
+        setReferences(referencesRes.data.rows);
+        nextRevisions.references = referencesRes.data.revision;
+      }
+      setRevisions(nextRevisions);
       markSaved(...getInitiallySavedSections({} as Employee, {
-        children: childrenRes.ok !== false ? childrenRes.data : undefined,
-        education: educationRes.ok !== false ? educationRes.data : undefined,
-        eligibility: eligibilityRes.ok !== false ? eligibilityRes.data : undefined,
-        workExperience: workExperienceRes.ok !== false ? workExperienceRes.data : undefined,
-        voluntaryWork: voluntaryWorkRes.ok !== false ? voluntaryWorkRes.data : undefined,
-        ldInterventions: ldInterventionsRes.ok !== false ? ldInterventionsRes.data : undefined,
-        references: referencesRes.ok !== false ? referencesRes.data : undefined,
+        children: childrenRes.ok !== false ? childrenRes.data.rows : undefined,
+        education: educationRes.ok !== false ? educationRes.data.rows : undefined,
+        eligibility: eligibilityRes.ok !== false ? eligibilityRes.data.rows : undefined,
+        workExperience: workExperienceRes.ok !== false ? workExperienceRes.data.rows : undefined,
+        voluntaryWork: voluntaryWorkRes.ok !== false ? voluntaryWorkRes.data.rows : undefined,
+        ldInterventions: ldInterventionsRes.ok !== false ? ldInterventionsRes.data.rows : undefined,
+        references: referencesRes.ok !== false ? referencesRes.data.rows : undefined,
       }));
       setListsLoading(false);
     })();
@@ -620,23 +645,27 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       motherMiddleName: draft.motherMiddleName.trim(),
     };
 
-    const [scalarRes, childrenRes] = await Promise.all([
-      patchPortalEmployee(employeeId, scalarPatch),
-      saveChildren(employeeId, children),
-    ]);
-
-    if (scalarRes.ok === false || childrenRes.ok === false) {
-      const fieldIssues = childrenRes.ok === false ? childrenRes.fieldIssues : undefined;
-      const error =
-        (scalarRes.ok === false && scalarRes.error) ||
-        (childrenRes.ok === false && childrenRes.error) ||
-        'Failed to save Family Background. Please try again.';
-      setSaveError(fieldIssues?.length ? describePdsIssues(fieldIssues) : error);
+    const revision = revisions.children;
+    if (!revision) {
+      setSaveError('Reload Family Background before saving.');
       setSaving(false);
       return;
     }
 
-    onSaved(scalarPatch);
+    const res = await saveChildren(employeeId, children, revision, scalarPatch);
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Family Background. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    setChildren(res.data.rows);
+    setRevisions((prev) => ({ ...prev, children: res.data.revision }));
+    onSaved(res.data.scalars ?? scalarPatch);
     setSaveSuccess('Family Background saved.');
     markSaved('family');
     setSaving(false);
@@ -654,7 +683,14 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    const res = await saveEducation(employeeId, education);
+    const revision = revisions.education;
+    if (!revision) {
+      setSaveError('Reload Educational Background before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveEducation(employeeId, education, revision);
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -665,7 +701,9 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    onSaved({});
+    setEducation(buildEducationRows(res.data.rows));
+    setRevisions((prev) => ({ ...prev, education: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Educational Background saved.');
     markSaved('education');
     setSaving(false);
@@ -683,7 +721,14 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    const res = await saveEligibility(employeeId, eligibility);
+    const revision = revisions.eligibility;
+    if (!revision) {
+      setSaveError('Reload Civil Service Eligibility before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveEligibility(employeeId, eligibility, revision);
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -694,7 +739,9 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    onSaved({});
+    setEligibility(res.data.rows);
+    setRevisions((prev) => ({ ...prev, eligibility: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Civil Service Eligibility saved.');
     markSaved('eligibility');
     setSaving(false);
@@ -712,7 +759,14 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    const res = await saveWorkExperience(employeeId, workExperience);
+    const revision = revisions.workExperience;
+    if (!revision) {
+      setSaveError('Reload Work Experience before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveWorkExperience(employeeId, workExperience, revision);
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -723,7 +777,9 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    onSaved({});
+    setWorkExperience(res.data.rows);
+    setRevisions((prev) => ({ ...prev, workExperience: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Work Experience saved.');
     markSaved('workExperience');
     setSaving(false);
@@ -741,7 +797,14 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    const res = await saveVoluntaryWork(employeeId, voluntaryWork);
+    const revision = revisions.voluntaryWork;
+    if (!revision) {
+      setSaveError('Reload Voluntary Work before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveVoluntaryWork(employeeId, voluntaryWork, revision);
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -752,7 +815,9 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    onSaved({});
+    setVoluntaryWork(res.data.rows);
+    setRevisions((prev) => ({ ...prev, voluntaryWork: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Voluntary Work saved.');
     markSaved('voluntaryWork');
     setSaving(false);
@@ -770,7 +835,14 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    const res = await saveLdInterventions(employeeId, ldInterventions);
+    const revision = revisions.training;
+    if (!revision) {
+      setSaveError('Reload Learning & Development history before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveLdInterventions(employeeId, ldInterventions, revision);
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -781,7 +853,9 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       return;
     }
 
-    onSaved({});
+    setLdInterventions(res.data.rows);
+    setRevisions((prev) => ({ ...prev, training: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Learning & Development history saved.');
     markSaved('training');
     setSaving(false);
@@ -854,23 +928,27 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       govIdIssuedDatePlace: draft.govIdIssuedDatePlace.trim(),
     };
 
-    const [scalarRes, referencesRes] = await Promise.all([
-      patchPortalEmployee(employeeId, scalarPatch),
-      saveReferences(employeeId, references),
-    ]);
-
-    if (scalarRes.ok === false || referencesRes.ok === false) {
-      const fieldIssues = referencesRes.ok === false ? referencesRes.fieldIssues : undefined;
-      const error =
-        (scalarRes.ok === false && scalarRes.error) ||
-        (referencesRes.ok === false && referencesRes.error) ||
-        'Failed to save Background Information. Please try again.';
-      setSaveError(fieldIssues?.length ? describePdsIssues(fieldIssues) : error);
+    const revision = revisions.references;
+    if (!revision) {
+      setSaveError('Reload Background Information before saving.');
       setSaving(false);
       return;
     }
 
-    onSaved(scalarPatch);
+    const res = await saveReferences(employeeId, references, revision, scalarPatch);
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Background Information. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    setReferences(res.data.rows);
+    setRevisions((prev) => ({ ...prev, references: res.data.revision }));
+    onSaved(res.data.scalars ?? scalarPatch);
     setSaveSuccess('Background Information saved.');
     markSaved('background');
     setSaving(false);
