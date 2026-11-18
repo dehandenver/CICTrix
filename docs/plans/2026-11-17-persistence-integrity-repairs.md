@@ -34,7 +34,7 @@ The full step-by-step contracts are in the approved specification; execution bri
 | Task | Owned change boundary | Depends on | State |
 | --- | --- | --- | --- |
 | 1 | `personalDataSheet.ts`, employee types, PDS section, focused validation/preservation tests | Baseline | Complete |
-| 2 | PDS RPC service integration, scalar mapper if needed, CLI-generated migration, SQL/concurrency tests | 1 | Implemented; database acceptance blocked |
+| 2 | PDS RPC service integration, scalar mapper if needed, CLI-generated migration, SQL/concurrency tests | 1 | Complete; isolated SQL/concurrency passed after review corrections |
 | 3 | Checked profile writes, nullable numeric clears, local-only parent callback, wizard/draft behavior | 1, 2 | Complete locally; integration/browser acceptance outstanding |
 | 4 | PDS load/retry/conflict/uncertain states and canonical save snapshots | 2, 3 | Pending |
 | 5 | Succession evidence query/schema mismatch and PDS downstream regressions | 1–4 | Pending |
@@ -103,3 +103,5 @@ User requested DeepSeek Flash/max to fix the independent review findings. Keep t
 Owned correction paths: `src/modules/employee/PersonalDataSheetSection.tsx` and its persistence tests; minimum `employeePortal`/`EmployeePage` integration tests/source only if required for these findings; `supabase/tests/pds_section_transactions.test.sql` and `supabase/tests/pds_section_concurrency.sh`. No redesign, packages, scoring/authentication changes or unrelated refactors.
 
 Corrections implemented by DeepSeek Flash/max and reviewed by parent Sol/medium. Parent independently verified 53 focused tests, 173 files/1,671 full-suite tests, TypeScript, scoped lint, production build, migration versions, shell syntax and whitespace. The three code findings have regression coverage; the two database-test corrections are authored but not database-accepted because Docker's Linux engine pipe is unavailable again. See `docs/session-summaries/2026-11-19-persistence-review-corrections-summary.md`. Task 4 remains pending.
+
+Subsequent Docker retry: parent ran the exact migration, revised SQL suite and revised two-session concurrency harness successfully against the owned isolated database. Required department/position columns and both permissive employee policies were reproduced. Actual lock contention and stale rejection were observed; winner ID and revision matched the final read. This closes the scoped local SQL/concurrency gate, not full production-schema, ownership-security, HTTP/PostgREST or rendered-browser acceptance. Schema restore limitations and synthetic cleanup are recorded in the correction summary. Nothing applied to production.
