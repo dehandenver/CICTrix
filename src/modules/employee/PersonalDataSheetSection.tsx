@@ -21,7 +21,7 @@
  * not a data-entry field.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { ActionFeedback } from '../../components/action-feedback';
 import type {
@@ -34,6 +34,8 @@ import type {
   EmployeeVoluntaryWork,
   EmployeeLdIntervention,
   EmployeeReference,
+  PdsFieldIssue,
+  PdsListSection,
 } from '../../types/employee.types';
 import { emptyAddress, EDUCATION_LEVEL_LABELS } from '../../types/employee.types';
 import { PdsStepList } from './PdsStepList';
@@ -46,6 +48,7 @@ import {
   listVoluntaryWork, saveVoluntaryWork,
   listLdInterventions, saveLdInterventions,
   listReferences, saveReferences,
+  validatePdsRows,
 } from '../../lib/api/personalDataSheet';
 
 const BRAND = { blue: '#363EE8', navy: '#040E6B', line: '#C8D1FF' };
@@ -348,6 +351,9 @@ interface LoadedLists {
 
 const hasText = (v: string | null | undefined) => !!v && v.trim() !== '';
 
+const describePdsIssues = (issues: PdsFieldIssue[]) =>
+  issues.map((issue) => `Row ${issue.rowIndex + 1}: ${issue.message}`).join(' ');
+
 /**
  * Sections that already hold saved data. Adjust the field choices here.
  * Scalar sections read `profile`; list sections read only the lists passed in
@@ -428,6 +434,24 @@ const SaveBar: React.FC<{ saving: boolean; onSave: () => void; label: string; la
   </div>
 );
 
+/** Compare two address blocks field by field, treating a missing part as blank. */
+const addressEquals = (a: AddressParts, b: AddressParts) =>
+  (Object.keys(emptyAddress()) as Array<keyof AddressParts>).every(
+    (key) => (a[key] || '') === (b[key] || ''),
+  );
+
+/** Only the fields the caller submitted, taken from the checked returned row. */
+const pickConfirmedFields = (
+  confirmed: Employee,
+  submitted: Partial<Employee>,
+): Partial<Employee> => {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(submitted)) {
+    out[key] = (confirmed as unknown as Record<string, unknown>)[key];
+  }
+  return out as Partial<Employee>;
+};
+
 export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile, onSaved }) => {
   const [activeTab, setActiveTab] = useState<SubTab>('personal');
   const [draft, setDraft] = useState<ScalarDraft>(getScalarDraft(profile));
@@ -442,6 +466,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const [voluntaryWork, setVoluntaryWork] = useState<EmployeeVoluntaryWork[]>(profile.voluntaryWork || []);
   const [ldInterventions, setLdInterventions] = useState<EmployeeLdIntervention[]>(profile.ldInterventions || []);
   const [references, setReferences] = useState<EmployeeReference[]>(profile.references || []);
+  const [revisions, setRevisions] = useState<Partial<Record<PdsListSection, string>>>({});
 
   const [listsLoading, setListsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -449,13 +474,106 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<SubTab>>(() => getInitiallySavedSections(profile, profile));
 
+  // Which scalar inputs the employee has touched. A confirmed save or a new
+  // profile snapshot may refresh only fields that are still clean, so a save in
+  // one section can never erase unsaved edits in another.
+  const identityKey = employeeId || profile.supabaseId || profile.employeeId;
+  const dirtyScalarFields = useRef(new Set<keyof ScalarDraft>());
+  const residentialDirty = useRef(false);
+  const permanentDirty = useRef(false);
+  const loadedIdentity = useRef(identityKey);
+  const previousProfile = useRef(profile);
+  const residentialRef = useRef(residential);
+  const permanentRef = useRef(permanent);
+  residentialRef.current = residential;
+  permanentRef.current = permanent;
+
+  // A save response belongs to the employee and mount it started under. The
+  // generation is bumped during render, so a continuation cannot slip through
+  // between an identity switch and its reset effect. A → B → A stays stale.
+  const currentIdentity = useRef(identityKey);
+  const identityGeneration = useRef(0);
+  if (currentIdentity.current !== identityKey) {
+    currentIdentity.current = identityKey;
+    identityGeneration.current += 1;
+  }
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const captureMutation = () => ({
+    identity: currentIdentity.current,
+    generation: identityGeneration.current,
+  });
+  const isCurrentMutation = (token: { identity: string; generation: number }) =>
+    mounted.current &&
+    currentIdentity.current === token.identity &&
+    identityGeneration.current === token.generation;
+
   const markSaved = (...ids: SubTab[]) =>
     setSavedIds((prev) => (ids.every((id) => prev.has(id)) ? prev : new Set([...prev, ...ids])));
 
+  // A different employee means nothing from the previous one may remain: clear
+  // the lists, revisions, saved markers and dirty drafts before the new reads.
   useEffect(() => {
+    if (loadedIdentity.current === identityKey) return;
+    loadedIdentity.current = identityKey;
+    dirtyScalarFields.current.clear();
+    residentialDirty.current = false;
+    permanentDirty.current = false;
     setDraft(getScalarDraft(profile));
     setResidential(profile.residential || emptyAddress());
     setPermanent(profile.permanent || emptyAddress());
+    setSameAsResidential(false);
+    setChildren([]);
+    setEducation([]);
+    setEligibility([]);
+    setWorkExperience([]);
+    setVoluntaryWork([]);
+    setLdInterventions([]);
+    setReferences([]);
+    setRevisions({});
+    setSavedIds(getInitiallySavedSections(profile, {}));
+    setSaveError(null);
+    setSaveSuccess(null);
+    setSaving(false);
+    // Identity is the trigger; profile is read only for the new initial values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identityKey]);
+
+  // Hydrate fields whose value actually changed in the profile, including
+  // after a confirmed save. An unrelated parent update carries the old
+  // family/background values forward; those must not replace the canonical
+  // paired-read snapshot in the draft. Dirty fields keep their unsaved input.
+  useEffect(() => {
+    const before = previousProfile.current;
+    const fresh = getScalarDraft(profile);
+    const previous = getScalarDraft(before);
+    previousProfile.current = profile;
+    setDraft((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(fresh) as Array<keyof ScalarDraft>) {
+        if (dirtyScalarFields.current.has(key)) continue;
+        if (previous[key] === fresh[key]) continue;
+        if (prev[key] !== fresh[key]) {
+          (next as Record<string, unknown>)[key] = fresh[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    const previousResidential = before.residential || emptyAddress();
+    const nextResidential = profile.residential || emptyAddress();
+    if (!residentialDirty.current && !addressEquals(previousResidential, nextResidential)) {
+      setResidential(nextResidential);
+    }
+    const previousPermanent = before.permanent || emptyAddress();
+    const nextPermanent = profile.permanent || emptyAddress();
+    if (!permanentDirty.current && !addressEquals(previousPermanent, nextPermanent)) {
+      setPermanent(nextPermanent);
+    }
     markSaved(...getInitiallySavedSections(profile, {}));
   }, [profile]);
 
@@ -474,29 +592,133 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         listReferences(employeeId),
       ]);
       if (cancelled) return;
-      if (childrenRes.ok !== false) setChildren(childrenRes.data);
-      if (educationRes.ok !== false) setEducation(buildEducationRows(educationRes.data));
-      if (eligibilityRes.ok !== false) setEligibility(eligibilityRes.data);
-      if (workExperienceRes.ok !== false) setWorkExperience(workExperienceRes.data);
-      if (voluntaryWorkRes.ok !== false) setVoluntaryWork(voluntaryWorkRes.data);
-      if (ldInterventionsRes.ok !== false) setLdInterventions(ldInterventionsRes.data);
-      if (referencesRes.ok !== false) setReferences(referencesRes.data);
+      const nextRevisions: Partial<Record<PdsListSection, string>> = {};
+      if (childrenRes.ok !== false) {
+        setChildren(childrenRes.data.rows);
+        nextRevisions.children = childrenRes.data.revision;
+      }
+      if (educationRes.ok !== false) {
+        setEducation(buildEducationRows(educationRes.data.rows));
+        nextRevisions.education = educationRes.data.revision;
+      }
+      if (eligibilityRes.ok !== false) {
+        setEligibility(eligibilityRes.data.rows);
+        nextRevisions.eligibility = eligibilityRes.data.revision;
+      }
+      if (workExperienceRes.ok !== false) {
+        setWorkExperience(workExperienceRes.data.rows);
+        nextRevisions.workExperience = workExperienceRes.data.revision;
+      }
+      if (voluntaryWorkRes.ok !== false) {
+        setVoluntaryWork(voluntaryWorkRes.data.rows);
+        nextRevisions.voluntaryWork = voluntaryWorkRes.data.revision;
+      }
+      if (ldInterventionsRes.ok !== false) {
+        setLdInterventions(ldInterventionsRes.data.rows);
+        nextRevisions.training = ldInterventionsRes.data.revision;
+      }
+      if (referencesRes.ok !== false) {
+        setReferences(referencesRes.data.rows);
+        nextRevisions.references = referencesRes.data.revision;
+      }
+      setRevisions(nextRevisions);
       markSaved(...getInitiallySavedSections({} as Employee, {
-        children: childrenRes.ok !== false ? childrenRes.data : undefined,
-        education: educationRes.ok !== false ? educationRes.data : undefined,
-        eligibility: eligibilityRes.ok !== false ? eligibilityRes.data : undefined,
-        workExperience: workExperienceRes.ok !== false ? workExperienceRes.data : undefined,
-        voluntaryWork: voluntaryWorkRes.ok !== false ? voluntaryWorkRes.data : undefined,
-        ldInterventions: ldInterventionsRes.ok !== false ? ldInterventionsRes.data : undefined,
-        references: referencesRes.ok !== false ? referencesRes.data : undefined,
+        children: childrenRes.ok !== false ? childrenRes.data.rows : undefined,
+        education: educationRes.ok !== false ? educationRes.data.rows : undefined,
+        eligibility: eligibilityRes.ok !== false ? eligibilityRes.data.rows : undefined,
+        workExperience: workExperienceRes.ok !== false ? workExperienceRes.data.rows : undefined,
+        voluntaryWork: voluntaryWorkRes.ok !== false ? voluntaryWorkRes.data.rows : undefined,
+        ldInterventions: ldInterventionsRes.ok !== false ? ldInterventionsRes.data.rows : undefined,
+        references: referencesRes.ok !== false ? referencesRes.data.rows : undefined,
       }));
+
+      // Children and references reads also carry their section's scalar
+      // columns. Seed clean draft fields from that canonical snapshot so the
+      // form baseline matches what the paired save will compare against.
+      const canonicalScalars: Partial<Employee> = {
+        ...(childrenRes.ok !== false ? childrenRes.data.scalars : {}),
+        ...(referencesRes.ok !== false ? referencesRes.data.scalars : {}),
+      };
+      if (Object.keys(canonicalScalars).length > 0) {
+        const fresh = getScalarDraft(canonicalScalars as Employee);
+        setDraft((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const key of Object.keys(fresh) as Array<keyof ScalarDraft>) {
+            if (!(key in canonicalScalars) || dirtyScalarFields.current.has(key)) continue;
+            if (prev[key] !== fresh[key]) {
+              (next as Record<string, unknown>)[key] = fresh[key];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      }
       setListsLoading(false);
     })();
     return () => { cancelled = true; };
   }, [employeeId]);
 
-  const set = <K extends keyof ScalarDraft>(key: K, value: ScalarDraft[K]) =>
+  const set = <K extends keyof ScalarDraft>(key: K, value: ScalarDraft[K]) => {
+    dirtyScalarFields.current.add(key);
     setDraft((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const editResidential = (value: AddressParts) => {
+    residentialDirty.current = true;
+    setResidential(value);
+  };
+
+  const editPermanent = (value: AddressParts) => {
+    permanentDirty.current = true;
+    setPermanent(value);
+  };
+
+  /**
+   * Apply values from the checked returned row to the draft. A field the
+   * employee changed while the write was in flight is left alone, so a slow
+   * response cannot overwrite newer typing.
+   */
+  const applyConfirmedValues = (
+    confirmed: Partial<Employee>,
+    submitted: Partial<Employee>,
+    submittedDraft: ScalarDraft,
+    submittedAddresses?: { residential: AddressParts; permanent: AddressParts },
+  ) => {
+    const confirmedDraft = getScalarDraft({ ...profile, ...confirmed } as Employee);
+    setDraft((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(submitted) as Array<keyof Employee>) {
+        const draftKey = key as keyof ScalarDraft;
+        if (!(key in confirmed) || !(draftKey in confirmedDraft)) continue;
+        if (prev[draftKey] !== submittedDraft[draftKey]) continue;
+        dirtyScalarFields.current.delete(draftKey);
+        if (next[draftKey] !== confirmedDraft[draftKey]) {
+          (next as Record<string, unknown>)[draftKey] = confirmedDraft[draftKey];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    if (
+      submittedAddresses &&
+      confirmed.residential !== undefined &&
+      addressEquals(residentialRef.current, submittedAddresses.residential)
+    ) {
+      residentialDirty.current = false;
+      setResidential(confirmed.residential);
+    }
+    if (
+      submittedAddresses &&
+      confirmed.permanent !== undefined &&
+      addressEquals(permanentRef.current, submittedAddresses.permanent)
+    ) {
+      permanentDirty.current = false;
+      setPermanent(confirmed.permanent);
+    }
+  };
 
   const addChild = () => setChildren((prev) => [...prev, { fullName: '', dateOfBirth: '' }]);
   const removeChild = (i: number) => setChildren((prev) => prev.filter((_, idx) => idx !== i));
@@ -538,6 +760,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const savePersonalInfo = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -553,8 +776,8 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       placeOfBirth: draft.placeOfBirth.trim(),
       gender: draft.gender,
       civilStatus: draft.civilStatus,
-      heightM: draft.heightM ? Number.parseFloat(draft.heightM) : undefined,
-      weightKg: draft.weightKg ? Number.parseFloat(draft.weightKg) : undefined,
+      heightM: draft.heightM.trim() ? Number.parseFloat(draft.heightM) : null,
+      weightKg: draft.weightKg.trim() ? Number.parseFloat(draft.weightKg) : null,
       bloodType: draft.bloodType.trim(),
       umidNumber: draft.umidNumber.trim(),
       philsysNumber: draft.philsysNumber.trim(),
@@ -571,24 +794,36 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       residential,
       permanent: effectivePermanent,
     };
+    const submittedDraft = { ...draft };
+    const submittedAddresses = { residential, permanent: effectivePermanent };
 
     const res = await patchPortalEmployee(employeeId, scalarPatch);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(res.error ?? 'Failed to save Personal Information. Please try again.');
       setSaving(false);
       return;
     }
 
-    onSaved(scalarPatch);
+    applyConfirmedValues(res.data, scalarPatch, submittedDraft, submittedAddresses);
+    onSaved(pickConfirmedFields(res.data, scalarPatch));
     setSaveSuccess('Personal Information saved.');
     markSaved('personal');
     setSaving(false);
   };
 
   const saveFamilyBackground = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
+
+    const childIssues = validatePdsRows('children', children);
+    if (childIssues.length > 0) {
+      setSaveError(describePdsIssues(childIssues));
+      setSaving(false);
+      return;
+    }
 
     const scalarPatch: Partial<Employee> = {
       spouseSurname: draft.spouseSurname.trim(),
@@ -608,118 +843,238 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       motherMiddleName: draft.motherMiddleName.trim(),
     };
 
-    const [scalarRes, childrenRes] = await Promise.all([
-      patchPortalEmployee(employeeId, scalarPatch),
-      saveChildren(employeeId, children),
-    ]);
-
-    if (scalarRes.ok === false || childrenRes.ok === false) {
-      const error =
-        (scalarRes.ok === false && scalarRes.error) ||
-        (childrenRes.ok === false && childrenRes.error) ||
-        'Failed to save Family Background. Please try again.';
-      setSaveError(error);
+    const revision = revisions.children;
+    if (!revision) {
+      setSaveError('Reload Family Background before saving.');
       setSaving(false);
       return;
     }
 
-    onSaved(scalarPatch);
+    const submittedDraft = { ...draft };
+    const res = await saveChildren(employeeId, children, revision, scalarPatch);
+    if (!isCurrentMutation(mutation)) return;
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Family Background. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    const confirmedScalars = res.data.scalars ?? {};
+    setChildren(res.data.rows);
+    setRevisions((prev) => ({ ...prev, children: res.data.revision }));
+    applyConfirmedValues(confirmedScalars, scalarPatch, submittedDraft);
+    onSaved(confirmedScalars);
     setSaveSuccess('Family Background saved.');
     markSaved('family');
     setSaving(false);
   };
 
   const saveEducationalBackground = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
 
-    const res = await saveEducation(employeeId, education);
-    if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Educational Background. Please try again.');
+    const issues = validatePdsRows('education', education);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
       setSaving(false);
       return;
     }
 
-    onSaved({});
+    const revision = revisions.education;
+    if (!revision) {
+      setSaveError('Reload Educational Background before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveEducation(employeeId, education, revision);
+    if (!isCurrentMutation(mutation)) return;
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Educational Background. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    setEducation(buildEducationRows(res.data.rows));
+    setRevisions((prev) => ({ ...prev, education: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Educational Background saved.');
     markSaved('education');
     setSaving(false);
   };
 
   const saveEligibilitySection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
 
-    const res = await saveEligibility(employeeId, eligibility);
-    if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Civil Service Eligibility. Please try again.');
+    const issues = validatePdsRows('eligibility', eligibility);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
       setSaving(false);
       return;
     }
 
-    onSaved({});
+    const revision = revisions.eligibility;
+    if (!revision) {
+      setSaveError('Reload Civil Service Eligibility before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveEligibility(employeeId, eligibility, revision);
+    if (!isCurrentMutation(mutation)) return;
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Civil Service Eligibility. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    setEligibility(res.data.rows);
+    setRevisions((prev) => ({ ...prev, eligibility: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Civil Service Eligibility saved.');
     markSaved('eligibility');
     setSaving(false);
   };
 
   const saveWorkExperienceSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
 
-    const res = await saveWorkExperience(employeeId, workExperience);
-    if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Work Experience. Please try again.');
+    const issues = validatePdsRows('workExperience', workExperience);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
       setSaving(false);
       return;
     }
 
-    onSaved({});
+    const revision = revisions.workExperience;
+    if (!revision) {
+      setSaveError('Reload Work Experience before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveWorkExperience(employeeId, workExperience, revision);
+    if (!isCurrentMutation(mutation)) return;
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Work Experience. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    setWorkExperience(res.data.rows);
+    setRevisions((prev) => ({ ...prev, workExperience: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Work Experience saved.');
     markSaved('workExperience');
     setSaving(false);
   };
 
   const saveVoluntaryWorkSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
 
-    const res = await saveVoluntaryWork(employeeId, voluntaryWork);
-    if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Voluntary Work. Please try again.');
+    const issues = validatePdsRows('voluntaryWork', voluntaryWork);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
       setSaving(false);
       return;
     }
 
-    onSaved({});
+    const revision = revisions.voluntaryWork;
+    if (!revision) {
+      setSaveError('Reload Voluntary Work before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveVoluntaryWork(employeeId, voluntaryWork, revision);
+    if (!isCurrentMutation(mutation)) return;
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Voluntary Work. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    setVoluntaryWork(res.data.rows);
+    setRevisions((prev) => ({ ...prev, voluntaryWork: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Voluntary Work saved.');
     markSaved('voluntaryWork');
     setSaving(false);
   };
 
   const saveLdInterventionsSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
 
-    const res = await saveLdInterventions(employeeId, ldInterventions);
-    if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Learning & Development history. Please try again.');
+    const issues = validatePdsRows('training', ldInterventions);
+    if (issues.length > 0) {
+      setSaveError(describePdsIssues(issues));
       setSaving(false);
       return;
     }
 
-    onSaved({});
+    const revision = revisions.training;
+    if (!revision) {
+      setSaveError('Reload Learning & Development history before saving.');
+      setSaving(false);
+      return;
+    }
+
+    const res = await saveLdInterventions(employeeId, ldInterventions, revision);
+    if (!isCurrentMutation(mutation)) return;
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Learning & Development history. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    setLdInterventions(res.data.rows);
+    setRevisions((prev) => ({ ...prev, training: res.data.revision }));
+    onSaved(res.data.scalars ?? {});
     setSaveSuccess('Learning & Development history saved.');
     markSaved('training');
     setSaving(false);
   };
 
   const saveOtherInfoSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -729,24 +1084,35 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       nonAcademicDistinctions: draft.nonAcademicDistinctions.trim(),
       membershipAssociations: draft.membershipAssociations.trim(),
     };
+    const submittedDraft = { ...draft };
 
     const res = await patchPortalEmployee(employeeId, scalarPatch);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(res.error ?? 'Failed to save Other Information. Please try again.');
       setSaving(false);
       return;
     }
 
-    onSaved(scalarPatch);
+    applyConfirmedValues(res.data, scalarPatch, submittedDraft);
+    onSaved(pickConfirmedFields(res.data, scalarPatch));
     setSaveSuccess('Other Information saved.');
     markSaved('otherInfo');
     setSaving(false);
   };
 
   const saveBackgroundSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
+
+    const referenceIssues = validatePdsRows('references', references);
+    if (referenceIssues.length > 0) {
+      setSaveError(describePdsIssues(referenceIssues));
+      setSaving(false);
+      return;
+    }
 
     const scalarPatch: Partial<Employee> = {
       relatedThirdDegree: draft.relatedThirdDegree,
@@ -779,22 +1145,31 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       govIdIssuedDatePlace: draft.govIdIssuedDatePlace.trim(),
     };
 
-    const [scalarRes, referencesRes] = await Promise.all([
-      patchPortalEmployee(employeeId, scalarPatch),
-      saveReferences(employeeId, references),
-    ]);
-
-    if (scalarRes.ok === false || referencesRes.ok === false) {
-      const error =
-        (scalarRes.ok === false && scalarRes.error) ||
-        (referencesRes.ok === false && referencesRes.error) ||
-        'Failed to save Background Information. Please try again.';
-      setSaveError(error);
+    const revision = revisions.references;
+    if (!revision) {
+      setSaveError('Reload Background Information before saving.');
       setSaving(false);
       return;
     }
 
-    onSaved(scalarPatch);
+    const submittedDraft = { ...draft };
+    const res = await saveReferences(employeeId, references, revision, scalarPatch);
+    if (!isCurrentMutation(mutation)) return;
+    if (res.ok === false) {
+      setSaveError(
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? 'Failed to save Background Information. Please try again.',
+      );
+      setSaving(false);
+      return;
+    }
+
+    const confirmedScalars = res.data.scalars ?? {};
+    setReferences(res.data.rows);
+    setRevisions((prev) => ({ ...prev, references: res.data.revision }));
+    applyConfirmedValues(confirmedScalars, scalarPatch, submittedDraft);
+    onSaved(confirmedScalars);
     setSaveSuccess('Background Information saved.');
     markSaved('background');
     setSaving(false);
@@ -853,7 +1228,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
         <div>
           <h3 className="mb-2 text-sm font-bold" style={{ color: BRAND.navy }}>Residential Address</h3>
-          <AddressFields value={residential} onChange={setResidential} />
+          <AddressFields value={residential} onChange={editResidential} />
         </div>
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -867,7 +1242,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
               Same as residential
             </label>
           </div>
-          {!sameAsResidential && <AddressFields value={permanent} onChange={setPermanent} />}
+          {!sameAsResidential && <AddressFields value={permanent} onChange={editPermanent} />}
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -958,23 +1333,23 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       )}
 
       {activeTab === 'education' && (
-      <SectionCard title="III. Educational Background" description="Elementary through Graduate Studies.">
+      <SectionCard title="III. Educational Background" description="Elementary through Doctorate.">
         {listsLoading ? (
           <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
         ) : (
           <div className="space-y-4">
             {education.map((row, i) => (
-              <div key={row.level} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
+              <div key={row.id ?? `${row.level}-${i}`} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
                 <p className="mb-2 text-xs font-bold uppercase tracking-wide" style={{ color: BRAND.blue }}>{EDUCATION_LEVEL_LABELS[row.level] ?? row.level}</p>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                   <Field label="Name of School" value={row.school || ''} onChange={(v) => updateEducation(i, { school: v })} />
                   <Field label="Basic Education/Degree/Course" value={row.degree || ''} onChange={(v) => updateEducation(i, { degree: v })} />
-                  <Field label="Units Earned (if not graduated)" type="number" value={row.highestLevelUnits != null ? String(row.highestLevelUnits) : ''} onChange={(v) => updateEducation(i, { highestLevelUnits: v ? Number.parseInt(v, 10) : null })} />
+                  <Field label="Units Earned (if not graduated)" type="number" value={row.highestLevelUnits != null ? String(row.highestLevelUnits) : ''} onChange={(v) => updateEducation(i, { highestLevelUnits: v ? Number(v) : null })} />
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <Field label="Year Attended From" type="number" value={row.periodFrom != null ? String(row.periodFrom) : ''} onChange={(v) => updateEducation(i, { periodFrom: v ? Number.parseInt(v, 10) : null })} />
-                  <Field label="Year Attended To" type="number" value={row.periodTo != null ? String(row.periodTo) : ''} onChange={(v) => updateEducation(i, { periodTo: v ? Number.parseInt(v, 10) : null })} />
-                  <Field label="Year Graduated" type="number" value={row.yearGraduated != null ? String(row.yearGraduated) : ''} onChange={(v) => updateEducation(i, { yearGraduated: v ? Number.parseInt(v, 10) : null })} />
+                  <Field label="Year Attended From" type="number" value={row.periodFrom != null ? String(row.periodFrom) : ''} onChange={(v) => updateEducation(i, { periodFrom: v ? Number(v) : null })} />
+                  <Field label="Year Attended To" type="number" value={row.periodTo != null ? String(row.periodTo) : ''} onChange={(v) => updateEducation(i, { periodTo: v ? Number(v) : null })} />
+                  <Field label="Year Graduated" type="number" value={row.yearGraduated != null ? String(row.yearGraduated) : ''} onChange={(v) => updateEducation(i, { yearGraduated: v ? Number(v) : null })} />
                   <Field label="Scholarship/Academic Honors" value={row.scholarshipHonors || ''} onChange={(v) => updateEducation(i, { scholarshipHonors: v })} />
                 </div>
               </div>

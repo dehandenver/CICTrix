@@ -5,14 +5,14 @@ import type { Employee } from '../../types/employee.types';
 import { EmployeePage } from './EmployeePage';
 import { clearEmployeeSession } from '../../lib/employeeSession';
 
-const mocks = vi.hoisted(() => ({ raw: vi.fn(), targets: vi.fn(), workspace: vi.fn(), phaseOpen: vi.fn() }));
+const mocks = vi.hoisted(() => ({ raw: vi.fn(), targets: vi.fn(), workspace: vi.fn(), phaseOpen: vi.fn(), patchPortalEmployee: vi.fn() }));
 vi.mock('../../lib/supabase', async () => {
   const { supabaseStub } = await import('../../test/supabaseStub');
   return { supabase: supabaseStub() };
 });
 vi.mock('../../hooks/useRealtimeRefresh', () => ({ useRealtimeRefresh: () => undefined }));
 vi.mock('../../components/portal-header', () => ({ PortalHeader: () => null }));
-vi.mock('../../lib/api/employeePortal', () => ({ fetchPortalEmployeeById: async () => ({ ok: false }), patchPortalEmployee: vi.fn() }));
+vi.mock('../../lib/api/employeePortal', () => ({ fetchPortalEmployeeById: async () => ({ ok: false }), patchPortalEmployee: mocks.patchPortalEmployee }));
 vi.mock('../../lib/api/performanceEvaluations', () => ({
   getEmployeeRawDetails: mocks.raw,
   getActivePerformanceCycle: async () => ({ success: true, data: { id: 2 } }),
@@ -43,6 +43,7 @@ const employee = {
 
 beforeEach(() => {
   vi.clearAllMocks(); sessionStorage.clear();
+  mocks.patchPortalEmployee.mockReset();
   mocks.workspace.mockResolvedValue(null);
   mocks.phaseOpen.mockReturnValue(true);
   mocks.raw.mockImplementation(async () => {
@@ -234,5 +235,80 @@ describe('profile setup reminder', () => {
     await screen.findByText('Complete your profile');
     expect(screen.queryByRole('heading', { name: 'Contact Information' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Government Identification' })).not.toBeInTheDocument();
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+describe('confirmed profile writes', () => {
+  const complete = {
+    ...employee,
+    emergencyRelationship: 'Mother',
+    emergencyContactNumber: '09123456780',
+    philhealthNumber: '456',
+    pagibigNumber: '789',
+    tinNumber: '321',
+  } as Employee;
+
+  const mountProfile = (current: Employee) => render(
+    <MemoryRouter initialEntries={['/employee/profile']}>
+      <EmployeePage currentUser={current} onLogout={() => {}} />
+    </MemoryRouter>,
+  );
+
+  it('waits for the confirmed row before advancing the setup wizard', async () => {
+    const pending = deferred<{ ok: true; data: Employee } | { ok: false; error: string }>();
+    mocks.patchPortalEmployee.mockReturnValue(pending.promise);
+
+    mountProfile({ ...employee, email: '' });
+    fireEvent.change(await screen.findByPlaceholderText('your@email.com'), {
+      target: { value: 'new@example.test' },
+    });
+    const save = screen.getByRole('button', { name: /Save & Continue/ });
+    fireEvent.click(save);
+    fireEvent.click(save);
+
+    expect(screen.getByRole('heading', { name: 'Contact Information' })).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    expect(mocks.patchPortalEmployee).toHaveBeenCalledTimes(1);
+
+    pending.resolve({ ok: true, data: { ...employee, email: 'new@example.test' } });
+
+    expect(await screen.findByRole('heading', { name: 'Emergency Contact' })).toBeInTheDocument();
+    expect(mocks.patchPortalEmployee.mock.calls[0][1]).toMatchObject({ email: 'new@example.test' });
+  });
+
+  it('stays on the step and shows the failure when the write is rejected', async () => {
+    mocks.patchPortalEmployee.mockResolvedValue({ ok: false, error: 'Unable to reach the server.' });
+
+    mountProfile({ ...employee, email: '' });
+    fireEvent.change(await screen.findByPlaceholderText('your@email.com'), {
+      target: { value: 'new@example.test' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Save & Continue/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the server.');
+    expect(screen.getByRole('heading', { name: 'Contact Information' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Emergency Contact' })).not.toBeInTheDocument();
+  });
+
+  it('does not write a PDS scalar save twice through the parent', async () => {
+    mocks.patchPortalEmployee.mockResolvedValue({
+      ok: true,
+      data: { ...complete, placeOfBirth: 'Iloilo City' },
+    });
+
+    mountProfile(complete);
+    fireEvent.change(await screen.findByLabelText('Place of Birth'), {
+      target: { value: 'Iloilo City' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Personal Information' }));
+
+    expect(await screen.findByText('Personal Information saved.')).toBeInTheDocument();
+    expect(mocks.patchPortalEmployee).toHaveBeenCalledTimes(1);
   });
 });

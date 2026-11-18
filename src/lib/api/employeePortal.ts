@@ -103,6 +103,102 @@ const PDS_SCALAR_COLUMNS = {
   pdsSignedAt: 'pds_signed_at',
 } as const satisfies Record<string, string>;
 
+/**
+ * The two PDS list sections whose saves commit a scalar patch with the list:
+ * children with the family-background names, references with the disclosure
+ * answers and government ID. Keeping the field lists here means the service
+ * layer and the SQL allowlist can be checked against one readable source.
+ */
+export type PdsScalarPairing = 'family' | 'background';
+
+const PDS_FAMILY_SCALAR_FIELDS = [
+  'spouseSurname',
+  'spouseFirstName',
+  'spouseMiddleName',
+  'spouseNameExtension',
+  'spouseOccupation',
+  'spouseEmployer',
+  'spouseBusinessAddress',
+  'spouseTelephone',
+  'fatherSurname',
+  'fatherFirstName',
+  'fatherMiddleName',
+  'fatherNameExtension',
+  'motherSurname',
+  'motherFirstName',
+  'motherMiddleName',
+] as const satisfies readonly (keyof typeof PDS_SCALAR_COLUMNS)[];
+
+const PDS_BACKGROUND_SCALAR_FIELDS = [
+  'relatedThirdDegree',
+  'relatedFourthDegree',
+  'relatedDetails',
+  'adminOffenseGuilty',
+  'adminOffenseDetails',
+  'criminallyCharged',
+  'criminalChargeDetails',
+  'criminalCaseDateFiled',
+  'criminalCaseStatus',
+  'convictedOfCrime',
+  'convictedDetails',
+  'separatedFromService',
+  'separatedDetails',
+  'electionCandidate',
+  'electionCandidateDetails',
+  'resignedToCampaign',
+  'resignedToCampaignDetails',
+  'immigrantStatus',
+  'immigrantCountry',
+  'indigenousGroupMember',
+  'indigenousGroupSpecify',
+  'personWithDisability',
+  'pwdIdNumber',
+  'soloParent',
+  'soloParentIdNumber',
+  'govIdType',
+  'govIdNumber',
+  'govIdIssuedDatePlace',
+] as const satisfies readonly (keyof typeof PDS_SCALAR_COLUMNS)[];
+
+const PDS_SCALAR_FIELDS_BY_PAIRING = {
+  family: PDS_FAMILY_SCALAR_FIELDS,
+  background: PDS_BACKGROUND_SCALAR_FIELDS,
+} as const;
+
+/**
+ * Map a partial `Employee` patch for one PDS pair onto `employees` columns.
+ * Empty strings clear the column (NULL), matching `mapPatchToColumns`.
+ */
+export function mapPdsScalarPatchToColumns(
+  pairing: PdsScalarPairing,
+  patch: Partial<Employee>,
+): Record<string, unknown> {
+  const columns: Record<string, unknown> = {};
+  for (const field of PDS_SCALAR_FIELDS_BY_PAIRING[pairing]) {
+    if (!(field in patch)) continue;
+    columns[PDS_SCALAR_COLUMNS[field]] = patch[field] === '' ? null : patch[field];
+  }
+  return columns;
+}
+
+/**
+ * Map the section-owned scalar columns returned by `read_pds_section` /
+ * `save_pds_section` back to `Employee` fields. Only columns present in the
+ * row are returned, so a section that owns no scalar columns maps to `{}`.
+ */
+export function mapPdsScalarColumnsToEmployee(
+  pairing: PdsScalarPairing,
+  row: Record<string, unknown>,
+): Partial<Employee> {
+  const mapped = mapSupabaseRowToEmployee(row);
+  const out: Record<string, unknown> = {};
+  for (const field of PDS_SCALAR_FIELDS_BY_PAIRING[pairing]) {
+    if (!(PDS_SCALAR_COLUMNS[field] in row)) continue;
+    out[field] = mapped[field];
+  }
+  return out as Partial<Employee>;
+}
+
 /** Suffixes of the seven columns each address block is stored across. */
 const ADDRESS_PART_COLUMNS = {
   houseLot: 'house_lot',
@@ -361,11 +457,16 @@ function mapPatchToColumns(patch: Partial<Employee>): Record<string, unknown> {
     row[column] = value === '' ? null : value;
   }
 
-  // Item 3's height/weight are numeric columns; a cleared box arrives as '' and
-  // would be rejected as invalid input syntax if passed straight through.
+  // Item 3's height/weight are numeric columns; a cleared box arrives as null
+  // (or '' from older callers) and must be stored as NULL rather than being
+  // silently omitted, or the previous measurement survives the edit.
   for (const numeric of ['heightM', 'weightKg'] as const) {
     if (patch[numeric] === undefined) continue;
-    const raw = patch[numeric];
+    const raw = patch[numeric] as unknown;
+    if (raw == null || (typeof raw === 'string' && raw.trim() === '')) {
+      row[PDS_SCALAR_COLUMNS[numeric]] = null;
+      continue;
+    }
     const parsed = typeof raw === 'number' ? raw : Number.parseFloat(String(raw));
     row[PDS_SCALAR_COLUMNS[numeric]] = Number.isFinite(parsed) ? parsed : null;
   }
@@ -476,27 +577,37 @@ export async function fetchPortalEmployeeByNumber(
 /**
  * Persist a partial patch to the `employees` row identified by the Supabase UUID.
  * Only the fields present in `patch` are sent — no full-object replacement.
+ *
+ * The update requests the written row back and maps it, so callers only update
+ * saved state from what the database actually stored. An update that matches no
+ * row (wrong id, or RLS hiding it) is a failure, not a quiet success.
  */
 export async function patchPortalEmployee(
   supabaseId: string,
   patch: Partial<Employee>,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: Employee } | { ok: false; error: string }> {
   if (!supabaseId) return { ok: false, error: 'No supabase ID — cannot save.' };
 
   const columns = mapPatchToColumns(patch);
   if (Object.keys(columns).length <= 1) {
-    // Only modified_at was set — nothing to write.
-    return { ok: true };
+    // Only modified_at was set — nothing to write. Read the checked row so the
+    // caller still gets confirmed state instead of an unverified success.
+    return fetchPortalEmployeeById(supabaseId);
   }
 
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('employees')
       .update(columns)
-      .eq('id', supabaseId);
+      .eq('id', supabaseId)
+      .select('*')
+      .maybeSingle();
 
     if (error) throw error;
-    return { ok: true };
+    if (!data) {
+      return { ok: false, error: 'No employee row matched this save. Nothing was changed.' };
+    }
+    return { ok: true, data: mapSupabaseRowToEmployee(data) };
   } catch (err: any) {
     console.error('[employeePortal] patchPortalEmployee error:', err);
     return { ok: false, error: err?.message ?? 'Failed to save to database.' };
