@@ -15,7 +15,7 @@ import {
 } from '../lib/scheduleSelection';
 
 const INPUT_CLASS =
-  'h-11 w-full rounded-[var(--radius-md)] border border-[var(--neutral-200)] bg-[var(--bg-surface)] px-3 text-[14px] font-medium text-[var(--neutral-800)] outline-none transition-colors hover:border-[var(--color-primary-200)] focus:border-[var(--color-primary)] focus:shadow-[var(--ring-input)]';
+  'h-11 w-full rounded-[var(--radius-md)] border border-[var(--neutral-200)] bg-[var(--bg-surface)] px-3 text-[14px] font-medium text-[var(--neutral-800)] outline-none transition-colors hover:border-[var(--color-primary-200)] focus:border-[var(--color-primary)] focus:shadow-[shadow:var(--ring-input)]';
 const LABEL_CLASS = 'mb-1.5 block text-[14px] font-medium leading-4 text-[var(--neutral-800)]';
 
 const SESSIONS: { value: InterviewSession; label: string }[] = [

@@ -77,7 +77,7 @@ export const Modal = ({
         aria-labelledby={title ? titleId : undefined}
         aria-label={title ? undefined : ariaLabel}
         aria-describedby={subtitle ? subtitleId : undefined}
-        className={`relative flex h-full w-full flex-col overflow-hidden bg-white outline-none shadow-[var(--shadow-3)] sm:max-h-[88vh] sm:rounded-2xl ${flush ? 'sm:h-[88vh]' : 'sm:h-auto'} ${WIDTH[size]}`}
+        className={`relative flex h-full w-full flex-col overflow-hidden bg-white outline-none shadow-[shadow:var(--shadow-3)] sm:max-h-[88vh] sm:rounded-2xl ${flush ? 'sm:h-[88vh]' : 'sm:h-auto'} ${WIDTH[size]}`}
       >
         {title ? (
         <header className="abyan-modal-chrome flex shrink-0 items-start justify-between gap-4 px-6 py-4" style={{ background: 'var(--gradient-modal-header)' }}>
