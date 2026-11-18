@@ -482,10 +482,34 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const residentialDirty = useRef(false);
   const permanentDirty = useRef(false);
   const loadedIdentity = useRef(identityKey);
+  const previousProfile = useRef(profile);
   const residentialRef = useRef(residential);
   const permanentRef = useRef(permanent);
   residentialRef.current = residential;
   permanentRef.current = permanent;
+
+  // A save response belongs to the employee and mount it started under. The
+  // generation is bumped during render, so a continuation cannot slip through
+  // between an identity switch and its reset effect. A → B → A stays stale.
+  const currentIdentity = useRef(identityKey);
+  const identityGeneration = useRef(0);
+  if (currentIdentity.current !== identityKey) {
+    currentIdentity.current = identityKey;
+    identityGeneration.current += 1;
+  }
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const captureMutation = () => ({
+    identity: currentIdentity.current,
+    generation: identityGeneration.current,
+  });
+  const isCurrentMutation = (token: { identity: string; generation: number }) =>
+    mounted.current &&
+    currentIdentity.current === token.identity &&
+    identityGeneration.current === token.generation;
 
   const markSaved = (...ids: SubTab[]) =>
     setSavedIds((prev) => (ids.every((id) => prev.has(id)) ? prev : new Set([...prev, ...ids])));
@@ -513,19 +537,26 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     setSavedIds(getInitiallySavedSections(profile, {}));
     setSaveError(null);
     setSaveSuccess(null);
+    setSaving(false);
     // Identity is the trigger; profile is read only for the new initial values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identityKey]);
 
-  // Hydrate clean fields from the canonical profile, including after a
-  // confirmed save. Dirty fields keep their unsaved input.
+  // Hydrate fields whose value actually changed in the profile, including
+  // after a confirmed save. An unrelated parent update carries the old
+  // family/background values forward; those must not replace the canonical
+  // paired-read snapshot in the draft. Dirty fields keep their unsaved input.
   useEffect(() => {
+    const before = previousProfile.current;
     const fresh = getScalarDraft(profile);
+    const previous = getScalarDraft(before);
+    previousProfile.current = profile;
     setDraft((prev) => {
       let changed = false;
       const next = { ...prev };
       for (const key of Object.keys(fresh) as Array<keyof ScalarDraft>) {
         if (dirtyScalarFields.current.has(key)) continue;
+        if (previous[key] === fresh[key]) continue;
         if (prev[key] !== fresh[key]) {
           (next as Record<string, unknown>)[key] = fresh[key];
           changed = true;
@@ -533,8 +564,16 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       }
       return changed ? next : prev;
     });
-    if (!residentialDirty.current) setResidential(profile.residential || emptyAddress());
-    if (!permanentDirty.current) setPermanent(profile.permanent || emptyAddress());
+    const previousResidential = before.residential || emptyAddress();
+    const nextResidential = profile.residential || emptyAddress();
+    if (!residentialDirty.current && !addressEquals(previousResidential, nextResidential)) {
+      setResidential(nextResidential);
+    }
+    const previousPermanent = before.permanent || emptyAddress();
+    const nextPermanent = profile.permanent || emptyAddress();
+    if (!permanentDirty.current && !addressEquals(previousPermanent, nextPermanent)) {
+      setPermanent(nextPermanent);
+    }
     markSaved(...getInitiallySavedSections(profile, {}));
   }, [profile]);
 
@@ -721,6 +760,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const savePersonalInfo = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -758,6 +798,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     const submittedAddresses = { residential, permanent: effectivePermanent };
 
     const res = await patchPortalEmployee(employeeId, scalarPatch);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(res.error ?? 'Failed to save Personal Information. Please try again.');
       setSaving(false);
@@ -772,6 +813,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const saveFamilyBackground = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -810,6 +852,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     const submittedDraft = { ...draft };
     const res = await saveChildren(employeeId, children, revision, scalarPatch);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -831,6 +874,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const saveEducationalBackground = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -850,6 +894,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     }
 
     const res = await saveEducation(employeeId, education, revision);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -869,6 +914,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const saveEligibilitySection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -888,6 +934,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     }
 
     const res = await saveEligibility(employeeId, eligibility, revision);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -907,6 +954,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const saveWorkExperienceSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -926,6 +974,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     }
 
     const res = await saveWorkExperience(employeeId, workExperience, revision);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -945,6 +994,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const saveVoluntaryWorkSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -964,6 +1014,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     }
 
     const res = await saveVoluntaryWork(employeeId, voluntaryWork, revision);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -983,6 +1034,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const saveLdInterventionsSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -1002,6 +1054,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     }
 
     const res = await saveLdInterventions(employeeId, ldInterventions, revision);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -1021,6 +1074,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const saveOtherInfoSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -1033,6 +1087,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     const submittedDraft = { ...draft };
 
     const res = await patchPortalEmployee(employeeId, scalarPatch);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(res.error ?? 'Failed to save Other Information. Please try again.');
       setSaving(false);
@@ -1047,6 +1102,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   };
 
   const saveBackgroundSection = async () => {
+    const mutation = captureMutation();
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -1098,6 +1154,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
 
     const submittedDraft = { ...draft };
     const res = await saveReferences(employeeId, references, revision, scalarPatch);
+    if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
       setSaveError(
         res.fieldIssues?.length
@@ -1287,12 +1344,12 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                   <Field label="Name of School" value={row.school || ''} onChange={(v) => updateEducation(i, { school: v })} />
                   <Field label="Basic Education/Degree/Course" value={row.degree || ''} onChange={(v) => updateEducation(i, { degree: v })} />
-                  <Field label="Units Earned (if not graduated)" type="number" value={row.highestLevelUnits != null ? String(row.highestLevelUnits) : ''} onChange={(v) => updateEducation(i, { highestLevelUnits: v ? Number.parseInt(v, 10) : null })} />
+                  <Field label="Units Earned (if not graduated)" type="number" value={row.highestLevelUnits != null ? String(row.highestLevelUnits) : ''} onChange={(v) => updateEducation(i, { highestLevelUnits: v ? Number(v) : null })} />
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <Field label="Year Attended From" type="number" value={row.periodFrom != null ? String(row.periodFrom) : ''} onChange={(v) => updateEducation(i, { periodFrom: v ? Number.parseInt(v, 10) : null })} />
-                  <Field label="Year Attended To" type="number" value={row.periodTo != null ? String(row.periodTo) : ''} onChange={(v) => updateEducation(i, { periodTo: v ? Number.parseInt(v, 10) : null })} />
-                  <Field label="Year Graduated" type="number" value={row.yearGraduated != null ? String(row.yearGraduated) : ''} onChange={(v) => updateEducation(i, { yearGraduated: v ? Number.parseInt(v, 10) : null })} />
+                  <Field label="Year Attended From" type="number" value={row.periodFrom != null ? String(row.periodFrom) : ''} onChange={(v) => updateEducation(i, { periodFrom: v ? Number(v) : null })} />
+                  <Field label="Year Attended To" type="number" value={row.periodTo != null ? String(row.periodTo) : ''} onChange={(v) => updateEducation(i, { periodTo: v ? Number(v) : null })} />
+                  <Field label="Year Graduated" type="number" value={row.yearGraduated != null ? String(row.yearGraduated) : ''} onChange={(v) => updateEducation(i, { yearGraduated: v ? Number(v) : null })} />
                   <Field label="Scholarship/Academic Honors" value={row.scholarshipHonors || ''} onChange={(v) => updateEducation(i, { scholarshipHonors: v })} />
                 </div>
               </div>

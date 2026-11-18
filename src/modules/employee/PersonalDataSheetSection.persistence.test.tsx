@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useState } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { StrictMode, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Employee, EmployeeChild, EmployeeEducation } from '../../types/employee.types';
 import { emptyAddress } from '../../types/employee.types';
@@ -108,6 +108,156 @@ const renderSection = (profile: Employee = {} as Employee, onSaved = vi.fn()) =>
       onSaved={onSaved}
     />,
   );
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+type AnyMock = ReturnType<typeof vi.fn>;
+
+type MutationCase = {
+  name: string;
+  navName: RegExp;
+  saveLabel: string;
+  successMessage: string;
+  mock: AnyMock;
+  successData: unknown;
+  staleText?: string;
+};
+
+const listMocks = [
+  pdsApi.listChildren,
+  pdsApi.listEducation,
+  pdsApi.listEligibility,
+  pdsApi.listWorkExperience,
+  pdsApi.listVoluntaryWork,
+  pdsApi.listLdInterventions,
+  pdsApi.listReferences,
+];
+
+/** Keep the second employee's reads unresolved so they cannot mask a stale write. */
+const makeSecondEmployeeReadsPending = () => {
+  for (const mock of listMocks) {
+    mock.mockImplementation((id: string) =>
+      id === 'emp-2' ? new Promise(() => {}) : emptyResult(),
+    );
+  }
+};
+
+const mutationCases = (): MutationCase[] => [
+  {
+    name: 'Personal Information',
+    navName: /Personal Information/,
+    saveLabel: 'Save Personal Information',
+    successMessage: 'Personal Information saved.',
+    mock: portalApi.patchPortalEmployee as AnyMock,
+    successData: baseProfile({ placeOfBirth: 'STALE PLACE' }),
+  },
+  {
+    name: 'Family Background',
+    navName: /Family Background/,
+    saveLabel: 'Save Family Background',
+    successMessage: 'Family Background saved.',
+    mock: pdsApi.saveChildren,
+    successData: {
+      rows: [{ id: 'stale-child', fullName: 'STALE CHILD' }],
+      revision: 'stale-revision',
+      scalars: { spouseSurname: 'STALE SPOUSE' },
+    },
+    staleText: 'STALE CHILD',
+  },
+  {
+    name: 'Educational Background',
+    navName: /Educational Background/,
+    saveLabel: 'Save Educational Background',
+    successMessage: 'Educational Background saved.',
+    mock: pdsApi.saveEducation,
+    successData: {
+      rows: [{ id: 'stale-education', level: 'College', school: 'STALE SCHOOL' }],
+      revision: 'stale-revision',
+      scalars: {},
+    },
+  },
+  {
+    name: 'Civil Service Eligibility',
+    navName: /Civil Service Eligibility/,
+    saveLabel: 'Save Civil Service Eligibility',
+    successMessage: 'Civil Service Eligibility saved.',
+    mock: pdsApi.saveEligibility,
+    successData: {
+      rows: [{ id: 'stale-eligibility', eligibilityName: 'STALE ELIGIBILITY' }],
+      revision: 'stale-revision',
+      scalars: {},
+    },
+    staleText: 'STALE ELIGIBILITY',
+  },
+  {
+    name: 'Work Experience',
+    navName: /Work Experience/,
+    saveLabel: 'Save Work Experience',
+    successMessage: 'Work Experience saved.',
+    mock: pdsApi.saveWorkExperience,
+    successData: {
+      rows: [{ id: 'stale-work', positionTitle: 'STALE POSITION' }],
+      revision: 'stale-revision',
+      scalars: {},
+    },
+    staleText: 'STALE POSITION',
+  },
+  {
+    name: 'Voluntary Work',
+    navName: /Voluntary Work/,
+    saveLabel: 'Save Voluntary Work',
+    successMessage: 'Voluntary Work saved.',
+    mock: pdsApi.saveVoluntaryWork,
+    successData: {
+      rows: [{ id: 'stale-voluntary', orgNameAddress: 'STALE VOLUNTEER' }],
+      revision: 'stale-revision',
+      scalars: {},
+    },
+    staleText: 'STALE VOLUNTEER',
+  },
+  {
+    name: 'Learning & Development',
+    navName: /Learning & Development/,
+    saveLabel: 'Save Learning & Development',
+    successMessage: 'Learning & Development history saved.',
+    mock: pdsApi.saveLdInterventions,
+    successData: {
+      rows: [{ id: 'stale-training', title: 'STALE TRAINING' }],
+      revision: 'stale-revision',
+      scalars: {},
+    },
+    staleText: 'STALE TRAINING',
+  },
+  {
+    name: 'Other Information',
+    navName: /Other Information/,
+    saveLabel: 'Save Other Information',
+    successMessage: 'Other Information saved.',
+    mock: portalApi.patchPortalEmployee as AnyMock,
+    successData: baseProfile({ specialSkillsHobbies: 'STALE SKILLS' }),
+  },
+  {
+    name: 'Background Information',
+    navName: /Background Information/,
+    saveLabel: 'Save Background Information',
+    successMessage: 'Background Information saved.',
+    mock: pdsApi.saveReferences,
+    successData: {
+      rows: [{ id: 'stale-reference', name: 'STALE REFERENCE' }],
+      revision: 'stale-revision',
+      scalars: { govIdType: 'STALE ID' },
+    },
+    staleText: 'STALE REFERENCE',
+  },
+];
 
 /** Mimics EmployeePage: confirmed section values flow back into `profile`. */
 function ProfileHarness({ initial }: { initial: Employee }) {
@@ -290,5 +440,286 @@ describe('Personal Data Sheet persistence', () => {
 
     fireEvent.click(within(nav).getByRole('button', { name: /Personal Information/ }));
     expect(screen.getByLabelText('Place of Birth')).toHaveValue('New Place');
+  });
+
+  it('keeps the canonical family scalars after an unrelated profile save', async () => {
+    portalApi.patchPortalEmployee.mockResolvedValue({
+      ok: true,
+      data: baseProfile({ placeOfBirth: 'Iloilo City (canonical)' }),
+    });
+    pdsApi.listChildren.mockResolvedValue({
+      ok: true,
+      data: {
+        rows: [],
+        revision: 'children-revision',
+        scalars: { spouseSurname: 'Canonical Spouse' },
+      },
+    });
+    render(<ProfileHarness initial={baseProfile({ spouseSurname: 'Stale Spouse' })} />);
+
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Family Background/ }));
+    expect(await screen.findByDisplayValue('Canonical Spouse')).toBeInTheDocument();
+
+    fireEvent.click(within(nav).getByRole('button', { name: /Personal Information/ }));
+    fireEvent.change(screen.getByLabelText('Place of Birth'), { target: { value: 'Iloilo City' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Personal Information' }));
+    await screen.findByText('Personal Information saved.');
+
+    fireEvent.click(within(nav).getByRole('button', { name: /Family Background/ }));
+    expect(screen.getAllByLabelText('Surname')[0]).toHaveValue('Canonical Spouse');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Family Background' }));
+    await waitFor(() => expect(pdsApi.saveChildren).toHaveBeenCalledTimes(1));
+    expect(pdsApi.saveChildren.mock.calls[0][3]).toMatchObject({
+      spouseSurname: 'Canonical Spouse',
+    });
+  });
+
+  it('keeps the canonical background scalars after an unrelated profile save', async () => {
+    portalApi.patchPortalEmployee.mockResolvedValue({
+      ok: true,
+      data: baseProfile({ placeOfBirth: 'Iloilo City (canonical)' }),
+    });
+    pdsApi.listReferences.mockResolvedValue({
+      ok: true,
+      data: {
+        rows: [],
+        revision: 'references-revision',
+        scalars: { govIdType: 'Passport' },
+      },
+    });
+    render(<ProfileHarness initial={baseProfile({ govIdType: 'SSS ID' })} />);
+
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Background Information/ }));
+    expect(await screen.findByDisplayValue('Passport')).toBeInTheDocument();
+
+    fireEvent.click(within(nav).getByRole('button', { name: /Personal Information/ }));
+    fireEvent.change(screen.getByLabelText('Place of Birth'), { target: { value: 'Iloilo City' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Personal Information' }));
+    await screen.findByText('Personal Information saved.');
+
+    fireEvent.click(within(nav).getByRole('button', { name: /Background Information/ }));
+    expect(screen.getByLabelText(/Government Issued ID/)).toHaveValue('Passport');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Background Information' }));
+    await waitFor(() => expect(pdsApi.saveReferences).toHaveBeenCalledTimes(1));
+    expect(pdsApi.saveReferences.mock.calls[0][3]).toMatchObject({
+      govIdType: 'Passport',
+    });
+  });
+
+  it('rejects fractional education numbers instead of truncating them', async () => {
+    renderSection();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Educational Background/ }));
+    fireEvent.change(screen.getAllByLabelText('Name of School')[0], {
+      target: { value: 'State University' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Units Earned (if not graduated)')[0], {
+      target: { value: '3.5' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Year Attended From')[0], {
+      target: { value: '2020.5' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Educational Background' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Units earned must be a whole number.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Year attended from must be a whole number.');
+    expect(pdsApi.saveEducation).not.toHaveBeenCalled();
+  });
+
+  it('still saves blank, zero, and integer education numbers', async () => {
+    renderSection();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Educational Background/ }));
+    fireEvent.change(screen.getAllByLabelText('Name of School')[0], {
+      target: { value: 'State University' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Units Earned (if not graduated)')[0], {
+      target: { value: '0' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Year Attended From')[0], {
+      target: { value: '2020' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Year Graduated')[0], {
+      target: { value: '0' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Educational Background' }));
+
+    await waitFor(() => expect(pdsApi.saveEducation).toHaveBeenCalledTimes(1));
+    expect(pdsApi.saveEducation.mock.calls[0][1][0]).toMatchObject({
+      highestLevelUnits: 0,
+      periodFrom: 2020,
+      periodTo: null,
+      yearGraduated: 0,
+    });
+  });
+
+  it.each(mutationCases())(
+    'ignores a stale $name success after an identity switch',
+    async (testCase) => {
+      const pending = deferred<unknown>();
+      testCase.mock.mockReturnValue(pending.promise);
+      makeSecondEmployeeReadsPending();
+      const onSaved = vi.fn();
+      const view = renderSection(baseProfile(), onSaved);
+
+      const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+      fireEvent.click(within(nav).getByRole('button', { name: testCase.navName }));
+      fireEvent.click(screen.getByRole('button', { name: testCase.saveLabel }));
+      await waitFor(() => expect(testCase.mock).toHaveBeenCalledTimes(1));
+
+      view.rerender(
+        <PersonalDataSheetSection
+          employeeId="emp-2"
+          profile={baseProfile({ supabaseId: 'emp-2', employeeId: 'EMP-2', placeOfBirth: 'New Place' })}
+          onSaved={onSaved}
+        />,
+      );
+
+      await act(async () => {
+        pending.resolve({ ok: true, data: testCase.successData });
+      });
+
+      expect(onSaved).not.toHaveBeenCalled();
+      expect(screen.queryByText(testCase.successMessage)).not.toBeInTheDocument();
+      if (testCase.staleText) {
+        expect(screen.queryByText(testCase.staleText)).not.toBeInTheDocument();
+      }
+    },
+  );
+
+  it.each(mutationCases())(
+    'ignores a stale $name failure after an identity switch',
+    async (testCase) => {
+      const pending = deferred<unknown>();
+      testCase.mock.mockReturnValue(pending.promise);
+      makeSecondEmployeeReadsPending();
+      const onSaved = vi.fn();
+      const view = renderSection(baseProfile(), onSaved);
+
+      const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+      fireEvent.click(within(nav).getByRole('button', { name: testCase.navName }));
+      fireEvent.click(screen.getByRole('button', { name: testCase.saveLabel }));
+      await waitFor(() => expect(testCase.mock).toHaveBeenCalledTimes(1));
+
+      view.rerender(
+        <PersonalDataSheetSection
+          employeeId="emp-2"
+          profile={baseProfile({ supabaseId: 'emp-2', employeeId: 'EMP-2', placeOfBirth: 'New Place' })}
+          onSaved={onSaved}
+        />,
+      );
+
+      await act(async () => {
+        pending.resolve({ ok: false, error: 'STALE FAILURE' });
+      });
+
+      expect(onSaved).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    },
+  );
+
+  it('ignores a stale success after A → B → A', async () => {
+    const pending = deferred<unknown>();
+    portalApi.patchPortalEmployee.mockReturnValue(pending.promise);
+    const onSaved = vi.fn();
+    const profileA = baseProfile({ placeOfBirth: 'A Place' });
+    const view = renderSection(profileA, onSaved);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save Personal Information' }));
+    await waitFor(() => expect(portalApi.patchPortalEmployee).toHaveBeenCalledTimes(1));
+
+    view.rerender(
+      <PersonalDataSheetSection
+        employeeId="emp-2"
+        profile={baseProfile({ supabaseId: 'emp-2', employeeId: 'EMP-2', placeOfBirth: 'B Place' })}
+        onSaved={onSaved}
+      />,
+    );
+    view.rerender(
+      <PersonalDataSheetSection employeeId="emp-1" profile={profileA} onSaved={onSaved} />,
+    );
+
+    await act(async () => {
+      pending.resolve({ ok: true, data: baseProfile({ placeOfBirth: 'STALE PLACE' }) });
+    });
+
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Place of Birth')).toHaveValue('A Place');
+    expect(screen.queryByText('Personal Information saved.')).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale success after unmount', async () => {
+    const pending = deferred<unknown>();
+    portalApi.patchPortalEmployee.mockReturnValue(pending.promise);
+    const onSaved = vi.fn();
+    const view = renderSection(baseProfile(), onSaved);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save Personal Information' }));
+    await waitFor(() => expect(portalApi.patchPortalEmployee).toHaveBeenCalledTimes(1));
+    view.unmount();
+
+    await act(async () => {
+      pending.resolve({ ok: true, data: baseProfile({ placeOfBirth: 'STALE PLACE' }) });
+    });
+
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('still accepts its own save after StrictMode effect replay', async () => {
+    const onSaved = vi.fn();
+    render(
+      <StrictMode>
+        <PersonalDataSheetSection employeeId="emp-1" profile={baseProfile()} onSaved={onSaved} />
+      </StrictMode>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save Personal Information' }));
+
+    await screen.findByText('Personal Information saved.');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ placeOfBirth: 'Iloilo' }));
+  });
+
+  it('keeps the current employee saving until its own request completes', async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    portalApi.patchPortalEmployee
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const onSaved = vi.fn();
+    const view = renderSection(baseProfile({ placeOfBirth: 'A Place' }), onSaved);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save Personal Information' }));
+    await waitFor(() => expect(portalApi.patchPortalEmployee).toHaveBeenCalledTimes(1));
+
+    view.rerender(
+      <PersonalDataSheetSection
+        employeeId="emp-2"
+        profile={baseProfile({ supabaseId: 'emp-2', employeeId: 'EMP-2', placeOfBirth: 'B Place' })}
+        onSaved={onSaved}
+      />,
+    );
+
+    const saveButton = screen.getByRole('button', { name: 'Save Personal Information' });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(portalApi.patchPortalEmployee).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      first.resolve({ ok: true, data: baseProfile({ placeOfBirth: 'STALE PLACE' }) });
+    });
+    expect(saveButton).toBeDisabled();
+    expect(onSaved).not.toHaveBeenCalled();
+
+    await act(async () => {
+      second.resolve({ ok: true, data: baseProfile({ placeOfBirth: 'B Saved' }) });
+    });
+    await screen.findByText('Personal Information saved.');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ placeOfBirth: 'B Saved' }));
   });
 });

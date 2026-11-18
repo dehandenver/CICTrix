@@ -67,6 +67,8 @@ DECLARE
   v_has_last_name boolean;
   v_has_full_name boolean;
   v_full_name_not_null boolean;
+  v_has_department boolean;
+  v_has_position boolean;
   v_sql text;
 BEGIN
   SELECT
@@ -81,9 +83,14 @@ BEGIN
     EXISTS (SELECT 1 FROM information_schema.columns
              WHERE table_schema='public' AND table_name='employees' AND column_name='full_name'),
     COALESCE((SELECT is_nullable = 'NO' FROM information_schema.columns
-               WHERE table_schema='public' AND table_name='employees' AND column_name='full_name'), false)
+               WHERE table_schema='public' AND table_name='employees' AND column_name='full_name'), false),
+    EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='employees' AND column_name='department'),
+    EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name='employees' AND column_name='position')
   INTO v_has_employee_number, v_has_employee_id, v_has_first_name,
-       v_has_last_name, v_has_full_name, v_full_name_not_null;
+       v_has_last_name, v_has_full_name, v_full_name_not_null,
+       v_has_department, v_has_position;
 
   IF v_has_employee_number THEN
     v_cols := array_append(v_cols, 'employee_number');
@@ -104,6 +111,16 @@ BEGIN
   IF v_has_full_name AND v_full_name_not_null THEN
     v_cols := array_append(v_cols, 'full_name');
     v_vals := array_append(v_vals, quote_literal('PDS Fixture ' || p_tag));
+  END IF;
+  -- Live-shaped employees require these without defaults; older local dumps
+  -- may not have them at all. Synthetic labels only.
+  IF v_has_department THEN
+    v_cols := array_append(v_cols, 'department');
+    v_vals := array_append(v_vals, quote_literal('PDS Department ' || p_tag));
+  END IF;
+  IF v_has_position THEN
+    v_cols := array_append(v_cols, '"position"');
+    v_vals := array_append(v_vals, quote_literal('PDS Position ' || p_tag));
   END IF;
 
   v_sql := format('insert into public.employees (%s) values (%s) returning id',

@@ -89,3 +89,17 @@ Docker later became available: the exact migration compiled and the SQL suite pa
 Profile saves now check the returned employee row before updating local state; clearing height/weight writes null, and PDS does not write twice through its parent. Unsaved drafts survive unrelated saves, previous-employee lists/revisions are cleared, and setup saves await confirmation before advancing. Optional Skip still permits closing after an attempted partial save, with failures shown.
 
 Parent reviewed the implementation and independently reran 52 affected tests, the full 173-file/1,645-test suite, TypeScript, scoped lint, and production build at completion. Real PostgREST and rendered-browser acceptance remain outstanding. See `docs/session-summaries/2026-11-17-persistence-integrity-task-3-summary.md`. Task 4 is not started.
+
+### Approved review corrections (2026-11-19)
+
+User requested DeepSeek Flash/max to fix the independent review findings. Keep the approved parent Sol/medium and builder `deepseek/deepseek-flash#max` roles. This is correction of Tasks 1–3, not Task 4 implementation.
+
+1. Reproduce and fix canonical family/background scalar values reverting on an unrelated profile update. Keep section snapshots and revisions consistent, without an extra write or loss of dirty edits.
+2. Reproduce and reject fractional education years/units instead of truncating them in input handlers.
+3. Reproduce delayed mutation responses across employee identity changes; prevent obsolete responses from changing drafts, lists, revisions, feedback, saving state or parent profile, including A→B→A identity reuse.
+4. Correct both SQL/concurrency employee fixtures for required production-shaped department/position columns, and isolate the no-visible test from all applicable permissive employee policies inside its rolled-back test transaction. No production policies, privileges or migration changes.
+5. Verify focused regressions, TypeScript, lint/build/full tests and both exact database suites on the owned isolated Docker database. Parent independently reviews and reruns acceptance before committing.
+
+Owned correction paths: `src/modules/employee/PersonalDataSheetSection.tsx` and its persistence tests; minimum `employeePortal`/`EmployeePage` integration tests/source only if required for these findings; `supabase/tests/pds_section_transactions.test.sql` and `supabase/tests/pds_section_concurrency.sh`. No redesign, packages, scoring/authentication changes or unrelated refactors.
+
+Corrections implemented by DeepSeek Flash/max and reviewed by parent Sol/medium. Parent independently verified 53 focused tests, 173 files/1,671 full-suite tests, TypeScript, scoped lint, production build, migration versions, shell syntax and whitespace. The three code findings have regression coverage; the two database-test corrections are authored but not database-accepted because Docker's Linux engine pipe is unavailable again. See `docs/session-summaries/2026-11-19-persistence-review-corrections-summary.md`. Task 4 remains pending.

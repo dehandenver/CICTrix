@@ -31,6 +31,8 @@ DECLARE
   v_has_last_name boolean;
   v_has_full_name boolean;
   v_full_name_not_null boolean;
+  v_has_department boolean;
+  v_has_position boolean;
   v_sql text;
 BEGIN
   SELECT
@@ -51,9 +53,16 @@ BEGIN
                AND column_name = 'full_name'),
     COALESCE((SELECT is_nullable = 'NO' FROM information_schema.columns
                WHERE table_schema = 'public' AND table_name = 'employees'
-                 AND column_name = 'full_name'), false)
+                 AND column_name = 'full_name'), false),
+    EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'employees'
+               AND column_name = 'department'),
+    EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'employees'
+               AND column_name = 'position')
   INTO v_has_employee_number, v_has_employee_id, v_has_first_name,
-       v_has_last_name, v_has_full_name, v_full_name_not_null;
+       v_has_last_name, v_has_full_name, v_full_name_not_null,
+       v_has_department, v_has_position;
 
   IF v_has_employee_number THEN
     v_cols := array_append(v_cols, 'employee_number');
@@ -75,6 +84,16 @@ BEGIN
   IF v_has_full_name AND v_full_name_not_null THEN
     v_cols := array_append(v_cols, 'full_name');
     v_vals := array_append(v_vals, quote_literal('PDS Fixture ' || p_tag));
+  END IF;
+  -- Live-shaped employees require these without defaults; older local dumps
+  -- may not have them at all. Synthetic labels only.
+  IF v_has_department THEN
+    v_cols := array_append(v_cols, 'department');
+    v_vals := array_append(v_vals, quote_literal('PDS Department ' || p_tag));
+  END IF;
+  IF v_has_position THEN
+    v_cols := array_append(v_cols, '"position"');
+    v_vals := array_append(v_vals, quote_literal('PDS Position ' || p_tag));
   END IF;
 
   IF NOT (v_has_first_name OR v_has_full_name) THEN
@@ -817,15 +836,19 @@ BEGIN
     'scalar failure rolls reference list back', array['P0001']
   );
 
-  -- 13. SECURITY INVOKER: the caller's policies apply. The existing
-  --     employees_open_access policy is dropped inside this transaction so
-  --     both portal roles start with no visible employee. Rollback restores it.
+  -- 13. SECURITY INVOKER: the caller's policies apply. A restrictive SELECT
+  --     policy denies rows regardless of how many permissive employee policies
+  --     exist (live has both employees_open_access and an authenticated
+  --     ALL policy). It is dropped below and rollback also restores the table.
   v_employee := pg_temp.make_employee('invoker');
   PERFORM pg_temp.seed_section(v_employee, 'children');
   v_read := public.read_pds_section(v_employee, 'children');
 
   EXECUTE 'alter table public.employees enable row level security';
-  EXECUTE 'drop policy if exists employees_open_access on public.employees';
+  EXECUTE 'create policy pds_invoker_employee_no_visible
+             on public.employees
+             as restrictive for select to anon, authenticated
+             using (false)';
 
   -- No visible employee for either actual browser role: reads and saves fail.
   v_rows := jsonb_build_array(
@@ -859,6 +882,7 @@ BEGIN
     END;
   END LOOP;
 
+  EXECUTE 'drop policy pds_invoker_employee_no_visible on public.employees';
   EXECUTE 'create policy pds_invoker_employee_visible
              on public.employees
              for all to anon, authenticated
