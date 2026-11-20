@@ -81,14 +81,12 @@ import {
   getApplicants as getRecruitmentApplicants,
   saveDeletedJobReports,
   saveJobPostings,
-  saveNewlyHired,
   resolveDepartmentForPosition,
   type DeletedJobReport,
 } from '../../lib/recruitmentData';
 import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
 import { mergeLocalSchedules } from '../../lib/applicantSchedule';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
-import { hireApplicant } from '../../lib/api/employeesApi';
 import { getOfficeDirectory, type OfficeDirectoryRow } from '../../lib/api/officeDirectory';
 import {
   EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
@@ -766,8 +764,6 @@ export const RSPDashboard = () => {
   const [reportsView, setReportsView] = useState<'overview' | 'documents'>('overview');
   const [activeRankingPosition, setActiveRankingPosition] = useState<string | null>(null);
   const [showRankingModal, setShowRankingModal] = useState(false);
-  const [showHireApplicantsModal, setShowHireApplicantsModal] = useState(false);
-  const [selectedHireApplicantIds, setSelectedHireApplicantIds] = useState<string[]>([]);
   const [activeAssessmentPosition, setActiveAssessmentPosition] = useState<string | null>(null);
   const [showAssessmentFormsModal, setShowAssessmentFormsModal] = useState(false);
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>('all');
@@ -1397,9 +1393,7 @@ export const RSPDashboard = () => {
     // Guard against a stale modal backdrop when users navigate away from Reports.
     if (section !== 'reports') {
       setShowRankingModal(false);
-      setShowHireApplicantsModal(false);
       setShowAssessmentFormsModal(false);
-      setSelectedHireApplicantIds([]);
       setActiveRankingPosition(null);
       setActiveAssessmentPosition(null);
       setAssessmentStatusFilter('all');
@@ -1418,12 +1412,10 @@ export const RSPDashboard = () => {
   useEffect(() => {
     const forceCloseAllOverlays = () => {
       setShowRankingModal(false);
-      setShowHireApplicantsModal(false);
       setShowAssessmentFormsModal(false);
       setShowJobDialog(false);
       setShowRaterDialog(false);
       setShowBulkRequestDialog(false);
-      setSelectedHireApplicantIds([]);
       setActiveRankingPosition(null);
       setActiveAssessmentPosition(null);
       setAssessmentStatusFilter('all');
@@ -1890,8 +1882,6 @@ export const RSPDashboard = () => {
     const stillVisible = rankingPositionCards.some((card) => card.position === activeRankingPosition);
     if (!stillVisible) {
       setShowRankingModal(false);
-      setShowHireApplicantsModal(false);
-      setSelectedHireApplicantIds([]);
       setActiveRankingPosition(null);
     }
   }, [activeRankingPosition, rankingPositionCards]);
@@ -2826,8 +2816,6 @@ export const RSPDashboard = () => {
 
   const closeRankingReport = () => {
     setShowRankingModal(false);
-    setShowHireApplicantsModal(false);
-    setSelectedHireApplicantIds([]);
     setActiveRankingPosition(null);
   };
 
@@ -2876,144 +2864,6 @@ export const RSPDashboard = () => {
       }
       return prev.filter((id) => !officeIds.includes(id));
     });
-  };
-
-  const toggleHireApplicantSelection = (applicantId: string) => {
-    setSelectedHireApplicantIds((prev) =>
-      prev.includes(applicantId) ? prev.filter((id) => id !== applicantId) : [...prev, applicantId]
-    );
-  };
-
-  const handleConfirmHireApplicants = async () => {
-    if (!activeRankingPosition || selectedHireApplicantIds.length === 0) return;
-
-    const selectedRows = activeRankingRows.filter((row) => selectedHireApplicantIds.includes(row.id));
-    if (selectedRows.length === 0) return;
-
-    const rankingMetaByApplicantId = new Map(
-      activeRankingRows.map((row, index) => [
-        row.id,
-        {
-          rank: index + 1,
-          score: row.total,
-        },
-      ])
-    );
-
-    // Fetch fresh from Supabase to avoid creating duplicates if a concurrent
-    // session already added one of these applicants.
-    const existing = await getNewlyHiredFromSupabase();
-    const existingApplicantIds = new Set(existing.map((item) => item.applicantId));
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() + 7);
-
-    const toAdd: NewlyHired[] = selectedRows
-      .filter((row) => !existingApplicantIds.has(row.id))
-      .map((row) => {
-        const nameParts = row.fullName.trim().split(/\s+/);
-        const firstName = nameParts[0] || row.fullName;
-        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : 'Applicant';
-
-        return {
-          id: `hire-${row.id}-${now.getTime()}`,
-          applicantId: row.id,
-          rankingRank: rankingMetaByApplicantId.get(row.id)?.rank ?? 0,
-          rankingScore: rankingMetaByApplicantId.get(row.id)?.score ?? 0,
-          employeeInfo: {
-            firstName,
-            lastName,
-            email: row.email,
-            phone: '',
-            emergencyContact: {
-              name: '',
-              relationship: '',
-              phone: '',
-            },
-            governmentIds: {},
-          },
-          position: row.position,
-          department: row.department,
-          employmentType: 'Permanent',
-          dateHired: now.toISOString(),
-          expectedStartDate: startDate.toISOString(),
-          status: 'Pending Onboarding',
-          onboardingProgress: 0,
-          onboardingChecklist: [
-            {
-              category: 'Documentation',
-              item: 'Sign employment contract',
-              completed: false,
-            },
-            {
-              category: 'Orientation',
-              item: 'Attend orientation',
-              completed: false,
-            },
-          ],
-          documents: [],
-          notes: [
-            {
-              author: 'RSP Admin',
-              content: 'Selected from Application Ranking Report.',
-              date: now.toISOString(),
-            },
-          ],
-          timeline: [
-            {
-              event: 'Candidate selected for hiring',
-              date: now.toISOString(),
-              actor: 'RSP Admin',
-            },
-          ],
-        };
-      });
-
-    // Local Newly Hired store is the source of truth for the sidebar; write it
-    // first so the user sees immediate feedback even if DB persistence fails.
-    if (toAdd.length > 0) {
-      saveNewlyHired([...existing, ...toAdd]);
-    }
-
-    // Persist the status flip. Try the FastAPI backend first (which also
-    // creates the employee row); fall back to a direct Supabase UPDATE when
-    // it's unreachable (e.g. on Vercel where no Python backend runs). The
-    // Newly Hired page filters applicants by status === 'hired', so this
-    // flip is what makes the hire show up there.
-    const persistOne = async (id: string): Promise<boolean> => {
-      try {
-        await hireApplicant(id);
-        return true;
-      } catch (err) {
-        console.error('[RSPDashboard] hireApplicant failed', id, err);
-        return false;
-      }
-    };
-
-    const persistResults = await Promise.all(selectedRows.map((row) => persistOne(row.id)));
-    const allPersisted = persistResults.every(Boolean);
-    if (!allPersisted) {
-      console.warn(
-        '[RSPDashboard] not all hire status updates persisted — Newly Hired may be incomplete until the next refresh.',
-      );
-    }
-
-    // Always update the in-memory applicants list and close the modals so the user
-    // gets visual confirmation. Newly Hired sidebar reads from the local store
-    // (already written above), so the entries appear immediately.
-    const selectedIdSet = new Set(selectedRows.map((row) => row.id));
-    setApplicants((prev) => prev.map((applicant) => (selectedIdSet.has(applicant.id) ? { ...applicant, status: 'Hired' } : applicant)));
-    setShowHireApplicantsModal(false);
-    setShowRankingModal(false);
-    setSelectedHireApplicantIds([]);
-    setActiveRankingPosition(null);
-
-    // Notify other listeners so dependent views (Newly Hired stats, sidebar count)
-    // refresh without requiring a navigation.
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
-      window.dispatchEvent(new CustomEvent('cictrix:newly-hired-updated'));
-    }
   };
 
   const handleBulkEmployeeToggle = (employeeId: string) => {
@@ -4330,10 +4180,13 @@ export const RSPDashboard = () => {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowHireApplicantsModal(true)}
-                    className="rounded-lg bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-600"
+                    onClick={() => {
+                      closeRankingReport();
+                      navigate('/admin/rsp/for-hiring');
+                    }}
+                    className="btn btn-sm btn-primary"
                   >
-                    👥 Select Hired Applicants
+                    Go to For Hiring
                   </button>
                   <button
                     type="button"
@@ -4518,57 +4371,6 @@ export const RSPDashboard = () => {
                     Generated on {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                   </p>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showHireApplicantsModal && (
-          <div className="fixed inset-0 z-[240] flex items-center justify-center bg-black/45 p-4" onClick={() => setShowHireApplicantsModal(false)}>
-            <div className="w-full max-w-3xl rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-              <div className="border-b border-[var(--border-color)] px-5 py-4">
-                <h3 className="!mb-1 text-xl font-semibold text-[var(--text-primary)]">Select Applicants to Hire</h3>
-                <p className="!mb-0 text-sm text-[var(--text-secondary)]">Choose applicants from ranked results to move to Newly Hired.</p>
-              </div>
-              <div className="max-h-[56vh] space-y-2 overflow-y-auto px-5 py-4">
-                {activeRankingRows.length === 0 ? (
-                  <p className="!mb-0 text-sm text-[var(--text-secondary)]">No applicants available.</p>
-                ) : (
-                  activeRankingRows.map((row, index) => (
-                    <label key={row.id} className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-color)] px-3 py-2">
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedHireApplicantIds.includes(row.id)}
-                          onChange={() => toggleHireApplicantSelection(row.id)}
-                          className="h-4 w-4"
-                        />
-                        <div>
-                          <p className="!mb-0 text-sm font-semibold text-[var(--text-primary)]">#{index + 1} {row.fullName}</p>
-                          <p className="!mb-0 text-xs text-[var(--text-secondary)]">{row.email}</p>
-                        </div>
-                      </div>
-                      <span className="text-sm font-semibold text-[var(--text-primary)]">{row.total.toFixed(2)}</span>
-                    </label>
-                  ))
-                )}
-              </div>
-              <div className="flex justify-end gap-2 border-t border-[var(--border-color)] px-5 py-4">
-                <button
-                  type="button"
-                  onClick={() => setShowHireApplicantsModal(false)}
-                  className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmHireApplicants}
-                  disabled={selectedHireApplicantIds.length === 0}
-                  className="rounded-lg bg-[var(--primary-color)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Hire Selected ({selectedHireApplicantIds.length})
-                </button>
               </div>
             </div>
           </div>

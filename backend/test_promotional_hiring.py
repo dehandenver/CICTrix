@@ -448,235 +448,42 @@ class TestPromotionErrorMapping(HireFromApplicantTestCase):
         self.assertEqual(client.writes(), [])
 
 
-class TestExternalBranchUnchanged(HireFromApplicantTestCase):
-    def test_external_applicant_is_inserted_and_marked_hired_without_the_rpc(self):
+class TestExternalBranchRoutesToRpc(HireFromApplicantTestCase):
+    def test_external_applicant_routes_through_complete_external_hire_rpc(self):
         client = self.use_client(FakeClient(external_applicant()))
 
         response = self.post(EXTERNAL_ID)
 
         self.assertEqual(response.status_code, 201, response.text)
-        self.assertEqual(client.rpc_calls, [])
+        self.assertEqual(
+            client.rpc_calls,
+            [
+                (
+                    "complete_external_hire",
+                    {"p_applicant_id": EXTERNAL_ID, "p_actor_user_id": VERIFIED_USER_ID},
+                )
+            ],
+        )
+        self.assertEqual(client.writes(), [])
+        self.assertEqual(client.tables_touched(), {"applicants", "employees_with_department"})
 
-        inserts = [w for w in client.writes() if w[0] == "employees" and w[1] == "insert"]
-        self.assertEqual(len(inserts), 1)
-        payload = inserts[0][2]
-        self.assertEqual(payload["employee_number"], "EMP-11111111")
-        self.assertEqual(payload["first_name"], "Ana")
-        self.assertEqual(payload["last_name"], "Reyes")
-        self.assertEqual(payload["email"], "ana.reyes@example.org")
-        self.assertEqual(payload["position"], "Clerk I")
-        self.assertEqual(payload["employment_status"], "Regular")
-        self.assertEqual(payload["status"], "Active")
-        self.assertIn("date_hired", payload)
-        self.assertNotIn("department_id", payload)
-        self.assertEqual(payload["department"], HR_OFFICE)
-
-        applicant_updates = [w for w in client.writes() if w[0] == "applicants"]
-        self.assertEqual(applicant_updates, [("applicants", "update", {"status": "Hired"})])
-
-    def test_missing_application_type_is_external(self):
+    def test_missing_application_type_routes_through_complete_external_hire_rpc(self):
         client = self.use_client(FakeClient(external_applicant(application_type=None)))
 
         response = self.post(EXTERNAL_ID)
 
         self.assertEqual(response.status_code, 201, response.text)
-        self.assertEqual(client.rpc_calls, [])
-        self.assertEqual(len([w for w in client.writes() if w[:2] == ("employees", "insert")]), 1)
+        self.assertEqual(client.rpc_calls[0][0], "complete_external_hire")
+        self.assertEqual(client.writes(), [])
 
-    def test_external_branch_does_not_need_the_service_role_client_check(self):
-        # Behavior preserved: external hires keep using get_service_client() as before.
+    def test_external_branch_enforces_service_role_client_check(self):
         client = self.use_client(FakeClient(external_applicant()), service_client_present=False)
 
         response = self.post(EXTERNAL_ID)
 
-        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.status_code, 503)
         self.assertEqual(client.rpc_calls, [])
-
-
-SLOT_ID = "5107-0000-4000-8000-000000000001"
-POSTING_ID = "905-0000-4000-8000-000000000002"
-OFFICE_NAME = "Office of the City Accountant"
-
-
-def slot_row(**overrides):
-    row = {"id": SLOT_ID, "job_posting_id": POSTING_ID, "label": "Plantilla 3", "division": None}
-    row.update(overrides)
-    return row
-
-
-def posting_row(**overrides):
-    row = {
-        "id": POSTING_ID, "title": "Clerk I", "department": OFFICE_NAME,
-        "division": "Accounting Division", "deleted_at": None,
-    }
-    row.update(overrides)
-    return row
-
-
-def active_office(name=OFFICE_NAME, **overrides):
-    return {"id": f"dept-{name}", "name": name, "is_active": True, **overrides}
-
-
-class TestExternalHireOffice(HireFromApplicantTestCase):
-    def hire(self, applicant=None, **client_kwargs):
-        applicant = applicant or external_applicant(plantilla_slot_id=SLOT_ID)
-        client = self.use_client(FakeClient(applicant, **client_kwargs))
-        return client, self.post(EXTERNAL_ID)
-
-    def insert_payload(self, client):
-        inserts = [w for w in client.writes() if w[:2] == ("employees", "insert")]
-        self.assertEqual(len(inserts), 1)
-        return inserts[0][2]
-
-    def assert_refused_before_any_write(self, client, response, detail):
-        self.assertEqual(response.status_code, 422, response.text)
-        self.assertEqual(response.json()["detail"], detail)
         self.assertEqual(client.writes(), [])
-
-    def test_slot_path_writes_the_canonical_active_office_name(self):
-        client, response = self.hire(
-            slots=[slot_row()],
-            postings=[posting_row(department="  office OF the city accountant ")],
-            departments=[active_office(), active_office("Other Office")],
-        )
-
-        self.assertEqual(response.status_code, 201, response.text)
-        payload = self.insert_payload(client)
-        self.assertEqual(payload["department"], OFFICE_NAME)
-        self.assertNotIn("department_id", payload)
-
-    def test_division_comes_from_the_slot_then_the_posting_trimmed(self):
-        client, _ = self.hire(
-            slots=[slot_row(division="  Billing Section ")],
-            postings=[posting_row()],
-            departments=[active_office()],
-        )
-        self.assertEqual(self.insert_payload(client)["division"], "Billing Section")
-
-        client, _ = self.hire(
-            slots=[slot_row(division="   ")],
-            postings=[posting_row(division=" Accounting Division ")],
-            departments=[active_office()],
-        )
-        self.assertEqual(self.insert_payload(client)["division"], "Accounting Division")
-
-        client, _ = self.hire(
-            slots=[slot_row()],
-            postings=[posting_row(division=None)],
-            departments=[active_office()],
-        )
-        self.assertIsNone(self.insert_payload(client)["division"])
-
-    def test_plantilla_number_is_read_from_the_label(self):
-        client, _ = self.hire(
-            slots=[slot_row(label="Plantilla 3")], postings=[posting_row()], departments=[active_office()]
-        )
-        self.assertEqual(self.insert_payload(client)["plantilla_num"], "3")
-
-        client, _ = self.hire(
-            slots=[slot_row(label="  plantilla   12 ")], postings=[posting_row()], departments=[active_office()]
-        )
-        self.assertEqual(self.insert_payload(client)["plantilla_num"], "12")
-
-    def test_unreadable_label_still_hires_with_no_plantilla_number(self):
-        client, response = self.hire(
-            slots=[slot_row(label="Item 7-A")], postings=[posting_row()], departments=[active_office()]
-        )
-
-        self.assertEqual(response.status_code, 201, response.text)
-        self.assertIsNone(self.insert_payload(client)["plantilla_num"])
-
-    def test_inactive_office_is_refused_before_any_write(self):
-        client, response = self.hire(
-            slots=[slot_row()],
-            postings=[posting_row()],
-            departments=[active_office(is_active=False)],
-        )
-
-        self.assert_refused_before_any_write(
-            client, response,
-            f'Office "{OFFICE_NAME}" is not an active office. '
-            "Change the job posting's office to an active one, then hire again.",
-        )
-
-    def test_blank_office_is_refused_before_any_write(self):
-        client, response = self.hire(
-            slots=[slot_row()], postings=[posting_row(department="   ")], departments=[active_office()]
-        )
-
-        self.assert_refused_before_any_write(
-            client, response,
-            "This application has no office. Set the job posting's office, then hire again.",
-        )
-
-    def test_duplicate_active_office_is_refused_before_any_write(self):
-        client, response = self.hire(
-            slots=[slot_row()],
-            postings=[posting_row()],
-            departments=[active_office(), active_office(" office of the city ACCOUNTANT")],
-        )
-
-        self.assert_refused_before_any_write(
-            client, response,
-            f'Office "{OFFICE_NAME}" matches more than one active office. Resolve the duplicate first.',
-        )
-
-    def test_missing_posting_is_refused_before_any_write(self):
-        message = "The job posting for this plantilla no longer exists."
-        for case, kwargs in {
-            "no posting": {"slots": [slot_row()], "postings": []},
-            "deleted posting": {"slots": [slot_row()], "postings": [posting_row(deleted_at="2026-10-01")]},
-            "no slot": {"slots": [], "postings": [posting_row()]},
-        }.items():
-            with self.subTest(case):
-                client, response = self.hire(departments=[active_office()], **kwargs)
-                self.assert_refused_before_any_write(client, response, message)
-
-    def test_no_slot_and_one_matching_posting_uses_its_office_and_division(self):
-        client, response = self.hire(
-            external_applicant(position="Clerk I", office=HR_OFFICE),
-            postings=[posting_row(title="clerk i"), posting_row(id="x", title="Cook", department=HR_OFFICE)],
-            departments=[active_office(), *DEPARTMENTS],
-        )
-
-        self.assertEqual(response.status_code, 201, response.text)
-        payload = self.insert_payload(client)
-        self.assertEqual(payload["department"], OFFICE_NAME)
-        self.assertEqual(payload["division"], "Accounting Division")
-        self.assertIsNone(payload["plantilla_num"])
-
-    def test_no_slot_and_two_matching_postings_uses_the_applicant_office(self):
-        client, response = self.hire(
-            external_applicant(position="Clerk I", office=HR_OFFICE),
-            postings=[posting_row(), posting_row(id="y", department="Elsewhere")],
-            departments=[active_office(), *DEPARTMENTS],
-        )
-
-        self.assertEqual(response.status_code, 201, response.text)
-        payload = self.insert_payload(client)
-        self.assertEqual(payload["department"], HR_OFFICE)
-        self.assertIsNone(payload["division"])
-        self.assertIsNone(payload["plantilla_num"])
-
-    def test_no_slot_and_no_posting_uses_the_applicant_office(self):
-        client, response = self.hire(external_applicant())
-
-        self.assertEqual(response.status_code, 201, response.text)
-        self.assertEqual(self.insert_payload(client)["department"], HR_OFFICE)
-
-    def test_no_slot_and_no_office_anywhere_is_refused(self):
-        client, response = self.hire(external_applicant(office=None))
-
-        self.assert_refused_before_any_write(
-            client, response,
-            "This application has no office. Set the job posting's office, then hire again.",
-        )
-
-    def test_payload_never_contains_department_id(self):
-        client, _ = self.hire(
-            slots=[slot_row()], postings=[posting_row()], departments=[active_office()]
-        )
-        self.assertNotIn("department_id", self.insert_payload(client))
 
 
 if __name__ == "__main__":
