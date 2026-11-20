@@ -524,6 +524,18 @@ function AppContent() {
     navigate('/employee/dashboard', { replace: true });
   };
 
+  const handleEmployeePortalUsernameChanged = (employeeId: string, nextUsername: string) => {
+    const targetEmpId = String(employeeId ?? '').trim();
+    const trimmedUsername = String(nextUsername ?? '').trim();
+    if (!targetEmpId || !trimmedUsername) return;
+    setEmployeeSession((prev) => {
+      if (!prev || String(prev.employeeId ?? '').trim() !== targetEmpId) return prev;
+      const updated: EmployeeSession = { ...prev, loginUsername: trimmedUsername };
+      writeEmployeeSession(updated);
+      return updated;
+    });
+  };
+
   const handleInterviewerLogout = () => {
     clearCachedDecryptionKey();
     setInterviewerSession(null);
@@ -618,6 +630,7 @@ function AppContent() {
               employeeSession ? (
                 employeeSession.mustChangePassword ? (
                   <SetInitialPasswordPage
+                    employeeNumber={employeeSession.employeeId}
                     username={employeeSession.loginUsername ?? employeeSession.employeeId}
                     fullName={employeeSession.fullName}
                     onDone={handleInitialPasswordSet}
@@ -638,6 +651,7 @@ function AppContent() {
                   <EmployeePage
                     currentUser={currentEmployee}
                     loginUsername={employeeSession?.loginUsername}
+                    onPortalUsernameChanged={handleEmployeePortalUsernameChanged}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -656,6 +670,7 @@ function AppContent() {
                   <EmployeePage
                     currentUser={currentEmployee}
                     loginUsername={employeeSession?.loginUsername}
+                    onPortalUsernameChanged={handleEmployeePortalUsernameChanged}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -674,6 +689,7 @@ function AppContent() {
                   <EmployeePage
                     currentUser={currentEmployee}
                     loginUsername={employeeSession?.loginUsername}
+                    onPortalUsernameChanged={handleEmployeePortalUsernameChanged}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -700,6 +716,7 @@ function AppContent() {
                   <EmployeePage
                     currentUser={currentEmployee}
                     loginUsername={employeeSession?.loginUsername}
+                    onPortalUsernameChanged={handleEmployeePortalUsernameChanged}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -718,6 +735,7 @@ function AppContent() {
                   <EmployeePage
                     currentUser={currentEmployee}
                     loginUsername={employeeSession?.loginUsername}
+                    onPortalUsernameChanged={handleEmployeePortalUsernameChanged}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -736,6 +754,7 @@ function AppContent() {
                   <EmployeePage
                     currentUser={currentEmployee}
                     loginUsername={employeeSession?.loginUsername}
+                    onPortalUsernameChanged={handleEmployeePortalUsernameChanged}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -754,6 +773,7 @@ function AppContent() {
                   <EmployeePage
                     currentUser={currentEmployee}
                     loginUsername={employeeSession?.loginUsername}
+                    onPortalUsernameChanged={handleEmployeePortalUsernameChanged}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -772,6 +792,7 @@ function AppContent() {
                   <EmployeePage
                     currentUser={currentEmployee}
                     loginUsername={employeeSession?.loginUsername}
+                    onPortalUsernameChanged={handleEmployeePortalUsernameChanged}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (

@@ -737,80 +737,463 @@ export const findEmployeeByEmployeeId = (employeeId: string) => {
   );
 };
 
-/**
- * Rename the username of an existing portal account.
- * Returns success or a structured error so the UI can show a precise message.
- */
-export const changeEmployeePortalUsername = (
-  currentUsername: string,
-  newUsername: string,
-): { ok: true; account: EmployeePortalAccount } | { ok: false; error: string } => {
-  const currentKey = normalizeUsername(currentUsername);
-  const nextRaw = String(newUsername ?? '').trim();
-  const nextKey = normalizeUsername(nextRaw);
+export type PortalCredentialFailureKind =
+  | 'validation'
+  | 'invalid_credentials'
+  | 'account_unavailable'
+  | 'username_taken'
+  | 'conflict'
+  | 'unavailable'
+  | 'unconfirmed';
 
-  if (!nextRaw) return { ok: false, error: 'Please enter a new username.' };
-  if (nextRaw.length < 3) return { ok: false, error: 'Username must be at least 3 characters long.' };
-  if (!/^[a-zA-Z0-9._-]+$/.test(nextRaw)) {
-    return { ok: false, error: 'Username can only contain letters, digits, dot, underscore, or hyphen.' };
+export type PortalCredentialChangeResult =
+  | { ok: true; account: PortalAccountIdentity }
+  | { ok: false; kind: PortalCredentialFailureKind; error: string };
+
+export type PortalCredentialTarget = {
+  accountId: string;
+  employeeNumber: string;
+  expectedRevision: string;
+};
+
+const validatePortalCredentialTarget = (
+  target: PortalCredentialTarget,
+):
+  | { ok: true; accountId: string; employeeNumber: string; expectedRevision: string }
+  | { ok: false; kind: 'validation'; error: string } => {
+  const accountId = String(target?.accountId ?? '').trim();
+  const employeeNumber = String(target?.employeeNumber ?? '').trim();
+  const expectedRevision = String(target?.expectedRevision ?? '');
+
+  if (
+    !accountId ||
+    !employeeNumber ||
+    !expectedRevision.trim() ||
+    Number.isNaN(Date.parse(expectedRevision))
+  ) {
+    return {
+      ok: false,
+      kind: 'validation',
+      error: 'A loaded portal account target and revision are required.',
+    };
   }
-  if (currentKey === nextKey) return { ok: false, error: 'New username is the same as the current one.' };
 
-  const accounts = getEmployeePortalAccounts();
-  const index = accounts.findIndex((account) => normalizeUsername(account.username) === currentKey);
-  if (index < 0) return { ok: false, error: 'Could not find your portal account.' };
+  return { ok: true, accountId, employeeNumber, expectedRevision };
+};
 
-  const collision = accounts.some(
-    (account, i) => i !== index && normalizeUsername(account.username) === nextKey,
-  );
-  if (collision) return { ok: false, error: 'That username is already taken. Pick a different one.' };
+const readPortalAccountByTarget = async (
+  accountId: string,
+  employeeNumber: string,
+  expectedRevision: string,
+): Promise<
+  | { ok: true; row: PortalAccountRow }
+  | { ok: false; kind: PortalCredentialFailureKind; error: string }
+> => {
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .select(AUTH_PROJECTION)
+      .is('deleted_at', null)
+      .eq('id', accountId);
 
-  const nowIso = new Date().toISOString();
-  accounts[index] = {
-    ...accounts[index],
-    username: nextRaw,
-    updatedAt: nowIso,
-  };
+    if (error) {
+      return {
+        ok: false,
+        kind: 'unavailable',
+        error: 'Unable to reach the employee account service right now. Please try again.',
+      };
+    }
 
-  saveEmployeePortalAccounts(accounts);
-  return { ok: true, account: accounts[index] };
+    const activeRows = ((data ?? []) as PortalAccountRow[]).filter(
+      (row) => row?.deleted_at == null && String(row.id ?? '').trim() === accountId,
+    );
+
+    if (activeRows.length !== 1) {
+      return {
+        ok: false,
+        kind: 'account_unavailable',
+        error: 'Could not find your active portal account. Contact HR for assistance.',
+      };
+    }
+
+    const existing = activeRows[0];
+    if (typeof existing.must_change_password !== 'boolean') {
+      return {
+        ok: false,
+        kind: 'unavailable',
+        error: 'Employee portal account state is unavailable right now. Please try again.',
+      };
+    }
+
+    if (
+      String(existing.employee_id ?? '').trim() !== employeeNumber ||
+      !String(existing.username ?? '').trim()
+    ) {
+      return {
+        ok: false,
+        kind: 'account_unavailable',
+        error: 'Your portal account does not match the signed-in employee record.',
+      };
+    }
+
+    if (String(existing.updated_at ?? '') !== expectedRevision) {
+      return {
+        ok: false,
+        kind: 'conflict',
+        error: 'Your account was updated elsewhere since this form was opened. Reload and try again.',
+      };
+    }
+
+    return { ok: true, row: existing };
+  } catch {
+    return {
+      ok: false,
+      kind: 'unavailable',
+      error: 'Unable to reach the employee account service right now. Please try again.',
+    };
+  }
+};
+
+const recoverLostPortalCredentialUpdate = async (
+  accountId: string,
+  employeeNumber: string,
+  expectedRevision: string,
+  matchesIntended: (row: PortalAccountRow) => boolean,
+  unconfirmedMessage: string,
+): Promise<PortalCredentialChangeResult> => {
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .select(AUTH_PROJECTION)
+      .is('deleted_at', null)
+      .eq('id', accountId);
+
+    if (error) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMessage };
+    }
+
+    const activeRows = ((data ?? []) as PortalAccountRow[]).filter(
+      (row) => row?.deleted_at == null && String(row.id ?? '').trim() === accountId,
+    );
+    if (activeRows.length !== 1) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMessage };
+    }
+
+    const row = activeRows[0];
+    if (String(row.employee_id ?? '').trim() !== employeeNumber) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMessage };
+    }
+
+    const identity = portalAccountIdentityFromRow(row);
+    if (!identity) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMessage };
+    }
+
+    if (String(row.updated_at ?? '') !== expectedRevision) {
+      if (matchesIntended(row)) {
+        return { ok: true, account: identity };
+      }
+      return {
+        ok: false,
+        kind: 'conflict',
+        error: 'Your account was updated elsewhere before this change could be confirmed. Reload and check your account details.',
+      };
+    }
+
+    return { ok: false, kind: 'unconfirmed', error: unconfirmedMessage };
+  } catch {
+    return { ok: false, kind: 'unconfirmed', error: unconfirmedMessage };
+  }
 };
 
 /**
- * Change the password of an existing portal account, requiring the current
- * password as a confirmation.
+ * Rename the username of an existing portal account by immutable account ID and expected revision.
  */
-export const changeEmployeePortalPassword = (
-  username: string,
+export const changeEmployeePortalUsername = async (
+  target: PortalCredentialTarget,
+  newUsername: string,
+): Promise<PortalCredentialChangeResult> => {
+  const checkedTarget = validatePortalCredentialTarget(target);
+  if (checkedTarget.ok === false) return checkedTarget;
+
+  const nextRaw = String(newUsername ?? '').trim();
+  const nextKey = normalizeUsername(nextRaw);
+
+  if (!nextRaw) {
+    return { ok: false, kind: 'validation', error: 'Please enter a new username.' };
+  }
+  if (nextRaw.length < 3) {
+    return { ok: false, kind: 'validation', error: 'Username must be at least 3 characters long.' };
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(nextRaw)) {
+    return {
+      ok: false,
+      kind: 'validation',
+      error: 'Username can only contain letters, digits, dot, underscore, or hyphen.',
+    };
+  }
+
+  const { accountId, employeeNumber, expectedRevision } = checkedTarget;
+  const loaded = await readPortalAccountByTarget(accountId, employeeNumber, expectedRevision);
+  if (loaded.ok === false) return loaded;
+
+  const existing = loaded.row;
+  if (normalizeUsername(existing.username) === nextKey) {
+    return { ok: false, kind: 'validation', error: 'New username is the same as the current one.' };
+  }
+
+  try {
+    const { data: collisionRows, error: collisionError } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .select(METADATA_PROJECTION)
+      .is('deleted_at', null)
+      .ilike('username', escapeIlikeLiteral(nextKey));
+
+    if (collisionError) {
+      return {
+        ok: false,
+        kind: 'unavailable',
+        error: 'Unable to check username availability right now. Please try again.',
+      };
+    }
+
+    const taken = ((collisionRows ?? []) as PortalAccountRow[]).some(
+      (row) =>
+        row?.deleted_at == null &&
+        String(row.id ?? '').trim() !== accountId &&
+        normalizeUsername(row.username) === nextKey,
+    );
+    if (taken) {
+      return {
+        ok: false,
+        kind: 'username_taken',
+        error: 'That username is already taken. Pick a different one.',
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      kind: 'unavailable',
+      error: 'Unable to check username availability right now. Please try again.',
+    };
+  }
+
+  const nextUpdatedAt = new Date(
+    Math.max(Date.now(), Date.parse(expectedRevision) + 2),
+  ).toISOString();
+  const unconfirmedMsg =
+    'We could not confirm whether your username change completed. Reload Account & Security to check your current username before trying again.';
+
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .update({
+        username: nextRaw,
+        updated_at: nextUpdatedAt,
+      })
+      .eq('id', accountId)
+      .eq('employee_id', existing.employee_id)
+      .eq('username', existing.username)
+      .eq('updated_at', expectedRevision)
+      .is('deleted_at', null)
+      .select(METADATA_PROJECTION);
+
+    if (error) {
+      if (String(error?.code ?? '') === '23505') {
+        return {
+          ok: false,
+          kind: 'username_taken',
+          error: 'That username is already taken. Pick a different one.',
+        };
+      }
+      if (isTransportOrUncertainInsertError(error)) {
+        return await recoverLostPortalCredentialUpdate(
+          accountId,
+          employeeNumber,
+          expectedRevision,
+          (row) => String(row.username ?? '').trim() === nextRaw,
+          unconfirmedMsg,
+        );
+      }
+      return {
+        ok: false,
+        kind: 'unavailable',
+        error: 'Unable to update your username right now. Please try again.',
+      };
+    }
+
+    const rows = (Array.isArray(data) ? data : data ? [data] : []) as PortalAccountRow[];
+    if (rows.length === 0) {
+      return {
+        ok: false,
+        kind: 'conflict',
+        error: 'Your account was updated elsewhere before this change could be saved. Reload and try again.',
+      };
+    }
+    if (rows.length > 1) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMsg };
+    }
+
+    const updated = rows[0];
+    if (
+      String(updated.id ?? '').trim() !== accountId ||
+      String(updated.employee_id ?? '').trim() !== employeeNumber ||
+      String(updated.username ?? '').trim() !== nextRaw
+    ) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMsg };
+    }
+
+    const identity = portalAccountIdentityFromRow(updated);
+    if (!identity) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMsg };
+    }
+
+    return { ok: true, account: identity };
+  } catch (err) {
+    if (String((err as { code?: unknown })?.code ?? '') === '23505') {
+      return {
+        ok: false,
+        kind: 'username_taken',
+        error: 'That username is already taken. Pick a different one.',
+      };
+    }
+    if (isTransportOrUncertainInsertError(err)) {
+      return await recoverLostPortalCredentialUpdate(
+        accountId,
+        employeeNumber,
+        expectedRevision,
+        (row) => String(row.username ?? '').trim() === nextRaw,
+        unconfirmedMsg,
+      );
+    }
+    return {
+      ok: false,
+      kind: 'unavailable',
+      error: 'Unable to update your username right now. Please try again.',
+    };
+  }
+};
+
+/**
+ * Change the password of an existing portal account by immutable account ID and expected revision.
+ */
+export const changeEmployeePortalPassword = async (
+  target: PortalCredentialTarget,
   currentPassword: string,
   newPassword: string,
-): { ok: true } | { ok: false; error: string } => {
-  if (!newPassword || newPassword.length < 6) {
-    return { ok: false, error: 'New password must be at least 6 characters long.' };
+): Promise<PortalCredentialChangeResult> => {
+  const checkedTarget = validatePortalCredentialTarget(target);
+  if (checkedTarget.ok === false) return checkedTarget;
+
+  if (typeof currentPassword !== 'string' || currentPassword.length === 0) {
+    return { ok: false, kind: 'validation', error: 'Please enter your current password.' };
+  }
+  if (typeof newPassword !== 'string' || newPassword.length < 6) {
+    return {
+      ok: false,
+      kind: 'validation',
+      error: 'New password must be at least 6 characters long.',
+    };
   }
   if (newPassword === currentPassword) {
-    return { ok: false, error: 'New password must differ from your current password.' };
+    return {
+      ok: false,
+      kind: 'validation',
+      error: 'New password must differ from your current password.',
+    };
   }
 
-  const usernameKey = normalizeUsername(username);
-  const accounts = getEmployeePortalAccounts();
-  const index = accounts.findIndex((account) => normalizeUsername(account.username) === usernameKey);
-  if (index < 0) return { ok: false, error: 'Could not find your portal account.' };
+  const { accountId, employeeNumber, expectedRevision } = checkedTarget;
+  const loaded = await readPortalAccountByTarget(accountId, employeeNumber, expectedRevision);
+  if (loaded.ok === false) return loaded;
 
-  if (accounts[index].password !== currentPassword) {
-    return { ok: false, error: 'Current password is incorrect.' };
+  const existing = loaded.row;
+  if (String(existing.password ?? '') !== currentPassword) {
+    return { ok: false, kind: 'invalid_credentials', error: 'Current password is incorrect.' };
   }
 
-  const nowIso = new Date().toISOString();
-  accounts[index] = {
-    ...accounts[index],
-    password: newPassword,
-    mustChangePassword: false,
-    updatedAt: nowIso,
-  };
+  const nextUpdatedAt = new Date(
+    Math.max(Date.now(), Date.parse(expectedRevision) + 2),
+  ).toISOString();
+  const unconfirmedMsg =
+    'We could not confirm whether your password change completed. Try signing in with your new password or check Account & Security before trying again.';
 
-  saveEmployeePortalAccounts(accounts);
-  return { ok: true };
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .update({
+        password: newPassword,
+        must_change_password: false,
+        updated_at: nextUpdatedAt,
+      })
+      .eq('id', accountId)
+      .eq('employee_id', existing.employee_id)
+      .eq('username', existing.username)
+      .eq('updated_at', expectedRevision)
+      .is('deleted_at', null)
+      .select(AUTH_PROJECTION);
+
+    if (error) {
+      if (isTransportOrUncertainInsertError(error)) {
+        return await recoverLostPortalCredentialUpdate(
+          accountId,
+          employeeNumber,
+          expectedRevision,
+          (row) => String(row.password ?? '') === newPassword && row.must_change_password === false,
+          unconfirmedMsg,
+        );
+      }
+      return {
+        ok: false,
+        kind: 'unavailable',
+        error: 'Unable to update your password right now. Please try again.',
+      };
+    }
+
+    const rows = (Array.isArray(data) ? data : data ? [data] : []) as PortalAccountRow[];
+    if (rows.length === 0) {
+      return {
+        ok: false,
+        kind: 'conflict',
+        error: 'Your account was updated elsewhere before this change could be saved. Reload and try again.',
+      };
+    }
+    if (rows.length > 1) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMsg };
+    }
+
+    const updated = rows[0];
+    if (
+      String(updated.id ?? '').trim() !== accountId ||
+      String(updated.employee_id ?? '').trim() !== employeeNumber ||
+      String(updated.password ?? '') !== newPassword ||
+      updated.must_change_password !== false
+    ) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMsg };
+    }
+
+    const identity = portalAccountIdentityFromRow(updated);
+    if (!identity) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedMsg };
+    }
+
+    return { ok: true, account: identity };
+  } catch (err) {
+    if (isTransportOrUncertainInsertError(err)) {
+      return await recoverLostPortalCredentialUpdate(
+        accountId,
+        employeeNumber,
+        expectedRevision,
+        (row) => String(row.password ?? '') === newPassword && row.must_change_password === false,
+        unconfirmedMsg,
+      );
+    }
+    return {
+      ok: false,
+      kind: 'unavailable',
+      error: 'Unable to update your password right now. Please try again.',
+    };
+  }
 };
 
 /**

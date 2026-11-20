@@ -67,17 +67,33 @@ vi.mock('./modules/employee', async () => {
   );
   return {
     EmployeeLoginPage: actual.EmployeeLoginPage,
-    EmployeePage: ({ currentUser, loginUsername }: any) => (
+    EmployeePage: ({ currentUser, loginUsername, onPortalUsernameChanged }: any) => (
       <div data-testid="employee-portal-shell">
         <span>Employee: {currentUser?.employeeId}</span>
         <span>Username: {loginUsername}</span>
         <span>Path: {window.location.pathname}</span>
+        <button
+          type="button"
+          onClick={() => onPortalUsernameChanged?.(currentUser?.employeeId, 'maria.renamed')}
+        >
+          RenameCurrent
+        </button>
+        <button
+          type="button"
+          onClick={() => onPortalUsernameChanged?.('EMP-OTHER-999', 'wrong.user')}
+        >
+          RenameOther
+        </button>
       </div>
     ),
-    SetInitialPasswordPage: ({ username, fullName }: any) => (
+    SetInitialPasswordPage: ({ employeeNumber, username, fullName, onDone }: any) => (
       <div data-testid="employee-set-password">
         <span>SetPasswordFor: {username}</span>
+        <span>EmployeeNumber: {employeeNumber}</span>
         <span>Name: {fullName}</span>
+        <button type="button" onClick={() => onDone?.()}>
+          CompleteInitialPassword
+        </button>
       </div>
     ),
   };
@@ -217,5 +233,31 @@ describe('App employee portal authentication integration', () => {
     expect(alert.textContent).not.toContain("That username and password don't match an account.");
     expect(alert.textContent).not.toMatch(/\b(2|two|multiple|count|duplicates)\b/i);
     expect(readEmployeeSession()).toBeNull();
+  });
+
+  it('passes employeeNumber to SetInitialPasswordPage and synchronizes confirmed username changes into employeeSession', async () => {
+    remote.rows = [makeRemoteAccount({ must_change_password: true })];
+
+    render(<App />);
+    submitLogin('maria.santos', 'RemoteCurrent#1');
+
+    const setPwView = await screen.findByTestId('employee-set-password');
+    expect(setPwView).toHaveTextContent('EmployeeNumber: EMP-2026-001');
+
+    fireEvent.click(screen.getByRole('button', { name: 'CompleteInitialPassword' }));
+
+    const shell = await screen.findByTestId('employee-portal-shell');
+    expect(shell).toHaveTextContent('Username: maria.santos');
+    expect(readEmployeeSession()?.mustChangePassword).toBe(false);
+
+    // Mismatched employeeId callback is ignored
+    fireEvent.click(screen.getByRole('button', { name: 'RenameOther' }));
+    expect(screen.getByTestId('employee-portal-shell')).toHaveTextContent('Username: maria.santos');
+    expect(readEmployeeSession()?.loginUsername).toBe('maria.santos');
+
+    // Matching employeeId callback updates in-memory state and persisted session
+    fireEvent.click(screen.getByRole('button', { name: 'RenameCurrent' }));
+    expect(screen.getByTestId('employee-portal-shell')).toHaveTextContent('Username: maria.renamed');
+    expect(readEmployeeSession()?.loginUsername).toBe('maria.renamed');
   });
 });

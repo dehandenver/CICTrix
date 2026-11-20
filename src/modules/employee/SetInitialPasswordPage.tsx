@@ -1,9 +1,13 @@
 import { Eye, EyeOff, KeyRound, Loader2, Lock } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActionFeedback } from '../../components/action-feedback';
-import { changeEmployeePortalPassword } from '../../lib/employeePortalData';
+import {
+  changeEmployeePortalPassword,
+  getEmployeePortalAccountByEmployeeNumber,
+} from '../../lib/employeePortalData';
 
 interface SetInitialPasswordPageProps {
+  employeeNumber: string;
   username: string;
   fullName: string;
   onDone: () => void;
@@ -12,6 +16,7 @@ interface SetInitialPasswordPageProps {
 type PasswordFailure = { message: string; nextStep: string };
 
 export const SetInitialPasswordPage: React.FC<SetInitialPasswordPageProps> = ({
+  employeeNumber,
   username,
   fullName,
   onDone,
@@ -24,9 +29,27 @@ export const SetInitialPasswordPage: React.FC<SetInitialPasswordPageProps> = ({
   const [showConfirm, setShowConfirm] = useState(false);
   const [failure, setFailure] = useState<PasswordFailure | null>(null);
   const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const employeeNumberRef = useRef(String(employeeNumber ?? '').trim());
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    employeeNumberRef.current = String(employeeNumber ?? '').trim();
+    submittingRef.current = false;
+    setSaving(false);
+    setFailure(null);
+  }, [employeeNumber]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || saving) return;
     setFailure(null);
 
     if (!tempPassword) {
@@ -58,19 +81,66 @@ export const SetInitialPasswordPage: React.FC<SetInitialPasswordPageProps> = ({
       return;
     }
 
-    setSaving(true);
-    const result = changeEmployeePortalPassword(username, tempPassword, newPassword);
-    setSaving(false);
-
-    if (!result.ok) {
+    const activeEmployeeNumber = String(employeeNumber ?? '').trim();
+    if (!activeEmployeeNumber) {
       setFailure({
-        message: 'error' in result ? result.error : 'We could not update your password.',
-        nextStep: 'Check the temporary password and try again. If it keeps failing, contact your administrator.',
+        message: 'Your employee session is missing an employee number.',
+        nextStep: 'Sign out and sign in again, or contact HR for assistance.',
       });
       return;
     }
 
-    onDone();
+    submittingRef.current = true;
+    setSaving(true);
+    try {
+      const lookup = await getEmployeePortalAccountByEmployeeNumber(activeEmployeeNumber);
+      if (!mountedRef.current || employeeNumberRef.current !== activeEmployeeNumber) return;
+
+      if (lookup.ok === false) {
+        setFailure({
+          message:
+            lookup.kind === 'not_found'
+              ? 'We could not find your employee portal account.'
+              : lookup.kind === 'ambiguous_account'
+                ? 'Multiple portal accounts matched your employee number.'
+                : 'We could not reach the account service right now.',
+          nextStep:
+            lookup.kind === 'lookup_unavailable'
+              ? 'Check your connection and try again.'
+              : 'Contact HR to verify your employee portal account.',
+        });
+        return;
+      }
+
+      const result = await changeEmployeePortalPassword(
+        {
+          accountId: lookup.account.id,
+          employeeNumber: activeEmployeeNumber,
+          expectedRevision: lookup.account.updatedAt,
+        },
+        tempPassword,
+        newPassword,
+      );
+      if (!mountedRef.current || employeeNumberRef.current !== activeEmployeeNumber) return;
+
+      if (result.ok === false) {
+        setFailure({
+          message: result.error,
+          nextStep:
+            result.kind === 'unconfirmed'
+              ? 'Try signing in with your new password before submitting this form again.'
+              : 'Check the temporary password and try again. If it keeps failing, contact your administrator.',
+        });
+        return;
+      }
+
+      onDone();
+    } finally {
+      submittingRef.current = false;
+      if (mountedRef.current && employeeNumberRef.current === activeEmployeeNumber) {
+        setSaving(false);
+      }
+    }
   };
 
   return (
