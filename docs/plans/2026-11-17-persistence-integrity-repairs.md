@@ -36,14 +36,14 @@ The full step-by-step contracts are in the approved specification; execution bri
 | 1 | `personalDataSheet.ts`, employee types, PDS section, focused validation/preservation tests | Baseline | Complete |
 | 2 | PDS RPC service integration, scalar mapper if needed, CLI-generated migration, SQL/concurrency tests | 1 | Complete; production migration applied and REST reads passed |
 | 3 | Checked profile writes, nullable numeric clears, local-only parent callback, wizard/draft behavior | 1, 2 | Complete; production frontend deployed; authenticated save/browser acceptance outstanding |
-| 4 | PDS load/retry/conflict/uncertain states and canonical save snapshots | 2, 3 | Pending |
-| 5 | Succession evidence query/schema mismatch and PDS downstream regressions | 1–4 | Pending |
-| 6 | External hire RPC (strict reserve-then-hire), browser/backend routing, redirect `RSPDashboard` Ranking Report bypass to `/admin/rsp/for-hiring`, SQL/concurrency/service/backend tests | Phase 1 | Pending |
-| 7 (7A) | CLI-generated Phase 2 migration (active identity unique indexes, durable `must_change_password`, `employee_password_resets.request_id`, `reset_employee_portal_password` RPC), SQL/concurrency tests | 6 | Pending |
-| 7 (7B) | Create-only provisioning, `recruitmentData.ts` remote allocator, metadata consumers, password-free promotional drafts, hiring callers/backfills, unrouted `QualifiedApplicantsPage` hygiene | 7A; Credential Task 1 interfaces | Pending |
+| 4 | PDS load/retry/conflict/uncertain states and canonical save snapshots | 2, 3 | Complete (`c96658b`; verified in Release Unit 1) |
+| 5 | Succession evidence query/schema mismatch and PDS downstream regressions | 1–4 | Complete (`313cb25`; verified in Release Unit 1) |
+| 6 | External hire RPC (strict reserve-then-hire), browser/backend routing, redirect `RSPDashboard` Ranking Report bypass to `/admin/rsp/for-hiring`, SQL/concurrency/service/backend tests | Phase 1 | Complete (`8d7de60`; verified in Release Unit 1) |
+| 7 (7A) | CLI-generated Phase 2 migration (active identity unique indexes, durable `must_change_password`, `employee_password_resets.request_id`, `reset_employee_portal_password` RPC), SQL/concurrency tests | 6 | Complete (`53ace5d`; verified in Release Unit 1) |
+| 7 (7B) | Create-only provisioning, `recruitmentData.ts` remote allocator, metadata consumers, password-free promotional drafts, hiring callers/backfills, unrouted `QualifiedApplicantsPage` hygiene | 7A; Credential Task 1 interfaces | Complete (`229ff64`; verified in Release Unit 1) |
 | 8 | Atomic calendar/session/competency saves and lock/replay safeguards | Joint Phase 2/credential acceptance | Pending |
 | 9 | Attendance/evaluation/archive failure states and versioned partial score patches | 8 | Pending |
-| 10 | Cross-boundary smoke tests, isolated database acceptance, full checks, branch review | Joint PDS/hiring checkpoint plus final training completion | Pending; checkpoint is not final completion |
+| 10 | Cross-boundary smoke tests, isolated database acceptance, full checks, branch review | Joint PDS/hiring checkpoint plus final training completion | PDS/hiring checkpoint complete (`56c6262`); live two-profile browser acceptance Blocked; Training Tasks 8–9 and final completion pending |
 
 Execution ledger: `.superpowers/sdd/2026-11-17-persistence-integrity-repairs/progress.md` in this isolated worktree. It records task baselines, child identities, review verdicts, corrective counters, and plan-conflict rulings.
 
@@ -231,3 +231,20 @@ Production read-only checks:
 - `read_pds_section` returned rows, a revision, and section scalars for all seven sections using the public publishable key.
 
 Not claimed: authenticated employee saves in production, production SQL rollback/permission suites, or a full production-schema clone. The plan's no-production-data-mutation constraint was preserved; no synthetic production employee was created or edited.
+
+### Release Unit 1 Checkpoint (Orders 1–8)
+
+Orders 1–8 completed Release Unit 1 code, migration, cross-boundary Vitest acceptance, isolated database/concurrency, and ephemeral PostgREST HTTP checks on `fix/persistence-credential-integration`:
+
+- **Commits (`0dd8dd4..56c6262`):**
+  - Order 1a (Task 4): `c96658b` (`fix(pds): distinguish unavailable records from empty sections`)
+  - Order 1b (Task 5): `313cb25` (`fix(succession): retain and validate PDS evidence reads`)
+  - Order 2 (Task 6): `8d7de60` (`fix(hiring): make external appointments atomic and replay-safe`)
+  - Order 3 (Task 7A): `53ace5d` (`feat(employee): add portal account integrity constraints and reset rpc`)
+  - Order 4 (Credential Task 1): `96e4863` (`fix(employee): make connected portal login remote authoritative`)
+  - Order 5 (Task 7B): `229ff64` (`fix(hiring): preserve credentials and confirmed completion across callers`)
+  - Order 6 (Credential Tasks 2–3): `4cf6034`, `b5c5b50` (`fix(employee): confirm remote credential changes and synchronize session usernames`; `fix(employee): guard account-tab generation and re-resolve on entry`)
+  - Order 7 (Credential Task 4): `3d63f49` (`fix(employee): verify explicit resets and retire credential cache authority`)
+  - Order 8a (Credential Task 5 + Task 10 PDS/Hiring checkpoint smoke tests): `56c6262` (`test(integrity): add release unit 1 cross-boundary acceptance suites`)
+- **Verified checks post-`56c6262`:** `npx tsc --noEmit` (0 errors); `npx vitest run --dir src` (`192` files / `1,815` tests passed); `npm run lint` (0 errors, 0 warnings); `npm run build` (`3156` modules); `npm run check:migrations` (`133` files); `python -m unittest backend/test_external_hiring.py backend/test_promotional_hiring.py` (`30` tests `OK`); `git diff --check` clean; production `src/` caller scan confirmed zero references to retired cache helpers; isolated Postgres SQL/concurrency suites passed on `cictrix-integrity-e1aa71a5` (`pds_section_transactions.test.sql` + `pds_section_concurrency.sh` on `integrity_repairs`; `external_hire.test.sql` + `external_hire_concurrency.sh` and `portal_account_lifecycle.test.sql` + `portal_account_lifecycle_concurrency.sh` on `external_hire_test`; `promotional_appointment.test.sql` hit `23505` on `rej6` duplicate `employee_id` fixture enforced by Order 3's unique index); ephemeral `public.ecr.aws/supabase/postgrest:v16.5` HTTP acceptance confirmed role denials (`401`/`403`/`42501`), RSP reset + secret-free audit read, `40001`/`23505` rejections, and `read_pds_section`/`save_pds_section` round-trip + `40001` conflict.
+- **Explicit non-completion & blockers:** Task 10 is **not** final Done until Release Unit 2 (training Tasks 8–9 + final Task 10 integration acceptance) completes. Live two-profile rendered browser acceptance against a full disposable Auth+Kong+PostgREST stack remains **Blocked** locally (no Playwright dependency / no disposable GoTrue+Kong stack without modifying `supabase_db_cictrix-schema-test`). Production cutover, push/PR/deploy, and single-account reconciliation ([docs/handoff/employee-credential-reconciliation.md](../handoff/employee-credential-reconciliation.md)) remain separately approval-gated; see [docs/session-summaries/2026-11-19-employee-credential-consistency-summary.md](../session-summaries/2026-11-19-employee-credential-consistency-summary.md).
