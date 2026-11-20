@@ -4,7 +4,6 @@ import {
   ChevronRight,
   KeyRound,
   Printer,
-  Save,
   UserPlus,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -17,7 +16,11 @@ import {
 } from '../lib/recruitmentData';
 import { supabase } from '../lib/supabase';
 import { isHiredApplicantStatus } from '../lib/api/newlyHiredStats';
-import { createPassword, createUniqueUsername, getEmployeePortalAccounts, upsertEmployeePortalAccount } from '../lib/employeePortalData';
+import {
+  createUniqueUsername,
+  ensureEmployeePortalAccount,
+  listEmployeePortalAccountIdentities,
+} from '../lib/employeePortalData';
 import { seedEmployeeContactFromApplication } from '../lib/api/employeePortal';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { AdminHeader } from './AdminHeader';
@@ -37,7 +40,8 @@ type GeneratedCredential = {
   rankLine: string;
   employeeNumber: string;
   username: string;
-  password: string;
+  password?: string;
+  existingAccount: boolean;
 };
 
 
@@ -263,8 +267,18 @@ export const NewlyHiredPage = () => {
     );
   };
 
+  const [savingCredentials, setSavingCredentials] = useState(false);
+  const [saveError, setSaveError] = useState<ActionFailure | null>(null);
+  const [pendingNewlyHiredToSave, setPendingNewlyHiredToSave] = useState<NewlyHired[]>([]);
+
+  const clearGeneratedCache = () => {
+    setGeneratedCredentials([]);
+    setSaveError(null);
+    setPendingNewlyHiredToSave([]);
+  };
+
   const generateCredentials = async () => {
-    if (selectedIds.length === 0) {
+    if (selectedIds.length === 0 || savingCredentials) {
       return;
     }
 
@@ -274,106 +288,111 @@ export const NewlyHiredPage = () => {
       return;
     }
 
-    const reservedEmployeeIds = rows.map((row) => row.employeeId).filter(Boolean) as string[];
-    let allocator: Awaited<ReturnType<typeof createEmployeeNumberAllocator>>;
-    try {
-      allocator = await createEmployeeNumberAllocator(reservedEmployeeIds);
-    } catch (error) {
-      const failure = describeActionFailure('generate employee numbers', error);
-      feedback.error(failure.title, `No credentials were created. ${failure.nextStep}`);
-      return;
-    }
-
-    const existingAccounts = getEmployeePortalAccounts();
-    const occupiedUsernames = new Set(existingAccounts.map((account) => account.username.toLowerCase()));
-    // Reuse an existing portal account when this person already has one (matched
-    // by email). Without this, re-running generation mints a fresh employee
-    // number + account each time, producing duplicate logins for one person.
-    const accountByEmail = new Map(
-      existingAccounts
-        .filter((account) => String(account.employee?.email ?? '').trim())
-        .map((account) => [String(account.employee.email).trim().toLowerCase(), account]),
-    );
-
-    const credentials = selectedRows.map((row) => {
-      const firstName = row.employeeInfo.firstName || 'employee';
-      const lastName = row.employeeInfo.lastName || 'user';
-      const email = String(row.employeeInfo.email ?? '').trim().toLowerCase();
-      const existing = email ? accountByEmail.get(email) : undefined;
-
-      if (existing) {
-        // Already has credentials — surface those instead of a new duplicate.
-        return {
-          id: row.id,
-          fullName: `${firstName} ${lastName}`.trim(),
-          position: row.position,
-          rankLine: `Rank #${Math.max(1, Number(row.rankingRank ?? 1))} • Score: ${Number(row.rankingScore ?? 0).toFixed(2)}`,
-          employeeNumber: String(existing.employee?.employeeId ?? '').trim(),
-          username: existing.username,
-          password: existing.password,
-        };
-      }
-
-      const employeeNumber = allocator.allocate();
-      const username = createUniqueUsername(firstName, lastName, occupiedUsernames);
-      occupiedUsernames.add(username.toLowerCase());
-
-      return {
-        id: row.id,
-        fullName: `${firstName} ${lastName}`.trim(),
-        position: row.position,
-        rankLine: `Rank #${Math.max(1, Number(row.rankingRank ?? 1))} • Score: ${Number(row.rankingScore ?? 0).toFixed(2)}`,
-        employeeNumber,
-        username,
-        password: createPassword(),
-      };
-    });
-
-    setRows((currentRows) =>
-      currentRows.map((row) => {
-        const credential = credentials.find((item) => item.id === row.id);
-        if (!credential) return row;
-        return {
-          ...row,
-          employeeId: credential.employeeNumber,
-          status: 'In Onboarding',
-        };
-      })
-    );
-
-    setGeneratedCredentials(credentials);
-    setShowCredentialsModal(true);
-  };
-
-  const clearGeneratedCache = () => setGeneratedCredentials([]);
-
-  const [savingCredentials, setSavingCredentials] = useState(false);
-  const [saveError, setSaveError] = useState<ActionFailure | null>(null);
-
-  const saveAccountDetails = async () => {
-    if (generatedCredentials.length === 0) {
-      setShowCredentialsModal(false);
-      return;
-    }
-
     setSavingCredentials(true);
     setSaveError(null);
-
-    let savedCount = 0;
     try {
-      for (const credential of generatedCredentials) {
-        const info = selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo;
-        const email = info?.email ?? '';
-        const mobileNumber = info?.phone ?? '';
-        const homeAddress = info?.address ?? '';
+      const [employeesRes, portalAccountsRes] = await Promise.all([
+        (supabase as any).from('employees').select('id, application_id, employee_number, email'),
+        listEmployeePortalAccountIdentities(),
+      ]);
 
-        const account = await upsertEmployeePortalAccount({
-          id: `portal-${credential.employeeNumber}`,
-          username: credential.username,
-          password: credential.password,
+      if (employeesRes?.error) {
+        const failure = describeActionFailure('check existing employee records', employeesRes.error);
+        feedback.error(failure.title, `No credentials were created. ${failure.nextStep}`);
+        return;
+      }
+
+      if (portalAccountsRes.ok === false) {
+        feedback.error(
+          'Unable to verify existing portal accounts',
+          `${portalAccountsRes.kind === 'ambiguous_account' ? 'Multiple conflicting portal accounts exist.' : 'The portal accounts directory is temporarily unavailable.'} No credentials were created.`,
+        );
+        return;
+      }
+
+      const existingEmployees = (employeesRes?.data ?? []) as Array<{
+        id?: string;
+        application_id?: string | null;
+        employee_number?: string | null;
+        email?: string | null;
+      }>;
+      const existingPortalAccounts = portalAccountsRes.accounts;
+
+      const reservedEmployeeIds = [
+        ...rows.map((row) => row.employeeId).filter((v): v is string => Boolean(v)),
+        ...existingEmployees.map((e) => String(e.employee_number ?? '').trim()).filter(Boolean),
+        ...existingPortalAccounts.map((a) => String(a.employee?.employeeId ?? '').trim()).filter(Boolean),
+      ];
+
+      let allocator: Awaited<ReturnType<typeof createEmployeeNumberAllocator>>;
+      try {
+        allocator = await createEmployeeNumberAllocator(reservedEmployeeIds);
+      } catch (error) {
+        const failure = describeActionFailure('generate employee numbers', error);
+        feedback.error(failure.title, `No credentials were created. ${failure.nextStep}`);
+        return;
+      }
+
+      const occupiedUsernames = new Set(
+        existingPortalAccounts.map((account) => account.username.toLowerCase()),
+      );
+      const employeeNumberByApplicantId = new Map<string, string>();
+      for (const emp of existingEmployees) {
+        const empNum = String(emp.employee_number ?? '').trim();
+        if (!empNum) continue;
+        const appId = String(emp.application_id ?? '').trim();
+        const empId = String(emp.id ?? '').trim();
+        if (appId) employeeNumberByApplicantId.set(appId, empNum);
+        if (empId && !employeeNumberByApplicantId.has(empId)) {
+          employeeNumberByApplicantId.set(empId, empNum);
+        }
+      }
+
+      const accountByEmployeeNumber = new Map(
+        existingPortalAccounts
+          .map((account) => [String(account.employee?.employeeId ?? '').trim(), account] as const)
+          .filter(([empNum]) => Boolean(empNum)),
+      );
+      const accountByEmail = new Map(
+        existingPortalAccounts
+          .filter((account) => String(account.employee?.email ?? '').trim())
+          .map((account) => [String(account.employee.email).trim().toLowerCase(), account] as const),
+      );
+
+      const confirmedCredentials: GeneratedCredential[] = [];
+      const confirmedEmployeeNumberByRowId = new Map<string, string>();
+      const provisionFailures: string[] = [];
+
+      for (const row of selectedRows) {
+        const firstName = row.employeeInfo.firstName || 'employee';
+        const lastName = row.employeeInfo.lastName || 'user';
+        const fullName = `${firstName} ${lastName}`.trim();
+        const email = String(row.employeeInfo.email ?? '').trim();
+        const emailKey = email.toLowerCase();
+        const mobileNumber = String(row.employeeInfo.phone ?? '').trim();
+        const homeAddress = String(row.employeeInfo.address ?? '').trim();
+
+        const applicantIdKey = String(row.applicantId ?? '').trim();
+        const confirmedFromEmployee = applicantIdKey
+          ? employeeNumberByApplicantId.get(applicantIdKey)
+          : undefined;
+        const existingByEmail = emailKey ? accountByEmail.get(emailKey) : undefined;
+        const existingAccount =
+          (confirmedFromEmployee ? accountByEmployeeNumber.get(confirmedFromEmployee) : undefined) ??
+          existingByEmail;
+
+        const employeeNumber =
+          confirmedFromEmployee ||
+          String(existingAccount?.employee?.employeeId ?? '').trim() ||
+          allocator.allocate();
+        const requestedUsername =
+          existingAccount?.username ||
+          createUniqueUsername(firstName, lastName, occupiedUsernames);
+
+        const provision = await ensureEmployeePortalAccount({
           employee: {
-            employeeId: credential.employeeNumber,
-            fullName: credential.fullName,
+            employeeId: employeeNumber,
+            fullName,
             email,
             dateOfBirth: '',
             age: 0,
@@ -390,42 +409,124 @@ export const NewlyHiredPage = () => {
             pagibigNumber: '',
             tinNumber: '',
           },
+          requestedUsername,
         });
 
-        // The portal account above can't carry these: employee_portal_accounts
-        // has no address column, and the portal's Personal Information reads
-        // `employees` anyway. Without this the new hire is asked to retype an
-        // address they already gave on their application.
-        // Without the database copy the employee can't sign in from any other
-        // browser, so this has to succeed before the save counts.
-        if (!account.ok) throw account.error ?? new Error('Portal account was not saved');
-        savedCount++;
+        const rankLine = `Rank #${Math.max(1, Number(row.rankingRank ?? 1))} • Score: ${Number(row.rankingScore ?? 0).toFixed(2)}`;
 
-        await seedEmployeeContactFromApplication(credential.employeeNumber, {
-          homeAddress,
-          mobileNumber,
-          email,
-        });
+        if (provision.ok === true && provision.created === true) {
+          occupiedUsernames.add(provision.credentials.username.toLowerCase());
+          const confirmedNumber = provision.account.employee.employeeId || employeeNumber;
+          confirmedEmployeeNumberByRowId.set(row.id, confirmedNumber);
+          confirmedCredentials.push({
+            id: row.id,
+            fullName,
+            position: row.position,
+            rankLine,
+            employeeNumber: confirmedNumber,
+            username: provision.credentials.username,
+            password: provision.credentials.password,
+            existingAccount: false,
+          });
+          await seedEmployeeContactFromApplication(confirmedNumber, {
+            homeAddress,
+            mobileNumber,
+            email,
+          });
+        } else if (provision.ok === true && provision.created === false) {
+          occupiedUsernames.add(provision.account.username.toLowerCase());
+          const confirmedNumber = provision.account.employee.employeeId || employeeNumber;
+          confirmedEmployeeNumberByRowId.set(row.id, confirmedNumber);
+          confirmedCredentials.push({
+            id: row.id,
+            fullName,
+            position: row.position,
+            rankLine,
+            employeeNumber: confirmedNumber,
+            username: provision.account.username,
+            existingAccount: true,
+          });
+          await seedEmployeeContactFromApplication(confirmedNumber, {
+            homeAddress,
+            mobileNumber,
+            email,
+          });
+        } else {
+          provisionFailures.push(`${fullName}: ${provision.error}`);
+        }
       }
 
-      const hired = await saveNewlyHired(rows);
-      if (!hired.ok) throw hired.error ?? new Error('Newly hired rows were not saved');
-      setShowCredentialsModal(false);
-      clearGeneratedCache();
-      // Clear the selection so the Generate button correctly disables —
-      // the just-saved rows now have employeeId and aren't generatable.
-      setSelectedIds([]);
-      feedback.success('Credentials saved', `${generatedCredentials.length} employee account${generatedCredentials.length === 1 ? '' : 's'} can now sign in.`);
-    } catch (error) {
-      console.error('saveAccountDetails: persist failed', error);
-      const failure = describeActionFailure('save the employee accounts', error);
-      const total = generatedCredentials.length;
-      setSaveError({
-        ...failure,
-        message: savedCount > 0
-          ? `${savedCount} of ${total} accounts were saved; the rest were not. Saving again is safe: saved accounts are updated, not duplicated.`
-          : failure.message,
+      if (confirmedEmployeeNumberByRowId.size === 0) {
+        feedback.error(
+          'No credentials were created',
+          provisionFailures.join(' ') || 'Unable to provision employee portal accounts.',
+        );
+        return;
+      }
+
+      const nextRows = rows.map((row) => {
+        const confirmedNumber = confirmedEmployeeNumberByRowId.get(row.id);
+        if (!confirmedNumber) return row;
+        return {
+          ...row,
+          employeeId: confirmedNumber,
+          status: 'In Onboarding' as NewlyHiredStatus,
+        };
       });
+
+      setRows(nextRows);
+      setGeneratedCredentials(confirmedCredentials);
+      setShowCredentialsModal(true);
+
+      const hired = await saveNewlyHired(nextRows);
+      if (!hired.ok) {
+        setPendingNewlyHiredToSave(nextRows);
+        const failure = describeActionFailure('save the newly hired records', hired.error);
+        setSaveError({
+          ...failure,
+          message: provisionFailures.length > 0
+            ? `${failure.message} Also: ${provisionFailures.join(' ')}`
+            : failure.message,
+        });
+      } else {
+        setPendingNewlyHiredToSave([]);
+        setSelectedIds((prev) => prev.filter((id) => !confirmedEmployeeNumberByRowId.has(id)));
+        if (provisionFailures.length > 0) {
+          setSaveError({
+            title: 'Some accounts were not created',
+            message: provisionFailures.join(' '),
+            nextStep: 'Review the rows that failed and try again.',
+            context: 'generic',
+          });
+        } else {
+          const newCount = confirmedCredentials.filter((c) => !c.existingAccount).length;
+          if (newCount > 0) {
+            feedback.success(
+              'Credentials created',
+              `${newCount} employee account${newCount === 1 ? '' : 's'} can now sign in.`,
+            );
+          }
+        }
+      }
+    } finally {
+      setSavingCredentials(false);
+    }
+  };
+
+  const retrySaveNewlyHired = async () => {
+    if (pendingNewlyHiredToSave.length === 0) return;
+    setSavingCredentials(true);
+    setSaveError(null);
+    try {
+      const hired = await saveNewlyHired(pendingNewlyHiredToSave);
+      if (!hired.ok) {
+        const failure = describeActionFailure('save the newly hired records', hired.error);
+        setSaveError(failure);
+        return;
+      }
+      setPendingNewlyHiredToSave([]);
+      setSelectedIds([]);
+      feedback.success('Saved', 'Newly hired records were saved.');
     } finally {
       setSavingCredentials(false);
     }
@@ -614,17 +715,21 @@ export const NewlyHiredPage = () => {
         subtitle={`${formatOfficeLabel(selectedDepartment)} • ${generatedCredentials.length} credential set`}
         footer={(
           <>
-            <button type="button" onClick={() => window.print()} className="btn btn-md btn-secondary">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              disabled={generatedCredentials.every((c) => !c.password)}
+              className="btn btn-md btn-secondary"
+            >
               <Printer className="h-4 w-4" aria-hidden="true" /> Print
             </button>
             <button
               type="button"
-              onClick={saveAccountDetails}
+              onClick={() => { setShowCredentialsModal(false); clearGeneratedCache(); }}
               disabled={savingCredentials}
-              aria-busy={savingCredentials || undefined}
-              className={`btn btn-md btn-primary${savingCredentials ? ' is-loading' : ''}`}
+              className="btn btn-md btn-primary"
             >
-              {!savingCredentials && <Save className="h-4 w-4" aria-hidden="true" />} Save Credentials
+              Done
             </button>
           </>
         )}
@@ -633,7 +738,7 @@ export const NewlyHiredPage = () => {
               <ActionFeedback
                 {...saveError}
                 className="mb-4"
-                onRetry={() => void saveAccountDetails()}
+                onRetry={pendingNewlyHiredToSave.length > 0 ? () => void retrySaveNewlyHired() : undefined}
                 onDismiss={() => setSaveError(null)}
               />
             )}
@@ -670,14 +775,24 @@ export const NewlyHiredPage = () => {
                       <p className="text-3xl font-bold text-slate-900">{credential.username}</p>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Password</p>
-                      <p className="text-3xl font-bold text-red-600">{credential.password}</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {credential.existingAccount ? 'Account Status' : 'Password'}
+                      </p>
+                      {credential.existingAccount || !credential.password ? (
+                        <p className="text-sm font-medium text-slate-700">
+                          Existing portal account preserved (password unchanged). Reset from Accounts if needed.
+                        </p>
+                      ) : (
+                        <p className="text-3xl font-bold text-red-600">{credential.password}</p>
+                      )}
                     </div>
                   </div>
 
-                  <p className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-base text-amber-800">
-                    <strong>Important:</strong> Please save these credentials securely. The password should be changed upon first login.
-                  </p>
+                  {!credential.existingAccount && credential.password && (
+                    <p className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-base text-amber-800">
+                      <strong>Important:</strong> Please save these credentials securely. The password should be changed upon first login.
+                    </p>
+                  )}
                 </article>
               ))}
             </div>

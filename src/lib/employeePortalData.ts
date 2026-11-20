@@ -477,7 +477,7 @@ const readPortalAccountsForIdentifier = async (
 export const authenticatePromotionalEmployee = async (
   identifier: string,
   password: string,
-): Promise<{ ok: boolean; account?: EmployeePortalAccount; error?: string }> => {
+): Promise<{ ok: boolean; account?: PortalAccountIdentity; error?: string }> => {
   const identifierKey = String(identifier ?? '').trim().toLowerCase();
   if (
     !identifierKey ||
@@ -523,7 +523,11 @@ export const authenticatePromotionalEmployee = async (
     if (!String(accountRow.employee_id ?? '').trim()) {
       return { ok: false, error: PROMOTIONAL_AUTH_ERROR.MISSING_EMPLOYEE_NUMBER };
     }
-    return { ok: true, account: portalAccountFromRow(accountRow) };
+    const identity = portalAccountIdentityFromRow(accountRow);
+    if (!identity) {
+      return { ok: false, error: PROMOTIONAL_AUTH_ERROR.LOOKUP_UNAVAILABLE };
+    }
+    return { ok: true, account: identity };
   } catch (err) {
     // Do not include the submitted password or account row in the diagnostic.
     const lookupError = err as { code?: unknown; message?: unknown } | null;
@@ -896,3 +900,208 @@ export const createPassword = (): string => {
 };
 
 export const getEmployeePortalAccountsKey = () => EMPLOYEE_PORTAL_ACCOUNTS_KEY;
+
+export type PortalAccountProvisioningInput = {
+  employee: Employee;
+  requestedUsername: string;
+};
+
+export type PortalIssuedCredential = { username: string; password: string };
+
+export type PortalAccountProvisionResult =
+  | { ok: true; created: true; account: PortalAccountIdentity; credentials: PortalIssuedCredential }
+  | { ok: true; created: false; account: PortalAccountIdentity }
+  | { ok: false; kind: 'invalid_employee' | 'account_conflict' | 'unavailable' | 'unconfirmed'; error: string };
+
+const USERNAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
+
+const isTransportOrUncertainInsertError = (err: unknown): boolean => {
+  if (!err) return false;
+  if (err instanceof Error && !(err as { code?: unknown }).code) return true;
+  const errObj = err as { code?: unknown; message?: unknown; status?: unknown };
+  const code = String(errObj.code ?? '').trim();
+  if (code) return false;
+  const msg = String(errObj.message ?? '');
+  return /fetch|network|timeout|abort|connection|econn|etimedout|socket|failed to fetch/i.test(msg);
+};
+
+const resolveProvisionInsertReread = async (
+  employeeNumber: string,
+  fromConflict: boolean,
+): Promise<PortalAccountProvisionResult> => {
+  const reread = await getEmployeePortalAccountByEmployeeNumber(employeeNumber);
+  if (reread.ok === true) {
+    return { ok: true, created: false, account: reread.account };
+  }
+  if (reread.ok === false && reread.kind === 'ambiguous_account') {
+    return {
+      ok: false,
+      kind: 'account_conflict',
+      error: new EmployeePortalLoginError(reread.kind).message,
+    };
+  }
+  if (fromConflict && reread.ok === false && reread.kind !== 'lookup_unavailable') {
+    return {
+      ok: false,
+      kind: 'account_conflict',
+      error: 'That username or employee number is already used by another portal account.',
+    };
+  }
+  return {
+    ok: false,
+    kind: 'unconfirmed',
+    error: 'We could not confirm whether the employee portal account was created. Check Accounts before resetting the password.',
+  };
+};
+
+export const ensureEmployeePortalAccount = async (
+  input: PortalAccountProvisioningInput,
+): Promise<PortalAccountProvisionResult> => {
+  const employeeNumber = String(input.employee?.employeeId ?? '').trim();
+  const requestedUsername = String(input.requestedUsername ?? '').trim();
+
+  if (!employeeNumber || UNSUPPORTED_IDENTIFIER_WILDCARDS.test(employeeNumber)) {
+    return {
+      ok: false,
+      kind: 'invalid_employee',
+      error: 'A confirmed employee number is required before creating a portal account.',
+    };
+  }
+
+  if (requestedUsername.length < 3 || !USERNAME_PATTERN.test(requestedUsername)) {
+    return {
+      ok: false,
+      kind: 'invalid_employee',
+      error: 'Requested username must be at least 3 characters and use only letters, numbers, dots, underscores, or hyphens.',
+    };
+  }
+
+  const existingByEmployee = await getEmployeePortalAccountByEmployeeNumber(employeeNumber);
+  if (existingByEmployee.ok === true) {
+    return { ok: true, created: false, account: existingByEmployee.account };
+  }
+  if (existingByEmployee.ok === false && existingByEmployee.kind !== 'not_found') {
+    if (existingByEmployee.kind === 'lookup_unavailable') {
+      return {
+        ok: false,
+        kind: 'unavailable',
+        error: new EmployeePortalLoginError(existingByEmployee.kind).message,
+      };
+    }
+    return {
+      ok: false,
+      kind: 'account_conflict',
+      error: new EmployeePortalLoginError(existingByEmployee.kind).message,
+    };
+  }
+
+  try {
+    const { data: usernameRows, error: usernameError } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .select(METADATA_PROJECTION)
+      .is('deleted_at', null)
+      .ilike('username', escapeIlikeLiteral(requestedUsername));
+
+    if (usernameError) {
+      return {
+        ok: false,
+        kind: 'unavailable',
+        error: 'Unable to check username availability right now. Please try again.',
+      };
+    }
+
+    const activeUsernameMatches = ((usernameRows ?? []) as PortalAccountRow[]).filter(
+      (row) =>
+        row?.deleted_at == null &&
+        String(row.username ?? '').trim().toLowerCase() === requestedUsername.toLowerCase(),
+    );
+
+    if (activeUsernameMatches.length > 0) {
+      const sameEmployeeRow = activeUsernameMatches.find(
+        (row) => String(row.employee_id ?? '').trim().toLowerCase() === employeeNumber.toLowerCase(),
+      );
+      if (sameEmployeeRow && activeUsernameMatches.length === 1) {
+        const identity = portalAccountIdentityFromRow(sameEmployeeRow);
+        if (identity) {
+          return { ok: true, created: false, account: identity };
+        }
+      }
+      return {
+        ok: false,
+        kind: 'account_conflict',
+        error: 'That username is already used by another employee portal account.',
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      kind: 'unavailable',
+      error: 'Unable to check username availability right now. Please try again.',
+    };
+  }
+
+  const candidatePassword = createPassword();
+  const now = new Date().toISOString();
+  const insertRow = {
+    id: `portal-${employeeNumber}`,
+    username: requestedUsername,
+    password: candidatePassword,
+    employee_id: employeeNumber,
+    full_name: String(input.employee.fullName ?? '').trim() || requestedUsername,
+    email: String(input.employee.email ?? '').trim(),
+    mobile_number: String(input.employee.mobileNumber ?? '').trim(),
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+    must_change_password: true,
+  };
+
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .insert([insertRow])
+      .select(METADATA_PROJECTION);
+
+    if (error) {
+      if (String(error?.code ?? '') === '23505') {
+        return await resolveProvisionInsertReread(employeeNumber, true);
+      }
+      if (isTransportOrUncertainInsertError(error)) {
+        return await resolveProvisionInsertReread(employeeNumber, false);
+      }
+      return {
+        ok: false,
+        kind: 'unavailable',
+        error: 'Unable to create the employee portal account right now. Please try again.',
+      };
+    }
+
+    const insertedRow = Array.isArray(data) ? data[0] : data;
+    const identity = insertedRow ? portalAccountIdentityFromRow(insertedRow as PortalAccountRow) : null;
+    if (!identity) {
+      return await resolveProvisionInsertReread(employeeNumber, false);
+    }
+
+    return {
+      ok: true,
+      created: true,
+      account: identity,
+      credentials: {
+        username: identity.username,
+        password: candidatePassword,
+      },
+    };
+  } catch (err) {
+    if (String((err as { code?: unknown })?.code ?? '') === '23505') {
+      return await resolveProvisionInsertReread(employeeNumber, true);
+    }
+    if (isTransportOrUncertainInsertError(err)) {
+      return await resolveProvisionInsertReread(employeeNumber, false);
+    }
+    return {
+      ok: false,
+      kind: 'unavailable',
+      error: 'Unable to create the employee portal account right now. Please try again.',
+    };
+  }
+};

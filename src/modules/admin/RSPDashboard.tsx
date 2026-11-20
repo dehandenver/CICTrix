@@ -64,9 +64,11 @@ import {
   findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
   getEmployeePortalAccounts,
   getLastEmployeePasswordReset,
+  listEmployeePortalAccountIdentities,
   logEmployeePasswordReset,
   type EmployeePasswordResetLog,
   type EmployeePortalAccount,
+  type PortalAccountIdentity,
   upsertEmployeePortalAccount,
 } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -1975,9 +1977,31 @@ export const RSPDashboard = () => {
     return map;
   }, [credentialedNewlyHiredRows]);
 
-  // getEmployeePortalAccounts reads module storage; these deps intentionally invalidate the cache.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const portalAccounts = useMemo(() => getEmployeePortalAccounts(), [credentialedNewlyHiredRows, section]);
+  const [portalAccounts, setPortalAccounts] = useState<PortalAccountIdentity[]>([]);
+  const [portalAccountsError, setPortalAccountsError] = useState<unknown>(null);
+  const [portalAccountsAttempt, setPortalAccountsAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!loadsAccountData) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await listEmployeePortalAccountIdentities();
+      if (cancelled) return;
+      if (res.ok === true) {
+        setPortalAccounts(res.accounts);
+        setPortalAccountsError(null);
+      } else {
+        setPortalAccountsError(
+          res.kind === 'ambiguous_account'
+            ? new Error('Multiple employee portal accounts share the same identifier.')
+            : new Error('Unable to load employee portal accounts.'),
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadsAccountData, portalAccountsAttempt]);
 
   const portalAccountByEmployeeId = useMemo(
     () => new Map(portalAccounts.map((account) => [String(account.employee.employeeId ?? '').trim(), account])),
@@ -2096,13 +2120,13 @@ export const RSPDashboard = () => {
         position: String(record.position ?? '').trim() || 'Unassigned Position',
         office: String(record.department ?? record.division ?? '').trim() || 'Unassigned Office',
         status: 'Active',
-        created_at: String(record.startDate ?? account?.createdAt ?? new Date().toISOString()),
+        created_at: String(record.startDate ?? account?.updatedAt ?? new Date().toISOString()),
         // employees.date_hired first; otherwise the moment their portal
         // account was generated, which is when the hire flow ran.
         hire_date:
           hireDateByKey.get(employeeId) ||
           String(record.startDate ?? '').trim() ||
-          account?.createdAt ||
+          account?.updatedAt ||
           undefined,
         total_score: null,
       });
@@ -2124,8 +2148,8 @@ export const RSPDashboard = () => {
         position: account.employee.currentPosition || 'Employee',
         office: account.employee.currentDepartment || 'Unassigned',
         status: 'Active',
-        created_at: account.createdAt,
-        hire_date: hireDateByKey.get(employeeId) || account.createdAt || undefined,
+        created_at: account.updatedAt,
+        hire_date: hireDateByKey.get(employeeId) || account.updatedAt || undefined,
         total_score: null,
       });
     });
@@ -3392,6 +3416,11 @@ export const RSPDashboard = () => {
 
             {section === 'accounts' && (
               <>
+                <ErrorBanner
+                  error={portalAccountsError}
+                  action="load the employee portal accounts"
+                  onRetry={() => setPortalAccountsAttempt((n) => n + 1)}
+                />
                 {accountsView === 'directory' ? (
                   <>
                     <div className="flex items-center gap-3">

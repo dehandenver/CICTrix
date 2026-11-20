@@ -463,6 +463,7 @@ describe('syncNewlyHiredToEmployees', () => {
     expect(insert?.payload).toEqual([
       {
         id: APP_JOB,
+        application_id: APP_JOB,
         employee_number: 'EMP-2026-001',
         first_name: 'Maria',
         middle_name: 'Santos',
@@ -521,6 +522,36 @@ describe('syncNewlyHiredToEmployees', () => {
 
     expect(findOperation('employees', 'insert')).toBeUndefined();
     expect(tableRows('employees')).toEqual([originalEmployee]);
+    expect(sessionStorage.getItem(EMPLOYEE_FLAG)).toBe('1');
+  });
+
+  it('skips backfilling when employees already matches by application_id or normalized email', async () => {
+    setTable('applicants', [
+      applicant({ id: APP_JOB, email: 'maria.reyes@example.test' }),
+      applicant({ id: APP_SHARED_JOB, email: 'Shared.Person@Example.TEST' }),
+    ]);
+    setTable('employees', [
+      employee({
+        id: 'completed-external-uuid-1',
+        application_id: APP_JOB,
+        employee_number: 'EMP-COMPLETED-001',
+        email: 'other1@example.test',
+      }),
+      employee({
+        id: 'existing-uuid-by-email',
+        application_id: null,
+        employee_number: 'EMP-OTHER-002',
+        email: '  shared.person@example.test ',
+      }),
+    ]);
+    setTable('newly_hired', [
+      newlyHired({ applicant_id: APP_JOB, employee_id: 'EMP-STALE-NH-001', email: 'other-nh@example.test' }),
+      newlyHired({ id: 'hire-row-email', applicant_id: APP_SHARED_JOB, employee_id: 'EMP-STALE-NH-002', email: 'Shared.Person@Example.TEST' }),
+    ]);
+
+    await syncNewlyHiredToEmployees();
+
+    expect(findOperation('employees', 'insert')).toBeUndefined();
     expect(sessionStorage.getItem(EMPLOYEE_FLAG)).toBe('1');
   });
 

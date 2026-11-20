@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   hireApplicant: vi.fn(),
   completePromotionalAppointment: vi.fn(),
   assignApplicantToSlot: vi.fn(),
+  ensureEmployeePortalAccount: vi.fn(),
   createPassword: vi.fn(),
   upsertEmployeePortalAccount: vi.fn(),
   sendEmail: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock('./plantillaSlots', () => ({
   fetchSlotsByJobPosting: async () => new Map(),
 }));
 vi.mock('./employeePortalData', () => ({
+  ensureEmployeePortalAccount: mocks.ensureEmployeePortalAccount,
   createPassword: mocks.createPassword,
   upsertEmployeePortalAccount: mocks.upsertEmployeePortalAccount,
 }));
@@ -104,6 +106,7 @@ const completed = (applicantId: string, alreadyCompleted = false): PromotionalAp
 const expectNoExternalSideEffects = () => {
   expect(mocks.hireApplicant).not.toHaveBeenCalled();
   expect(mocks.assignApplicantToSlot).not.toHaveBeenCalled();
+  expect(mocks.ensureEmployeePortalAccount).not.toHaveBeenCalled();
   expect(mocks.createPassword).not.toHaveBeenCalled();
   expect(mocks.upsertEmployeePortalAccount).not.toHaveBeenCalled();
   expect(mocks.sendEmail).not.toHaveBeenCalled();
@@ -118,6 +121,19 @@ beforeEach(() => {
   mocks.assignApplicantToSlot.mockResolvedValue({ ok: true });
   mocks.createPassword.mockReturnValue('Temp#1234');
   mocks.upsertEmployeePortalAccount.mockResolvedValue({ ok: true });
+  mocks.ensureEmployeePortalAccount.mockImplementation(async ({ employee, requestedUsername }: any) => ({
+    ok: true,
+    created: true,
+    account: {
+      id: `portal-${employee.employeeId}`,
+      username: requestedUsername,
+      mustChangePassword: true,
+      createdAt: '2026-11-02T00:00:00.000Z',
+      updatedAt: '2026-11-02T00:00:00.000Z',
+      employee,
+    },
+    credentials: { username: requestedUsername, password: 'Temp#1234' },
+  }));
   mocks.sendEmail.mockResolvedValue(undefined);
   mocks.saveNewlyHired.mockResolvedValue({ ok: true, failed: 0 });
   mocks.completePromotionalAppointment.mockImplementation(async (id: string) => completed(id));
@@ -153,8 +169,8 @@ describe('generateEmployeeCredentials with promotions', () => {
 
     expect(mocks.completePromotionalAppointment).not.toHaveBeenCalled();
     expect(mocks.hireApplicant).toHaveBeenCalledTimes(1);
-    expect(mocks.assignApplicantToSlot).toHaveBeenCalledWith('slot-1', 'app-ext-1');
-    expect(mocks.upsertEmployeePortalAccount).toHaveBeenCalledTimes(1);
+    expect(mocks.assignApplicantToSlot).not.toHaveBeenCalled();
+    expect(mocks.ensureEmployeePortalAccount).toHaveBeenCalledTimes(1);
     expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
     expect(mocks.saveNewlyHired).toHaveBeenCalledTimes(1);
     expect(outcome.promotions).toEqual([]);
@@ -163,6 +179,7 @@ describe('generateEmployeeCredentials with promotions', () => {
     expect(outcome.credentials[0]).toMatchObject({
       fullName: 'Maria Santos',
       employeeId: 'EMP-9001',
+      username: 'EMP-9001',
       tempPassword: 'Temp#1234',
       emailSent: true,
     });
@@ -174,10 +191,10 @@ describe('generateEmployeeCredentials with promotions', () => {
     expect(mocks.completePromotionalAppointment).toHaveBeenCalledTimes(1);
     expect(mocks.hireApplicant).toHaveBeenCalledTimes(1);
     expect(mocks.hireApplicant).toHaveBeenCalledWith('app-ext-1');
-    expect(mocks.assignApplicantToSlot).toHaveBeenCalledTimes(1);
-    expect(mocks.assignApplicantToSlot).toHaveBeenCalledWith('slot-1', 'app-ext-1');
-    expect(mocks.createPassword).toHaveBeenCalledTimes(1);
-    expect(mocks.upsertEmployeePortalAccount).toHaveBeenCalledTimes(1);
+    expect(mocks.assignApplicantToSlot).not.toHaveBeenCalled();
+    expect(mocks.ensureEmployeePortalAccount).toHaveBeenCalledTimes(1);
+    expect(mocks.createPassword).not.toHaveBeenCalled();
+    expect(mocks.upsertEmployeePortalAccount).not.toHaveBeenCalled();
     expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
     expect(mocks.sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'maria.santos@example.com' }));
     expect(mocks.saveNewlyHired).toHaveBeenCalledTimes(1);
