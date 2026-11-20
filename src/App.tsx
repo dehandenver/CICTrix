@@ -13,7 +13,10 @@ import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPP
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
 import { SalaryGradesPage } from './components/SalaryGradesPage';
-import { findEmployeePortalAccount, findEmployeePortalAccountFromSupabase } from './lib/employeePortalData';
+import {
+  EmployeePortalLoginError,
+  authenticateEmployeePortalAccount,
+} from './lib/employeePortalData';
 import { fetchPortalEmployeeByNumber } from './lib/api/employeePortal';
 import { clearAdminSession, readAdminSession, writeAdminSession } from './lib/adminSession';
 import { clearCachedDecryptionKey } from './lib/crypto';
@@ -449,18 +452,14 @@ function AppContent() {
   const handleEmployeeLogin = async (username: string, password: string) => {
     const trimmedUsername = username.trim();
 
-    // Step 1: Verify credentials. Try Supabase first (employee_portal_accounts
-    // — the durable source written by RSP) so credentials work across
-    // browsers; fall back to localStorage for environments where the
-    // migration hasn't run yet.
-    let portalAccount = await findEmployeePortalAccountFromSupabase(trimmedUsername, password);
-    if (!portalAccount) {
-      portalAccount = findEmployeePortalAccount(trimmedUsername, password);
-    }
-    if (!portalAccount) {
-      throw new Error('Invalid username or password.');
+    // Step 1: Verify credentials against the authoritative remote account table.
+    // Browser localStorage is never consulted as a login fallback.
+    const authResult = await authenticateEmployeePortalAccount(trimmedUsername, password);
+    if (authResult.ok === false) {
+      throw new EmployeePortalLoginError(authResult.kind);
     }
 
+    const portalAccount = authResult.account;
     const employeeNumber = portalAccount.employee.employeeId;
 
     // Step 2: Fetch the live Supabase employees row for richer profile data.

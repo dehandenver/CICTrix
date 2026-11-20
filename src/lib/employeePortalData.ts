@@ -14,14 +14,56 @@ export interface EmployeePortalAccount {
   mustChangePassword?: boolean;
 }
 
+export type PortalAccountIdentity = Pick<
+  EmployeePortalAccount,
+  'id' | 'username' | 'employee' | 'updatedAt'
+> & { mustChangePassword: boolean };
+
+export type PortalAccountFailureKind =
+  | 'invalid_credentials'
+  | 'not_found'
+  | 'ambiguous_account'
+  | 'lookup_unavailable';
+
+export type PortalAccountResult =
+  | { ok: true; account: PortalAccountIdentity }
+  | { ok: false; kind: PortalAccountFailureKind };
+
+export type PortalAccountListResult =
+  | { ok: true; accounts: PortalAccountIdentity[] }
+  | { ok: false; kind: 'ambiguous_account' | 'lookup_unavailable' };
+
+export class EmployeePortalLoginError extends Error {
+  readonly kind: PortalAccountFailureKind;
+
+  constructor(kind: PortalAccountFailureKind, message?: string) {
+    super(
+      message ??
+        (kind === 'invalid_credentials' || kind === 'not_found'
+          ? 'Invalid username or password.'
+          : kind === 'ambiguous_account'
+            ? 'Multiple portal accounts matched this username.'
+            : 'Employee portal sign-in is temporarily unavailable.'),
+    );
+    this.name = 'EmployeePortalLoginError';
+    this.kind = kind;
+  }
+}
+
 const EMPLOYEE_PORTAL_ACCOUNTS_KEY = 'cictrix_employee_portal_accounts';
 
+const METADATA_PROJECTION =
+  'id, username, employee_id, full_name, email, mobile_number, created_at, updated_at, deleted_at, must_change_password';
+const AUTH_PROJECTION =
+  'id, username, password, employee_id, full_name, email, mobile_number, created_at, updated_at, deleted_at, must_change_password';
+
 // Supabase row shape for employee_portal_accounts. See migration
-// backend/database/migrations/008_create_employee_portal_accounts.sql.
+// backend/database/migrations/008_create_employee_portal_accounts.sql and
+// supabase/migrations/20261120195500_employee_portal_account_integrity.sql.
 interface PortalAccountRow {
   id: string;
   username: string;
-  password: string;
+  password?: string;
   employee_id: string | null;
   full_name: string | null;
   email: string | null;
@@ -29,15 +71,11 @@ interface PortalAccountRow {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  must_change_password?: boolean | null;
 }
 
-const portalAccountFromRow = (row: PortalAccountRow): EmployeePortalAccount => ({
-  id: row.id,
-  username: row.username,
-  password: row.password,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-  employee: {
+const portalAccountEmployeeFromRow = (row: PortalAccountRow): Employee =>
+  ({
     employeeId: String(row.employee_id ?? ''),
     fullName: String(row.full_name ?? ''),
     email: String(row.email ?? ''),
@@ -55,8 +93,36 @@ const portalAccountFromRow = (row: PortalAccountRow): EmployeePortalAccount => (
     philhealthNumber: '',
     pagibigNumber: '',
     tinNumber: '',
-  } as Employee,
+  }) as Employee;
+
+const portalAccountFromRow = (row: PortalAccountRow): EmployeePortalAccount => ({
+  id: row.id,
+  username: row.username,
+  password: String(row.password ?? ''),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  ...(typeof row.must_change_password === 'boolean'
+    ? { mustChangePassword: row.must_change_password }
+    : {}),
+  employee: portalAccountEmployeeFromRow(row),
 });
+
+const portalAccountIdentityFromRow = (row: PortalAccountRow): PortalAccountIdentity | null => {
+  const id = String(row?.id ?? '').trim();
+  const username = String(row?.username ?? '').trim();
+  // Preserve updated_at as the opaque raw string from Postgres (never round-trip through Date).
+  const updatedAt = typeof row?.updated_at === 'string' ? row.updated_at : String(row?.updated_at ?? '');
+  if (!id || !username || !updatedAt.trim() || typeof row?.must_change_password !== 'boolean') {
+    return null;
+  }
+  return {
+    id: row.id,
+    username: row.username,
+    updatedAt,
+    mustChangePassword: row.must_change_password,
+    employee: portalAccountEmployeeFromRow(row),
+  };
+};
 
 const upsertPortalAccountToSupabase = async (account: EmployeePortalAccount): Promise<{ ok: boolean; error?: unknown }> => {
   try {
@@ -167,6 +233,221 @@ export const PROMOTIONAL_AUTH_ERROR = {
 const UNSUPPORTED_IDENTIFIER_WILDCARDS = /[%*\\]/;
 
 const escapeIlikeLiteral = (value: string) => value.replace(/_/g, '\\_');
+
+const logSanitizedPortalLookupWarning = (context: string, err: unknown) => {
+  const lookupError = err as { code?: unknown; message?: unknown } | null;
+  console.warn(`[employeePortalData] ${context}:`, {
+    code: lookupError?.code ?? null,
+    message: typeof lookupError?.message === 'string' ? lookupError.message : 'remote read failed',
+  });
+};
+
+/**
+ * Authoritative remote-only employee portal sign-in.
+ *
+ * Trims and case-folds username, compares password verbatim without trimming or
+ * case-folding, escapes literal underscores, rejects wildcard inputs before
+ * querying, and never falls back to browser storage or DEMO_ACCOUNT.
+ */
+export const authenticateEmployeePortalAccount = async (
+  username: string,
+  password: string,
+): Promise<PortalAccountResult> => {
+  const usernameKey = String(username ?? '').trim().toLowerCase();
+  if (
+    !usernameKey ||
+    typeof password !== 'string' ||
+    password.length === 0 ||
+    UNSUPPORTED_IDENTIFIER_WILDCARDS.test(usernameKey)
+  ) {
+    return { ok: false, kind: 'invalid_credentials' };
+  }
+
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .select(AUTH_PROJECTION)
+      .is('deleted_at', null)
+      .ilike('username', escapeIlikeLiteral(usernameKey));
+
+    if (error) throw error;
+
+    const rows = Array.isArray(data) ? (data as PortalAccountRow[]) : [];
+    const activeMatches = rows.filter(
+      (row) =>
+        row.deleted_at == null &&
+        String(row.username ?? '').trim().toLowerCase() === usernameKey,
+    );
+
+    if (activeMatches.length === 0) {
+      return { ok: false, kind: 'invalid_credentials' };
+    }
+    if (activeMatches.length > 1) {
+      return { ok: false, kind: 'ambiguous_account' };
+    }
+
+    const [matched] = activeMatches;
+    const identity = portalAccountIdentityFromRow(matched);
+    if (!identity) {
+      logSanitizedPortalLookupWarning(
+        'Portal credential lookup missing required identity or must_change_password schema',
+        { code: 'SCHEMA_MISMATCH', message: 'missing boolean must_change_password or revision' },
+      );
+      return { ok: false, kind: 'lookup_unavailable' };
+    }
+
+    if (typeof matched.password !== 'string' || matched.password !== password) {
+      return { ok: false, kind: 'invalid_credentials' };
+    }
+
+    return { ok: true, account: identity };
+  } catch (err) {
+    logSanitizedPortalLookupWarning('Portal credential lookup unavailable', err);
+    return { ok: false, kind: 'lookup_unavailable' };
+  }
+};
+
+/**
+ * Checked remote metadata lookup by canonical employee number.
+ * Uses METADATA_PROJECTION so the password column is never selected.
+ */
+export const getEmployeePortalAccountByEmployeeNumber = async (
+  employeeNumber: string,
+): Promise<PortalAccountResult> => {
+  const employeeKey = String(employeeNumber ?? '').trim();
+  if (!employeeKey || UNSUPPORTED_IDENTIFIER_WILDCARDS.test(employeeKey)) {
+    return { ok: false, kind: 'not_found' };
+  }
+  const normalizedKey = employeeKey.toLowerCase();
+
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .select(METADATA_PROJECTION)
+      .is('deleted_at', null)
+      .ilike('employee_id', escapeIlikeLiteral(employeeKey));
+
+    if (error) throw error;
+
+    const rows = Array.isArray(data) ? (data as PortalAccountRow[]) : [];
+    const activeMatches = rows.filter(
+      (row) =>
+        row.deleted_at == null &&
+        String(row.employee_id ?? '').trim().toLowerCase() === normalizedKey,
+    );
+
+    if (activeMatches.length === 0) {
+      return { ok: false, kind: 'not_found' };
+    }
+    if (activeMatches.length > 1) {
+      return { ok: false, kind: 'ambiguous_account' };
+    }
+
+    const identity = portalAccountIdentityFromRow(activeMatches[0]);
+    if (!identity) {
+      logSanitizedPortalLookupWarning(
+        'Portal account metadata lookup missing required schema columns',
+        { code: 'SCHEMA_MISMATCH', message: 'missing boolean must_change_password or revision' },
+      );
+      return { ok: false, kind: 'lookup_unavailable' };
+    }
+
+    return { ok: true, account: identity };
+  } catch (err) {
+    logSanitizedPortalLookupWarning('Portal account metadata lookup unavailable', err);
+    return { ok: false, kind: 'lookup_unavailable' };
+  }
+};
+
+/**
+ * Checked remote metadata list of active non-deleted portal accounts.
+ * - Omitting `employeeNumbers` lists all active accounts (excluding password).
+ * - Passing `string[]` scopes to those employee numbers (`[]` short-circuits).
+ */
+export const listEmployeePortalAccountIdentities = async (
+  employeeNumbers?: string[],
+): Promise<PortalAccountListResult> => {
+  let scopedValues: string[] | null = null;
+  let scopedKeys: Set<string> | null = null;
+
+  if (employeeNumbers !== undefined) {
+    if (!Array.isArray(employeeNumbers)) {
+      return { ok: false, kind: 'lookup_unavailable' };
+    }
+    scopedValues = [];
+    scopedKeys = new Set<string>();
+    for (const raw of employeeNumbers) {
+      const trimmed = String(raw ?? '').trim();
+      if (!trimmed) continue;
+      if (UNSUPPORTED_IDENTIFIER_WILDCARDS.test(trimmed)) {
+        return { ok: false, kind: 'lookup_unavailable' };
+      }
+      const key = trimmed.toLowerCase();
+      if (!scopedKeys.has(key)) {
+        scopedKeys.add(key);
+        scopedValues.push(trimmed);
+      }
+    }
+    if (scopedValues.length === 0) {
+      return { ok: true, accounts: [] };
+    }
+  }
+
+  try {
+    let query = (supabase as any)
+      .from('employee_portal_accounts')
+      .select(METADATA_PROJECTION)
+      .is('deleted_at', null);
+
+    if (scopedValues !== null) {
+      query = query.in('employee_id', scopedValues);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const rows = Array.isArray(data) ? (data as PortalAccountRow[]) : [];
+    const seenEmployeeIds = new Set<string>();
+    const seenUsernames = new Set<string>();
+    const accounts: PortalAccountIdentity[] = [];
+
+    for (const row of rows) {
+      if (row.deleted_at != null) continue;
+      const empKey = String(row.employee_id ?? '').trim().toLowerCase();
+      if (scopedKeys !== null && (!empKey || !scopedKeys.has(empKey))) {
+        continue;
+      }
+
+      const identity = portalAccountIdentityFromRow(row);
+      if (!identity) {
+        logSanitizedPortalLookupWarning(
+          'Portal account metadata list missing required schema columns',
+          { code: 'SCHEMA_MISMATCH', message: 'missing boolean must_change_password or revision' },
+        );
+        return { ok: false, kind: 'lookup_unavailable' };
+      }
+
+      const userKey = identity.username.trim().toLowerCase();
+      if ((empKey && seenEmployeeIds.has(empKey)) || seenUsernames.has(userKey)) {
+        return { ok: false, kind: 'ambiguous_account' };
+      }
+      if (empKey) seenEmployeeIds.add(empKey);
+      seenUsernames.add(userKey);
+      accounts.push(identity);
+    }
+
+    accounts.sort(
+      (a, b) =>
+        a.username.trim().toLowerCase().localeCompare(b.username.trim().toLowerCase()) ||
+        a.id.localeCompare(b.id),
+    );
+
+    return { ok: true, accounts };
+  } catch (err) {
+    logSanitizedPortalLookupWarning('Portal account metadata list unavailable', err);
+    return { ok: false, kind: 'lookup_unavailable' };
+  }
+};
 
 const readPortalAccountsForIdentifier = async (
   column: 'username' | 'employee_id',
