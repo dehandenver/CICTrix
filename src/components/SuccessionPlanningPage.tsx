@@ -571,8 +571,15 @@ const OcboTableView = (_props: { admin: string }) => {
                             Loading V2 scoring pool...
                           </div>
                         ) : errorV2ByPos[pos.id] ? (
-                          <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-xs text-red-600">
-                            Failed to load V2 pool: {errorV2ByPos[pos.id]}
+                          <div role="alert" className="flex flex-col items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-6 text-center text-xs text-red-600">
+                            <p>Failed to load V2 pool: {errorV2ByPos[pos.id]}</p>
+                            <button
+                              type="button"
+                              onClick={() => void loadPoolV2(pos.id)}
+                              className="btn btn-sm btn-secondary"
+                            >
+                              Retry
+                            </button>
                           </div>
                         ) : poolV2ByPos[pos.id] ? (
                           (() => {

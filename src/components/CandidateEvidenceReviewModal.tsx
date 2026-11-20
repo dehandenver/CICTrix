@@ -24,7 +24,6 @@ interface RawWork {
   id: string;
   position_title: string | null;
   company_name: string | null;
-  department_agency_office_company: string | null;
   from_date: string | null;
   to_date: string | null;
   is_present: boolean | null;
@@ -91,15 +90,15 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
       try {
         const empId = candidate.employeeId;
         const [
-          { data: work },
-          { data: training },
-          { data: education },
-          { data: eligibility },
+          { data: work, error: workError },
+          { data: training, error: trainingError },
+          { data: education, error: educationError },
+          { data: eligibility, error: eligibilityError },
           reviews,
         ] = await Promise.all([
           (supabaseClient as any)
             .from('employee_work_experience')
-            .select('id, position_title, company_name, department_agency_office_company, from_date, to_date, is_present')
+            .select('id, position_title, company_name, from_date, to_date, is_present')
             .eq('employee_id', empId),
           (supabaseClient as any)
             .from('employee_training')
@@ -117,6 +116,11 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
         ]);
 
         if (!isMounted) return;
+
+        if (workError) throw new Error(`Failed to load work experience: ${workError.message}`);
+        if (trainingError) throw new Error(`Failed to load training records: ${trainingError.message}`);
+        if (educationError) throw new Error(`Failed to load education records: ${educationError.message}`);
+        if (eligibilityError) throw new Error(`Failed to load eligibility records: ${eligibilityError.message}`);
 
         setWorkList(work ?? []);
         setTrainingList(training ?? []);
@@ -388,7 +392,7 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
                           <div>
                             <div className="font-semibold text-slate-800 text-sm">{w.position_title ?? 'Untitled Role'}</div>
                             <div className="text-xs text-slate-500">
-                              {w.company_name || w.department_agency_office_company || 'City Hall'} &middot;{' '}
+                              {w.company_name || 'City Hall'} &middot;{' '}
                               {w.from_date ?? '?'} to {w.is_present ? 'Present' : w.to_date ?? '?'}
                             </div>
                           </div>

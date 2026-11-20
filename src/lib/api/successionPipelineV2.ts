@@ -112,16 +112,23 @@ export async function fetchSuccessionPoolV2(
   // 2. Resolve department name via departments table (employees stores department as text)
   let deptName: string | null = null;
   if (posRow.department_id) {
-    const { data: deptRow } = await (supabaseClient as any)
+    const { data: deptRow, error: deptError } = await (supabaseClient as any)
       .from('departments')
       .select('id, name')
       .eq('id', posRow.department_id)
       .single();
+    if (deptError) {
+      throw new Error(`Failed to load department: ${deptError.message}`);
+    }
     deptName = deptRow?.name ?? null;
   }
 
   // 3. Fetch candidates (manual nominations + active department employees)
-  const [{ data: manualRows }, { data: deptEmps }, reviews] = await Promise.all([
+  const [
+    { data: manualRows, error: manualError },
+    { data: deptEmps, error: deptEmpsError },
+    reviews,
+  ] = await Promise.all([
     (supabaseClient as any)
       .from('succession_candidates')
       .select('id, employee_id, note')
@@ -132,9 +139,16 @@ export async function fetchSuccessionPoolV2(
           .select('id, first_name, last_name, position, department, employment_status, date_hired, highest_educational_attainment, eligibility')
           .eq('department', deptName)
           .eq('status', 'Active')
-      : Promise.resolve({ data: [] }),
+      : Promise.resolve({ data: [], error: null }),
     fetchSuccessionReviews(criticalPositionId),
   ]);
+
+  if (manualError) {
+    throw new Error(`Failed to load succession candidates: ${manualError.message}`);
+  }
+  if (deptEmpsError) {
+    throw new Error(`Failed to load department employees: ${deptEmpsError.message}`);
+  }
 
   const employeeById = new Map<string, any>();
   for (const e of deptEmps ?? []) {
@@ -147,10 +161,13 @@ export async function fetchSuccessionPoolV2(
     .filter((id: string) => !employeeById.has(id));
 
   if (missingManualIds.length > 0) {
-    const { data: manualEmps } = await (supabaseClient as any)
+    const { data: manualEmps, error: manualEmpsError } = await (supabaseClient as any)
       .from('employees')
       .select('id, first_name, last_name, position, department, employment_status, date_hired, highest_educational_attainment, eligibility')
       .in('id', missingManualIds);
+    if (manualEmpsError) {
+      throw new Error(`Failed to load nominated employees: ${manualEmpsError.message}`);
+    }
     for (const e of manualEmps ?? []) {
       employeeById.set(String(e.id), e);
     }
@@ -228,17 +245,17 @@ export async function fetchSuccessionPoolV2(
 
   // 4. Batch fetch granular evidence tables and IPCR scores
   const [
-    { data: workRows },
-    { data: trainingRows },
-    { data: educationRows },
-    { data: eligibilityRows },
-    { data: compReqRows },
-    { data: compTagRows },
+    { data: workRows, error: workError },
+    { data: trainingRows, error: trainingError },
+    { data: educationRows, error: educationError },
+    { data: eligibilityRows, error: eligibilityError },
+    { data: compReqRows, error: compReqError },
+    { data: compTagRows, error: compTagError },
     scoresMap,
   ] = await Promise.all([
     (supabaseClient as any)
       .from('employee_work_experience')
-      .select('id, employee_id, from_date, to_date, is_present, position_title, company_name, department_agency_office_company')
+      .select('id, employee_id, from_date, to_date, is_present, position_title, company_name')
       .in('employee_id', employeeIds),
     (supabaseClient as any)
       .from('employee_training')
@@ -261,6 +278,13 @@ export async function fetchSuccessionPoolV2(
       .select('employee_training_id, competency_id'),
     getLatestOverallScores(employeeIds),
   ]);
+
+  if (workError) throw new Error(`Failed to load work experience evidence: ${workError.message}`);
+  if (trainingError) throw new Error(`Failed to load training evidence: ${trainingError.message}`);
+  if (educationError) throw new Error(`Failed to load education evidence: ${educationError.message}`);
+  if (eligibilityError) throw new Error(`Failed to load eligibility evidence: ${eligibilityError.message}`);
+  if (compReqError) throw new Error(`Failed to load competency requirements: ${compReqError.message}`);
+  if (compTagError) throw new Error(`Failed to load training competency tags: ${compTagError.message}`);
 
   // Group granular evidence by employee
   const workByEmp = new Map<string, any[]>();

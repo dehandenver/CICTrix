@@ -42,26 +42,25 @@ describe('CandidateEvidenceReviewModal', () => {
   });
 
   it('loads and displays evidence items and allows saving reviews', async () => {
+    const workSelectSpy = vi.fn().mockReturnValue({
+      eq: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'work-1',
+            position_title: 'Junior Programmer',
+            company_name: 'City Hall',
+            from_date: '2021-01-01',
+            to_date: '2024-01-01',
+            is_present: false,
+          },
+        ],
+        error: null,
+      }),
+    });
+
     (supabase.from as any).mockImplementation((table: string) => {
       if (table === 'employee_work_experience') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({
-              data: [
-                {
-                  id: 'work-1',
-                  position_title: 'Junior Programmer',
-                  company_name: 'City Hall',
-                  department_agency_office_company: 'City Hall',
-                  from_date: '2021-01-01',
-                  to_date: '2024-01-01',
-                  is_present: false,
-                },
-              ],
-              error: null,
-            }),
-          }),
-        };
+        return { select: workSelectSpy };
       }
       if (table === 'employee_training') {
         return {
@@ -115,7 +114,7 @@ describe('CandidateEvidenceReviewModal', () => {
           }),
         };
       }
-      return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [] }) };
+      return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) };
     });
 
     vi.spyOn(successionReviews, 'fetchSuccessionReviews').mockResolvedValue([]);
@@ -142,6 +141,10 @@ describe('CandidateEvidenceReviewModal', () => {
       expect(screen.getAllByText('CSC Professional').length).toBeGreaterThanOrEqual(1);
     });
 
+    const workCols = workSelectSpy.mock.calls[0]?.[0] as string;
+    expect(workCols).toContain('company_name');
+    expect(workCols).not.toContain('department_agency_office_company');
+
     // Toggle checkboxes
     const relevantCheckboxes = screen.getAllByRole('checkbox');
     expect(relevantCheckboxes.length).toBeGreaterThan(0);
@@ -156,5 +159,38 @@ describe('CandidateEvidenceReviewModal', () => {
       expect(onSavedMock).toHaveBeenCalled();
       expect(onCloseMock).toHaveBeenCalled();
     });
+  });
+
+  it.each([
+    'employee_work_experience',
+    'employee_training',
+    'employee_education',
+    'employee_eligibility',
+  ])('surfaces an error instead of empty evidence lists when %s read fails', async (failingTable) => {
+    (supabase.from as any).mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue(
+          table === failingTable
+            ? { data: null, error: { message: `Failed reading ${failingTable}` } }
+            : { data: [], error: null },
+        ),
+      }),
+    }));
+
+    vi.spyOn(successionReviews, 'fetchSuccessionReviews').mockResolvedValue([]);
+
+    render(
+      <CandidateEvidenceReviewModal
+        isOpen={true}
+        onClose={vi.fn()}
+        candidate={mockCandidate}
+        criticalPosition={mockPosition}
+        onReviewSaved={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText(new RegExp(`Failed reading ${failingTable}`))).toBeInTheDocument();
+    expect(screen.queryByText('No work experience on file for this candidate.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No training records on file for this candidate.')).not.toBeInTheDocument();
   });
 });

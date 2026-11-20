@@ -149,4 +149,100 @@ describe('SuccessionPlanningPage V2 Integration', () => {
       expect(screen.getByText('Pedro Santos')).toBeInTheDocument();
     });
   });
+
+  it('renders error and Retry action when fetchSuccessionPoolV2 rejects, and clicking Retry reloads the pool', async () => {
+    vi.spyOn(successionApi, 'listDepartmentSummaries').mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          departmentId: 'd-1',
+          departmentName: 'City Planning',
+          code: 'CPDO',
+          criticalPositionCount: 1,
+          vacantCriticalCount: 0,
+          isActive: true,
+        },
+      ],
+    });
+
+    vi.spyOn(successionApi, 'listCriticalPositions').mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: 'pos-101',
+          departmentId: 'd-1',
+          title: 'Planning Officer IV',
+          incumbentName: 'Incumbent A',
+          incumbentLeavingDate: null,
+        } as any,
+      ],
+    });
+
+    vi.spyOn(successionApi, 'listAutoSuccessorsForPositions').mockResolvedValue(
+      new Map([
+        [
+          'pos-101',
+          {
+            ok: true,
+            data: { qualified: [], notQualified: [], downwardMovesExcluded: 0 },
+          },
+        ],
+      ]),
+    );
+
+    const fetchV2Spy = vi
+      .spyOn(pipelineV2, 'fetchSuccessionPoolV2')
+      .mockRejectedValueOnce(new Error('Failed to load work experience evidence: column missing'))
+      .mockResolvedValueOnce({
+        positionId: 'pos-101',
+        scoringDate: '2026-10-28',
+        requirements: {
+          experienceYears: 3,
+          trainingHours: 40,
+          education: { minimum: 'bachelor', field: 'Urban Planning' },
+          eligibility: { kind: 'required', key: 'CSC Professional' },
+        },
+        ranked: [
+          {
+            status: 'scored',
+            modelVersion: 'v2',
+            positionId: 'pos-101',
+            scoringDate: '2026-10-28',
+            candidate: { employeeId: 'emp-1', name: 'Maria Gomez' },
+            contributions: { performance: 25, experience: 15, training: 18, education: 9, eligibility: 15 },
+            total: 82,
+            readiness: 'Ready Now',
+            rank: 1,
+            reasonCodes: [],
+            audit: {} as any,
+          },
+        ],
+        needsReview: [],
+        configurationNeeded: [],
+        excluded: [],
+      });
+
+    render(
+      <MemoryRouter>
+        <SuccessionPlanningPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText('City Planning'));
+    await screen.findByText('Planning Officer IV');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reviewed Scoring (V2)' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Failed to load V2 pool: Failed to load work experience evidence: column missing');
+
+    const retryBtn = screen.getByRole('button', { name: 'Retry' });
+    fireEvent.click(retryBtn);
+
+    await waitFor(() => {
+      expect(fetchV2Spy).toHaveBeenCalledTimes(2);
+      expect(fetchV2Spy).toHaveBeenNthCalledWith(2, 'pos-101');
+      expect(screen.getByText('Maria Gomez')).toBeInTheDocument();
+    });
+  });
 });
