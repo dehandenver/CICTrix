@@ -52,6 +52,47 @@ export class EmployeePortalLoginError extends Error {
 
 const EMPLOYEE_PORTAL_ACCOUNTS_KEY = 'cictrix_employee_portal_accounts';
 
+const normalizeUsername = (value: string) => String(value ?? '').trim().toLowerCase();
+
+export const evictObsoleteCachedCredential = (target: {
+  id?: string;
+  employeeNumber?: string;
+  username?: string;
+}): void => {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const raw = localStorage.getItem(EMPLOYEE_PORTAL_ACCOUNTS_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+
+    const idKey = String(target.id ?? '').trim();
+    const empKey = String(target.employeeNumber ?? '').trim().toLowerCase();
+    const userKey = normalizeUsername(target.username ?? '');
+    if (!idKey && !empKey && !userKey) return;
+
+    const remaining = parsed.filter((entry: any) => {
+      if (!entry || typeof entry !== 'object') return true;
+      const entryId = String(entry.id ?? '').trim();
+      const entryEmp = String(entry.employee?.employeeId ?? '').trim().toLowerCase();
+      const entryUser = normalizeUsername(entry.username ?? '');
+      if (idKey && entryId === idKey) return false;
+      if (empKey && entryEmp === empKey) return false;
+      if (userKey && entryUser === userKey) return false;
+      return true;
+    });
+
+    if (remaining.length === parsed.length) return;
+    if (remaining.length === 0) {
+      localStorage.removeItem(EMPLOYEE_PORTAL_ACCOUNTS_KEY);
+    } else {
+      localStorage.setItem(EMPLOYEE_PORTAL_ACCOUNTS_KEY, JSON.stringify(remaining));
+    }
+  } catch {
+    // Storage failures must never turn a confirmed remote mutation or sign-in into failure.
+  }
+};
+
 const METADATA_PROJECTION =
   'id, username, employee_id, full_name, email, mobile_number, created_at, updated_at, deleted_at, must_change_password';
 const AUTH_PROJECTION =
@@ -95,18 +136,6 @@ const portalAccountEmployeeFromRow = (row: PortalAccountRow): Employee =>
     tinNumber: '',
   }) as Employee;
 
-const portalAccountFromRow = (row: PortalAccountRow): EmployeePortalAccount => ({
-  id: row.id,
-  username: row.username,
-  password: String(row.password ?? ''),
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-  ...(typeof row.must_change_password === 'boolean'
-    ? { mustChangePassword: row.must_change_password }
-    : {}),
-  employee: portalAccountEmployeeFromRow(row),
-});
-
 const portalAccountIdentityFromRow = (row: PortalAccountRow): PortalAccountIdentity | null => {
   const id = String(row?.id ?? '').trim();
   const username = String(row?.username ?? '').trim();
@@ -122,100 +151,6 @@ const portalAccountIdentityFromRow = (row: PortalAccountRow): PortalAccountIdent
     mustChangePassword: row.must_change_password,
     employee: portalAccountEmployeeFromRow(row),
   };
-};
-
-const upsertPortalAccountToSupabase = async (account: EmployeePortalAccount): Promise<{ ok: boolean; error?: unknown }> => {
-  try {
-    const { error } = await (supabase as any)
-      .from('employee_portal_accounts')
-      .upsert(
-        [
-          {
-            id: account.id,
-            username: account.username,
-            password: account.password,
-            employee_id: account.employee?.employeeId ?? null,
-            full_name: account.employee?.fullName ?? null,
-            email: account.employee?.email ?? null,
-            mobile_number: account.employee?.mobileNumber ?? null,
-            updated_at: account.updatedAt,
-          },
-        ],
-        { onConflict: 'id' },
-      );
-    if (error) {
-      console.error('[employeePortalData] Supabase upsert failed:', error);
-      return { ok: false, error };
-    }
-    return { ok: true };
-  } catch (err) {
-    console.error('[employeePortalData] Supabase upsert threw:', err);
-    return { ok: false, error: err };
-  }
-};
-
-// Async lookup against Supabase — the durable source of truth so credentials
-// generated on an RSP browser can be used by the employee on any browser.
-export const findEmployeePortalAccountFromSupabase = async (
-  username: string,
-  password?: string,
-): Promise<EmployeePortalAccount | null> => {
-  const usernameKey = String(username ?? '').trim().toLowerCase();
-  if (!usernameKey) return null;
-
-  try {
-    const { data, error } = await (supabase as any)
-      .from('employee_portal_accounts')
-      .select('*')
-      .ilike('username', usernameKey);
-    if (error) {
-      console.error('[employeePortalData] Supabase find failed:', error);
-      return null;
-    }
-    const rows = Array.isArray(data) ? (data as PortalAccountRow[]) : [];
-    const matched = rows.find((row) => String(row.username ?? '').trim().toLowerCase() === usernameKey);
-    if (!matched) return null;
-    if (typeof password === 'string' && matched.password !== password) return null;
-    return portalAccountFromRow(matched);
-  } catch (err) {
-    console.error('[employeePortalData] Supabase find threw:', err);
-    return null;
-  }
-};
-
-export const findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail = async (
-  employeeId?: string,
-  email?: string,
-): Promise<EmployeePortalAccount | null> => {
-  const normalizedEmail = String(email ?? '').trim().toLowerCase();
-  const normalizedId = String(employeeId ?? '').trim();
-  if (!normalizedEmail && !normalizedId) return null;
-
-  try {
-    const filters = [];
-    if (normalizedEmail) filters.push(`email.ilike.${normalizedEmail}`);
-    if (normalizedId) filters.push(`employee_id.eq.${normalizedId}`);
-
-    const { data, error } = await (supabase as any)
-      .from('employee_portal_accounts')
-      .select('*')
-      .or(filters.join(','));
-
-    if (error) {
-      console.error('[employeePortalData] Supabase find by employeeId/email failed:', error);
-      return null;
-    }
-
-    const rows = Array.isArray(data) ? (data as PortalAccountRow[]) : [];
-    const matched = rows.find((row) =>
-      (normalizedEmail && String(row.email ?? '').trim().toLowerCase() === normalizedEmail) ||
-      (normalizedId && String(row.employee_id ?? '').trim() === normalizedId)
-    );
-    return matched ? portalAccountFromRow(matched) : null;
-  } catch (err) {
-    console.error('[employeePortalData] Supabase find by employeeId/email threw:', err);
-    return null;
-  }
 };
 
 /** Why a promotional login could not be resolved. */
@@ -300,6 +235,11 @@ export const authenticateEmployeePortalAccount = async (
       return { ok: false, kind: 'invalid_credentials' };
     }
 
+    evictObsoleteCachedCredential({
+      id: identity.id,
+      employeeNumber: identity.employee.employeeId,
+      username: identity.username,
+    });
     return { ok: true, account: identity };
   } catch (err) {
     logSanitizedPortalLookupWarning('Portal credential lookup unavailable', err);
@@ -539,118 +479,6 @@ export const authenticatePromotionalEmployee = async (
   }
 };
 
-const DEMO_ACCOUNT: EmployeePortalAccount = {
-  id: 'employee-account-demo-employee01',
-  username: 'employee01',
-  password: 'hr2024',
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
-  employee: {
-    employeeId: 'EMP-2024-001',
-    fullName: 'Maria Santos',
-    employmentStatus: 'Probationary',
-    email: 'maria.santos@ilongcity.gov.ph',
-    dateOfBirth: '1990-05-15',
-    age: 34,
-    gender: 'Female',
-    civilStatus: 'Married',
-    nationality: 'Filipino',
-    mobileNumber: '+63-908-123-4567',
-    homeAddress: '123 Rizal Street, Iloilo City, Iloilo 5000',
-    emergencyContactName: 'Juan Santos',
-    emergencyRelationship: 'Spouse',
-    emergencyContactNumber: '+63-908-765-4321',
-    sssNumber: '01-2345678-0',
-    philhealthNumber: 'PH-01-2345678-9',
-    pagibigNumber: '121234567890',
-    tinNumber: '123-456-789-000',
-    currentPosition: 'Administrative Assistant I',
-    currentDepartment: 'Office of the City Mayor',
-    currentDivision: 'Administrative Division',
-  },
-};
-
-const normalizeUsername = (value: string) => String(value ?? '').trim().toLowerCase();
-
-const safeJsonParse = <T>(raw: string | null, fallback: T): T => {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-};
-
-const withDemoAccount = (accounts: EmployeePortalAccount[]) => {
-  const hasDemo = accounts.some((account) => normalizeUsername(account.username) === normalizeUsername(DEMO_ACCOUNT.username));
-  if (hasDemo) {
-    return accounts;
-  }
-  return [DEMO_ACCOUNT, ...accounts];
-};
-
-export const getEmployeePortalAccounts = (): EmployeePortalAccount[] => {
-  const raw = localStorage.getItem(EMPLOYEE_PORTAL_ACCOUNTS_KEY);
-  const parsed = safeJsonParse<EmployeePortalAccount[]>(raw, []);
-  return withDemoAccount(Array.isArray(parsed) ? parsed : []);
-};
-
-export const saveEmployeePortalAccounts = (accounts: EmployeePortalAccount[]) => {
-  // Persist to localStorage so generated credentials survive page navigation and
-  // are reachable by the Employee Portal login + the Applicant Wizard's
-  // promotional auth path. Both consumers call getEmployeePortalAccounts(), which
-  // reads this same key — so without the write here, generated credentials would
-  // immediately disappear and login would fail. (The previous comment about
-  // "Supabase only" was a regression: nothing actually wrote to Supabase, and the
-  // localStorage write was removed without replacement.)
-  const normalized = withDemoAccount(Array.isArray(accounts) ? accounts : []);
-  try {
-    localStorage.setItem(EMPLOYEE_PORTAL_ACCOUNTS_KEY, JSON.stringify(normalized));
-  } catch (err) {
-    console.error('[employeePortalData] failed to persist accounts to localStorage:', err);
-  }
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('cictrix:employee-accounts-updated'));
-  }
-};
-
-export const upsertEmployeePortalAccount = (
-  nextAccount: Omit<EmployeePortalAccount, 'createdAt' | 'updatedAt'>
-) => {
-  const nowIso = new Date().toISOString();
-  const accounts = getEmployeePortalAccounts();
-  const usernameKey = normalizeUsername(nextAccount.username);
-  const index = accounts.findIndex((account) => normalizeUsername(account.username) === usernameKey);
-
-  let upserted: EmployeePortalAccount;
-  if (index >= 0) {
-    const existing = accounts[index];
-    upserted = {
-      ...existing,
-      ...nextAccount,
-      createdAt: existing.createdAt || nowIso,
-      updatedAt: nowIso,
-    };
-    accounts[index] = upserted;
-  } else {
-    upserted = {
-      ...nextAccount,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    };
-    accounts.push(upserted);
-  }
-
-  saveEmployeePortalAccounts(accounts);
-
-  // Mirror to Supabase so the employee can log in from any browser, not
-  // just the RSP admin's browser where this was originally generated. Callers
-  // that report success await this: until it resolves ok, the account exists
-  // only in this browser.
-  return upsertPortalAccountToSupabase(upserted);
-};
-
 export interface EmployeePasswordResetLog {
   account_id: string | null;
   employee_username: string | null;
@@ -658,36 +486,6 @@ export interface EmployeePasswordResetLog {
   reset_by: string | null;
   reset_at: string;
 }
-
-/**
- * Record a password-reset action for auditing (RSP spec: log who triggered a
- * reset and when). A failed insert only warns — it must not hide the fact
- * that the password itself was already changed. Mirrors
- * resetSupervisorPassword's audit-insert pattern in src/lib/api/supervisors.ts.
- */
-export const logEmployeePasswordReset = async (entry: {
-  accountId: string;
-  username: string;
-  employeeNumber?: string;
-  resetBy: string;
-}): Promise<void> => {
-  try {
-    const { error } = await (supabase as any).from('employee_password_resets').insert([
-      {
-        account_id: entry.accountId,
-        employee_username: entry.username,
-        employee_number: entry.employeeNumber ?? null,
-        reset_by: entry.resetBy,
-        note: 'Password reset to a temporary value.',
-      },
-    ]);
-    if (error) {
-      console.warn('[employeePortalData] Failed to write password-reset audit log:', error);
-    }
-  } catch (err) {
-    console.warn('[employeePortalData] Failed to write password-reset audit log:', err);
-  }
-};
 
 /** Fetch the most recent password-reset log entry for a portal account, if any. */
 export const getLastEmployeePasswordReset = async (
@@ -709,32 +507,6 @@ export const getLastEmployeePasswordReset = async (
     console.warn('[employeePortalData] Failed to fetch password-reset audit log:', err);
     return null;
   }
-};
-
-export const findEmployeePortalAccount = (username: string, password?: string) => {
-  const usernameKey = normalizeUsername(username);
-  if (!usernameKey) return null;
-
-  const accounts = getEmployeePortalAccounts();
-  const matched = accounts.find((account) => normalizeUsername(account.username) === usernameKey);
-  if (!matched) return null;
-
-  if (typeof password === 'string' && matched.password !== password) {
-    return null;
-  }
-
-  return matched;
-};
-
-export const findEmployeeByEmployeeId = (employeeId: string) => {
-  const normalizedEmployeeId = String(employeeId ?? '').trim();
-  if (!normalizedEmployeeId) return null;
-
-  return (
-    getEmployeePortalAccounts().find(
-      (account) => String(account.employee.employeeId ?? '').trim() === normalizedEmployeeId
-    ) ?? null
-  );
 };
 
 export type PortalCredentialFailureKind =
@@ -892,6 +664,11 @@ const recoverLostPortalCredentialUpdate = async (
 
     if (String(row.updated_at ?? '') !== expectedRevision) {
       if (matchesIntended(row)) {
+        evictObsoleteCachedCredential({
+          id: identity.id,
+          employeeNumber,
+          username: identity.username,
+        });
         return { ok: true, account: identity };
       }
       return {
@@ -1050,6 +827,16 @@ export const changeEmployeePortalUsername = async (
       return { ok: false, kind: 'unconfirmed', error: unconfirmedMsg };
     }
 
+    evictObsoleteCachedCredential({
+      id: identity.id,
+      employeeNumber,
+      username: existing.username,
+    });
+    evictObsoleteCachedCredential({
+      id: identity.id,
+      employeeNumber,
+      username: identity.username,
+    });
     return { ok: true, account: identity };
   } catch (err) {
     if (String((err as { code?: unknown })?.code ?? '') === '23505') {
@@ -1180,6 +967,16 @@ export const changeEmployeePortalPassword = async (
       return { ok: false, kind: 'unconfirmed', error: unconfirmedMsg };
     }
 
+    evictObsoleteCachedCredential({
+      id: identity.id,
+      employeeNumber,
+      username: existing.username,
+    });
+    evictObsoleteCachedCredential({
+      id: identity.id,
+      employeeNumber,
+      username: identity.username,
+    });
     return { ok: true, account: identity };
   } catch (err) {
     if (isTransportOrUncertainInsertError(err)) {
@@ -1199,43 +996,285 @@ export const changeEmployeePortalPassword = async (
   }
 };
 
-/**
- * Check whether a portal account still requires a first-login password reset.
- * Used by the route guard to redirect to /employee/set-password.
- */
-export const portalAccountRequiresPasswordChange = (username: string): boolean => {
-  const usernameKey = normalizeUsername(username);
-  const accounts = getEmployeePortalAccounts();
-  const account = accounts.find((a) => normalizeUsername(a.username) === usernameKey);
-  return Boolean(account?.mustChangePassword);
+export type PortalPasswordResetResult =
+  | { ok: true; account: PortalAccountIdentity; credentials: PortalIssuedCredential }
+  | { ok: false; kind: PortalCredentialFailureKind; error: string };
+
+const PASSWORD_RESET_AUDIT_METADATA_COLUMNS =
+  'id, account_id, employee_username, employee_number, reset_at, request_id';
+
+const generatePasswordResetRequestId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = Math.floor(Math.random() * 16);
+    const v = ch === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 };
 
-export const updateEmployeePortalEmployee = (employeeId: string, patch: Partial<Employee>) => {
-  const normalizedEmployeeId = String(employeeId ?? '').trim();
-  if (!normalizedEmployeeId) return false;
+const classifyPasswordResetRpcError = (
+  err: unknown,
+): { kind: PortalCredentialFailureKind; error: string } => {
+  const errObj = (err ?? {}) as { code?: unknown; hint?: unknown };
+  const code = String(errObj.code ?? '').trim();
+  const hint = String(errObj.hint ?? '').trim();
 
-  const accounts = getEmployeePortalAccounts();
-  const index = accounts.findIndex(
-    (account) => String(account.employee.employeeId ?? '').trim() === normalizedEmployeeId
-  );
+  if (
+    code === 'P0002' ||
+    hint === 'account_not_found' ||
+    hint === 'identity_mismatch' ||
+    hint === 'invalid_target'
+  ) {
+    return {
+      kind: 'account_unavailable',
+      error: 'This active portal account could not be matched to the employee record.',
+    };
+  }
 
-  if (index < 0) return false;
+  if (hint === 'invalid_password') {
+    return {
+      kind: 'validation',
+      error: 'Generated temporary password did not satisfy server validation. Please try again.',
+    };
+  }
 
-  const account = accounts[index];
-  const nowIso = new Date().toISOString();
+  if (
+    code === '40001' ||
+    hint === 'revision_conflict' ||
+    code === '23505' ||
+    hint === 'duplicate_request_id'
+  ) {
+    return {
+      kind: 'conflict',
+      error: 'This portal account was updated elsewhere before the reset completed. Reload the account and try again.',
+    };
+  }
 
-  accounts[index] = {
-    ...account,
-    employee: {
-      ...account.employee,
-      ...patch,
-      updatedAt: nowIso,
-    },
-    updatedAt: nowIso,
+  if (code === '42501' || hint === 'not_authorized' || code === 'PGRST202' || code === '42883') {
+    return {
+      kind: 'unavailable',
+      error: 'Password reset service is currently unavailable. Please try again later.',
+    };
+  }
+
+  return {
+    kind: 'unavailable',
+    error: 'Unable to reset the employee portal password right now. Please try again.',
   };
+};
 
-  saveEmployeePortalAccounts(accounts);
-  return true;
+const recoverLostPasswordResetRpc = async (
+  accountId: string,
+  employeeNumber: string,
+  expectedRevision: string,
+  requestId: string,
+  newPassword: string,
+): Promise<PortalPasswordResetResult> => {
+  const unconfirmedError =
+    'The password reset request could not be confirmed after a connection interruption. Re-check the account before retrying or sharing temporary credentials.';
+
+  try {
+    const [auditRes, accountRes] = await Promise.all([
+      (supabase as any)
+        .from('employee_password_resets')
+        .select(PASSWORD_RESET_AUDIT_METADATA_COLUMNS)
+        .eq('account_id', accountId)
+        .eq('request_id', requestId)
+        .limit(1),
+      (supabase as any)
+        .from('employee_portal_accounts')
+        .select(METADATA_PROJECTION)
+        .is('deleted_at', null)
+        .eq('id', accountId),
+    ]);
+
+    if (auditRes?.error || accountRes?.error) {
+      return { ok: false, kind: 'unconfirmed', error: unconfirmedError };
+    }
+
+    const activeRows = ((accountRes?.data ?? []) as PortalAccountRow[]).filter(
+      (row) => row?.deleted_at == null && String(row.id ?? '').trim() === accountId,
+    );
+
+    if (activeRows.length !== 1) {
+      return {
+        ok: false,
+        kind: 'account_unavailable',
+        error: 'Could not find an active employee portal account for this reset.',
+      };
+    }
+
+    const identity = portalAccountIdentityFromRow(activeRows[0]);
+    if (!identity || identity.employee.employeeId !== employeeNumber) {
+      return {
+        ok: false,
+        kind: 'account_unavailable',
+        error: 'This active portal account could not be matched to the employee record.',
+      };
+    }
+
+    const auditRows = (auditRes?.data ?? []) as Array<{
+      account_id?: unknown;
+      request_id?: unknown;
+      employee_number?: unknown;
+    }>;
+    const matchingAudit = auditRows.find(
+      (row) =>
+        String(row?.account_id ?? '').trim() === accountId &&
+        String(row?.request_id ?? '').trim() === requestId &&
+        String(row?.employee_number ?? '').trim() === employeeNumber,
+    );
+
+    if (matchingAudit && identity.mustChangePassword === true && identity.updatedAt !== expectedRevision) {
+      evictObsoleteCachedCredential({
+        id: identity.id,
+        employeeNumber,
+        username: identity.username,
+      });
+      return {
+        ok: true,
+        account: identity,
+        credentials: {
+          username: identity.username,
+          password: newPassword,
+        },
+      };
+    }
+
+    if (identity.updatedAt !== expectedRevision) {
+      return {
+        ok: false,
+        kind: 'conflict',
+        error: 'This portal account was updated elsewhere before the reset completed. Reload the account and try again.',
+      };
+    }
+
+    return { ok: false, kind: 'unconfirmed', error: unconfirmedError };
+  } catch {
+    return { ok: false, kind: 'unconfirmed', error: unconfirmedError };
+  }
+};
+
+export const resetEmployeePortalPassword = async (
+  target: PortalCredentialTarget,
+): Promise<PortalPasswordResetResult> => {
+  const targetCheck = validatePortalCredentialTarget(target);
+  if (targetCheck.ok === false) {
+    return {
+      ok: false,
+      kind: 'account_unavailable',
+      error: 'A loaded active portal account target and revision are required.',
+    };
+  }
+
+  const { accountId, employeeNumber, expectedRevision } = targetCheck;
+  const newPassword = createPassword();
+  const requestId = generatePasswordResetRequestId();
+
+  try {
+    const { data, error } = await (supabase as any).rpc('reset_employee_portal_password', {
+      p_account_id: accountId,
+      p_employee_number: employeeNumber,
+      p_expected_updated_at: expectedRevision,
+      p_new_password: newPassword,
+      p_request_id: requestId,
+    });
+
+    if (error) {
+      if (isTransportOrUncertainInsertError(error)) {
+        return await recoverLostPasswordResetRpc(
+          accountId,
+          employeeNumber,
+          expectedRevision,
+          requestId,
+          newPassword,
+        );
+      }
+      const classified = classifyPasswordResetRpcError(error);
+      return { ok: false, kind: classified.kind, error: classified.error };
+    }
+
+    const rpcRow = (Array.isArray(data) ? data[0] : data) as {
+      account_id?: unknown;
+      employee_number?: unknown;
+      username?: unknown;
+      updated_at?: unknown;
+      must_change_password?: unknown;
+    } | null;
+
+    const returnedAccountId = String(rpcRow?.account_id ?? '').trim();
+    const returnedEmployeeNumber = String(rpcRow?.employee_number ?? '').trim();
+    const returnedUsername = String(rpcRow?.username ?? '').trim();
+    const returnedUpdatedAt =
+      typeof rpcRow?.updated_at === 'string'
+        ? rpcRow.updated_at
+        : String(rpcRow?.updated_at ?? '');
+
+    if (
+      !rpcRow ||
+      returnedAccountId !== accountId ||
+      returnedEmployeeNumber !== employeeNumber ||
+      !returnedUsername ||
+      !returnedUpdatedAt.trim() ||
+      Number.isNaN(Date.parse(returnedUpdatedAt)) ||
+      rpcRow.must_change_password !== true
+    ) {
+      return await recoverLostPasswordResetRpc(
+        accountId,
+        employeeNumber,
+        expectedRevision,
+        requestId,
+        newPassword,
+      );
+    }
+
+    const identity: PortalAccountIdentity = {
+      id: returnedAccountId,
+      username: returnedUsername,
+      updatedAt: returnedUpdatedAt,
+      mustChangePassword: true,
+      employee: portalAccountEmployeeFromRow({
+        id: returnedAccountId,
+        username: returnedUsername,
+        employee_id: returnedEmployeeNumber,
+        full_name: null,
+        email: null,
+        mobile_number: null,
+        created_at: returnedUpdatedAt,
+        updated_at: returnedUpdatedAt,
+        must_change_password: true,
+      }),
+    };
+
+    evictObsoleteCachedCredential({
+      id: identity.id,
+      employeeNumber,
+      username: identity.username,
+    });
+
+    return {
+      ok: true,
+      account: identity,
+      credentials: {
+        username: identity.username,
+        password: newPassword,
+      },
+    };
+  } catch (err) {
+    if (isTransportOrUncertainInsertError(err)) {
+      return await recoverLostPasswordResetRpc(
+        accountId,
+        employeeNumber,
+        expectedRevision,
+        requestId,
+        newPassword,
+      );
+    }
+    const classified = classifyPasswordResetRpcError(err);
+    return { ok: false, kind: classified.kind, error: classified.error };
+  }
 };
 
 export const createUniqueUsername = (

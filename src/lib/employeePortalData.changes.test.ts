@@ -322,3 +322,73 @@ describe('changeEmployeePortalPassword & changeEmployeePortalUsername (Credentia
     }
   });
 });
+
+describe('targeted obsolete-credential cache eviction (Credential Task 4)', () => {
+  it('evicts only matching account entries from cictrix_employee_portal_accounts after confirmed remote mutations and preserves unrelated entries/keys', async () => {
+    localStorage.setItem('unrelated_user_pref', 'keep-me');
+    localStorage.setItem(
+      LOCAL_ACCOUNTS_KEY,
+      JSON.stringify([
+        {
+          id: 'acct-maria-1',
+          username: 'maria.santos',
+          password: 'OldCachedPassword#1',
+          employee: { employeeId: 'EMP-2026-001' },
+        },
+        {
+          id: 'acct-other-2',
+          username: 'juan.delacruz',
+          password: 'OtherCachedPassword#2',
+          employee: { employeeId: 'EMP-2026-002' },
+        },
+      ]),
+    );
+
+    const res = await changeEmployeePortalPassword(defaultTarget(), 'Current#Pass1', 'NewFresh#Pass2');
+    expect(res.ok).toBe(true);
+
+    const remaining = JSON.parse(localStorage.getItem(LOCAL_ACCOUNTS_KEY) ?? '[]');
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe('acct-other-2');
+    expect(remaining[0].username).toBe('juan.delacruz');
+    expect(localStorage.getItem('unrelated_user_pref')).toBe('keep-me');
+    expect(JSON.stringify(remaining)).not.toContain('NewFresh#Pass2');
+  });
+
+  it('removes cictrix_employee_portal_accounts cleanly when empty and ignores localStorage exceptions', async () => {
+    localStorage.setItem(
+      LOCAL_ACCOUNTS_KEY,
+      JSON.stringify([
+        {
+          id: 'acct-maria-1',
+          username: 'maria.santos',
+          password: 'OldCachedPassword#1',
+          employee: { employeeId: 'EMP-2026-001' },
+        },
+      ]),
+    );
+
+    const renameRes = await changeEmployeePortalUsername(defaultTarget(), 'maria.renamed');
+    expect(renameRes.ok).toBe(true);
+    expect(localStorage.getItem(LOCAL_ACCOUNTS_KEY)).toBeNull();
+
+    // Storage throwing must not turn confirmed remote success into failure
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('QuotaExceeded', 'QuotaExceededError');
+    });
+
+    const pwRes = await changeEmployeePortalPassword(
+      {
+        accountId: 'acct-maria-1',
+        employeeNumber: 'EMP-2026-001',
+        expectedRevision: renameRes.account.updatedAt,
+      },
+      'Current#Pass1',
+      'NewAfterStorageErr#3',
+    );
+    expect(pwRes.ok).toBe(true);
+  });
+});

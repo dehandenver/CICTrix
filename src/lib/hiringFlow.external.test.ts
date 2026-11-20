@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   assignApplicantToSlot: vi.fn(),
   ensureEmployeePortalAccount: vi.fn(),
   createPassword: vi.fn(),
-  upsertEmployeePortalAccount: vi.fn(),
   sendEmail: vi.fn(),
   saveNewlyHired: vi.fn(),
   saveApplicants: vi.fn(),
@@ -37,7 +36,6 @@ vi.mock('./plantillaSlots', () => ({
 vi.mock('./employeePortalData', () => ({
   ensureEmployeePortalAccount: mocks.ensureEmployeePortalAccount,
   createPassword: mocks.createPassword,
-  upsertEmployeePortalAccount: mocks.upsertEmployeePortalAccount,
 }));
 vi.mock('./email', () => ({ sendEmail: mocks.sendEmail }));
 
@@ -106,7 +104,6 @@ describe('generateEmployeeCredentials external hire & checkpoint replay', () => 
 
     expect(mocks.assignApplicantToSlot).not.toHaveBeenCalled();
     expect(mocks.createPassword).not.toHaveBeenCalled();
-    expect(mocks.upsertEmployeePortalAccount).not.toHaveBeenCalled();
     expect(mocks.ensureEmployeePortalAccount).toHaveBeenCalledWith(
       expect.objectContaining({
         requestedUsername: 'EMP-2026-0042',
@@ -183,7 +180,6 @@ describe('generateEmployeeCredentials external hire & checkpoint replay', () => 
     expect(remoteAccountFixture.id).toBe('acct-custom-9');
     expect(remoteAccountFixture.employee_id).toBe('EMP-2026-0042');
     expect(mocks.createPassword).not.toHaveBeenCalled();
-    expect(mocks.upsertEmployeePortalAccount).not.toHaveBeenCalled();
     expect(mocks.sendEmail).not.toHaveBeenCalled();
     expect(outcome.credentials).toEqual([]);
     expect(outcome.failures).toEqual([]);

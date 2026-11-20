@@ -30,7 +30,6 @@ import {
 } from 'lucide-react';
 import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
 import { ErrorBanner } from '../../components/ErrorBanner';
-import { getAdminEmail } from '../../lib/adminSession';
 import { funnelBucket, normalizeStatus, type FunnelBucket } from '../../lib/api/applicantStatus';
 import { dashboardPostingStatus } from '../../lib/vacancySearch';
 import { RspArchives, type ArchiveRecord } from './rsp-archives';
@@ -47,7 +46,7 @@ import { SuccessionPlanningPage } from '../../components/SuccessionPlanningPage'
 import { RspDashboardOverview } from './RspDashboardOverview';
 import { EligibilityPointsPanel } from '../../components/EligibilityPointsPanel';
 import { SalaryGradeSelect } from '../../components/SalaryGradeSelect';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AdminHeader } from '../../components/AdminHeader';
 import { BackButton } from '../../components/BackButton';
@@ -58,18 +57,12 @@ import { useBackClosesView } from '../../hooks/useHistoryBack';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import {
-  createPassword,
-  createUniqueUsername,
-  findEmployeePortalAccount,
-  findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
-  getEmployeePortalAccounts,
+  getEmployeePortalAccountByEmployeeNumber,
   getLastEmployeePasswordReset,
   listEmployeePortalAccountIdentities,
-  logEmployeePasswordReset,
+  resetEmployeePortalPassword,
   type EmployeePasswordResetLog,
-  type EmployeePortalAccount,
   type PortalAccountIdentity,
-  upsertEmployeePortalAccount,
 } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
 import {
@@ -112,9 +105,6 @@ type Section = 'dashboard' | 'jobs' | 'qualified' | 'applicant-score' | 'new-hir
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 const EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE = 6;
-
-// Session lives in the shared per-tab module so every screen reads one identity.
-const getCurrentAdminEmail = (): string => getAdminEmail();
 
 interface JobRecord {
   id: number | string;
@@ -798,197 +788,153 @@ export const RSPDashboard = () => {
 
   // Reset password flow for the Employee Accounts detail panel
   const [resetPwState, setResetPwState] = useState<'idle' | 'confirm' | 'working' | 'done' | 'error'>('idle');
+  const [resetPwResolving, setResetPwResolving] = useState(false);
+  const [resetPwTarget, setResetPwTarget] = useState<PortalAccountIdentity | null>(null);
   const [resetPwUsername, setResetPwUsername] = useState<string | null>(null);
   const [resetPwValue, setResetPwValue] = useState<string | null>(null);
   const [resetPwError, setResetPwError] = useState<string | null>(null);
+  const resetPwSeqRef = useRef(0);
+  const resetPwInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
   // The live applicants read failed on the last load (see the main load).
   const [liveDataError, setLiveDataError] = useState<unknown>(null);
   const [officeDirectoryAttempt, setOfficeDirectoryAttempt] = useState(0);
   const feedback = useFeedback();
   const [lastResetInfo, setLastResetInfo] = useState<EmployeePasswordResetLog | null>(null);
 
-  // Prefer matching by email (most authoritative since it's per-person), then by employee_number.
-  const findExistingPortalAccountForEmployee = async (details: ApplicantRecord): Promise<EmployeePortalAccount | null> => {
-    const empNumber = String(
-      details.employeeId ?? employeeNumberById.get(details.id) ?? '',
-    ).trim();
-    const empEmail = String((details as any).email ?? '').trim().toLowerCase();
-    const accounts = getEmployeePortalAccounts();
-
-    const localMatch = (
-      (empEmail
-        ? accounts.find((a) => String(a.employee.email ?? '').trim().toLowerCase() === empEmail)
-        : null)
-      ?? (empNumber
-        ? accounts.find((a) => String(a.employee.employeeId ?? '').trim() === empNumber)
-        : null)
-      ?? null
-    );
-    if (localMatch) return localMatch;
-
-    if (!empEmail && !empNumber) return null;
-
-    return await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(empNumber || undefined, empEmail || undefined);
-  };
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const openResetPwModal = async () => {
+    const seq = ++resetPwSeqRef.current;
+    resetPwInFlightRef.current = false;
     setResetPwState('confirm');
+    setResetPwResolving(true);
+    setResetPwTarget(null);
+    setResetPwUsername(null);
+    setResetPwValue(null);
     setResetPwError(null);
     setLastResetInfo(null);
-    if (!selectedEmployeeDetails) return;
-    const existingAccount = await findExistingPortalAccountForEmployee(selectedEmployeeDetails);
-    if (!existingAccount) return;
-    const lastReset = await getLastEmployeePasswordReset(existingAccount.id);
-    setLastResetInfo(lastReset);
-  };
 
-  const handleResetEmployeePasswordConfirm = async () => {
     if (!selectedEmployeeDetails) {
+      setResetPwResolving(false);
       setResetPwError('No employee selected.');
       setResetPwState('error');
       return;
     }
 
+    const empNumber = String(
+      selectedEmployeeDetails.employeeId
+      ?? employeeNumberById.get(selectedEmployeeDetails.id)
+      ?? '',
+    ).trim();
+    if (!empNumber) {
+      setResetPwResolving(false);
+      setResetPwError('This employee record has no confirmed employee number.');
+      setResetPwState('error');
+      return;
+    }
+
+    const lookup = await getEmployeePortalAccountByEmployeeNumber(empNumber);
+    if (!mountedRef.current || seq !== resetPwSeqRef.current) return;
+    setResetPwResolving(false);
+
+    if (lookup.ok === false) {
+      setResetPwError(
+        lookup.kind === 'not_found'
+          ? `No employee-portal account exists for ${empNumber}. Generate credentials from Newly Hired first.`
+          : lookup.kind === 'ambiguous_account'
+            ? 'Multiple employee portal accounts matched this employee number. Contact an administrator before resetting.'
+            : 'Unable to check the employee portal account right now. Please try again.',
+      );
+      setResetPwState('error');
+      return;
+    }
+
+    setResetPwTarget(lookup.account);
+    const lastReset = await getLastEmployeePasswordReset(lookup.account.id);
+    if (!mountedRef.current || seq !== resetPwSeqRef.current) return;
+    setLastResetInfo(lastReset);
+  };
+
+  const handleResetEmployeePasswordConfirm = async () => {
+    if (resetPwInFlightRef.current || resetPwResolving || resetPwState === 'working') return;
+    if (!selectedEmployeeDetails || !resetPwTarget) {
+      setResetPwError('No verified employee portal account is loaded for this reset.');
+      setResetPwState('error');
+      return;
+    }
+
+    const empNumber = String(
+      selectedEmployeeDetails.employeeId
+      ?? employeeNumberById.get(selectedEmployeeDetails.id)
+      ?? '',
+    ).trim();
+    if (!empNumber) {
+      setResetPwError('This employee record has no confirmed employee number.');
+      setResetPwState('error');
+      return;
+    }
+
+    const gen = resetPwSeqRef.current;
+    resetPwInFlightRef.current = true;
     setResetPwState('working');
     setResetPwError(null);
+    setResetPwValue(null);
 
     try {
-      const empNumber = String(
-        selectedEmployeeDetails.employeeId
-        ?? employeeNumberById.get(selectedEmployeeDetails.id)
-        ?? '',
-      ).trim();
-      const empEmail = String((selectedEmployeeDetails as any).email ?? '').trim().toLowerCase();
-      const detailFirstName = String(selectedEmployeeDetails.first_name ?? '').trim();
-      const detailLastName = String(selectedEmployeeDetails.last_name ?? '').trim();
-      const fullName = (detailFirstName || detailLastName)
-        ? `${detailFirstName} ${detailLastName}`.trim()
-        : String(selectedEmployeeDetails.full_name ?? '').trim();
-      const firstName = detailFirstName || fullName.split(' ')[0] || '';
-      const lastName = detailLastName
-        || (fullName.split(' ').length > 1 ? fullName.split(' ').slice(1).join(' ') : '');
-      const fullNameNormalized = fullName.toLowerCase();
-
-      const accounts = getEmployeePortalAccounts();
-      const existingAccount = await findExistingPortalAccountForEmployee(selectedEmployeeDetails);
-
-      // Build the username that should be assigned to the *current* employee.
-      // Sanitize the same way createUniqueUsername does so we can compare apples-to-apples.
-      const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const expectedBase = `${sanitize(firstName)}${sanitize(lastName)}`;
-
-      if (!existingAccount && !expectedBase) {
-        setResetPwError(
-          `No employee-portal account exists for ${empNumber || empEmail || 'this employee'} ` +
-          `and no first/last name available to create one. Generate credentials from Newly Hired first.`,
-        );
-        setResetPwState('error');
-        return;
-      }
-
-      // Decide which username to assign:
-      //   1) If the account exists and its username matches the current employee's name → keep it.
-      //   2) Otherwise (stale account from a different employee, or missing) → regenerate from the
-      //      current first/last name, ensuring it doesn't collide with other accounts.
-      let username = existingAccount?.username ?? '';
-      const usernameMatchesCurrent =
-        Boolean(username) &&
-        (
-          sanitize(username) === expectedBase ||
-          sanitize(username).startsWith(expectedBase) // tolerates johnsmith1, johnsmith2, etc.
-        );
-
-      if (!usernameMatchesCurrent) {
-        const occupied = new Set(
-          accounts
-            .filter((a) => a !== existingAccount) // don't count the slot we're about to overwrite
-            .map((a) => a.username.toLowerCase()),
-        );
-        username = createUniqueUsername(firstName || 'employee', lastName || empNumber || 'user', occupied);
-      }
-
-      const newPassword = createPassword();
-
-      const baseEmployee = existingAccount?.employee ?? {
-        employeeId: empNumber,
-        fullName: `${firstName} ${lastName}`.trim() || username,
-        email: empEmail,
-        dateOfBirth: '',
-        age: 0,
-        gender: 'Prefer not to say' as const,
-        civilStatus: 'Single' as const,
-        nationality: 'Filipino',
-        mobileNumber: String((selectedEmployeeDetails as any).phone ?? '').trim(),
-        homeAddress: '',
-        emergencyContactName: '',
-        emergencyRelationship: '',
-        emergencyContactNumber: '',
-        sssNumber: '',
-        philhealthNumber: '',
-        pagibigNumber: '',
-        tinNumber: '',
-        currentPosition: String((selectedEmployeeDetails as any).position ?? '').trim(),
-        currentDepartment: String((selectedEmployeeDetails as any).office ?? (selectedEmployeeDetails as any).department ?? '').trim(),
-        positionHistory: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Always realign the stored profile to the *current* employee's identifiers so
-      // the portal account never drifts from who the row actually represents.
-      const realignedEmployee = {
-        ...baseEmployee,
-        employeeId: empNumber || baseEmployee.employeeId,
-        fullName: `${firstName} ${lastName}`.trim() || baseEmployee.fullName,
-        email: empEmail || baseEmployee.email,
-      };
-
-      const accountId = existingAccount?.id ?? `employee-account-${empNumber || username}`;
-
-      const saved = await upsertEmployeePortalAccount({
-        id: accountId,
-        username,
-        password: newPassword,
-        employee: realignedEmployee,
-        mustChangePassword: true,
+      const result = await resetEmployeePortalPassword({
+        accountId: resetPwTarget.id,
+        employeeNumber: empNumber,
+        expectedRevision: resetPwTarget.updatedAt,
       });
-      // The employee signs in against the database copy; until it is stored,
-      // the new password only works in this browser.
-      if (!saved.ok) {
-        setResetPwError(`${failureText('reset the password', saved.error)} The employee can't sign in with the new password yet.`);
+      if (!mountedRef.current || gen !== resetPwSeqRef.current) return;
+
+      if (result.ok === false) {
+        setResetPwValue(null);
+        setResetPwError(result.error);
         setResetPwState('error');
         return;
       }
 
-      // Sanity-check the new credential pair authenticates.
-      const verify = findEmployeePortalAccount(username, newPassword);
-      if (!verify) {
-        setResetPwError("We couldn't confirm the new password. It may not be active yet. Try resetting it again.");
-        setResetPwState('error');
-        return;
-      }
-
-      // Note: fullNameNormalized is only used here to keep ESLint quiet about the local.
-      void fullNameNormalized;
-
-      await logEmployeePasswordReset({
-        accountId,
-        username,
-        employeeNumber: empNumber || undefined,
-        resetBy: getCurrentAdminEmail(),
-      });
-
-      setResetPwUsername(username);
-      setResetPwValue(newPassword);
+      setResetPwTarget(result.account);
+      setPortalAccounts((prev) =>
+        prev.map((acc) =>
+          acc.id === result.account.id
+            ? {
+                ...acc,
+                username: result.account.username,
+                mustChangePassword: result.account.mustChangePassword,
+                updatedAt: result.account.updatedAt,
+              }
+            : acc,
+        ),
+      );
+      setResetPwUsername(result.credentials.username);
+      setResetPwValue(result.credentials.password);
       setResetPwState('done');
     } catch (error) {
+      if (!mountedRef.current || gen !== resetPwSeqRef.current) return;
       console.error('handleResetEmployeePasswordConfirm: failed', error);
+      setResetPwValue(null);
       setResetPwError(failureText('reset the password', error));
       setResetPwState('error');
+    } finally {
+      if (gen === resetPwSeqRef.current) {
+        resetPwInFlightRef.current = false;
+      }
     }
   };
 
   const closeResetPwModal = () => {
+    resetPwSeqRef.current += 1;
+    resetPwInFlightRef.current = false;
+    setResetPwResolving(false);
+    setResetPwTarget(null);
     setResetPwState('idle');
     setResetPwUsername(null);
     setResetPwValue(null);
@@ -2268,6 +2214,18 @@ export const RSPDashboard = () => {
 
     return employeeNumberMap;
   }, [directoryEmployeesSource, employeeNumberFromNewlyHired]);
+
+  useEffect(() => {
+    resetPwSeqRef.current += 1;
+    resetPwInFlightRef.current = false;
+    setResetPwResolving(false);
+    setResetPwTarget(null);
+    setResetPwState('idle');
+    setResetPwUsername(null);
+    setResetPwValue(null);
+    setResetPwError(null);
+    setLastResetInfo(null);
+  }, [selectedEmployeeId, accountsView]);
 
   const selectedOfficeEmployees = useMemo(() => {
     if (!selectedDirectoryCard) return [];
@@ -5629,7 +5587,14 @@ export const RSPDashboard = () => {
             resetPwState === 'confirm' ? (
               <>
                 <button type="button" onClick={closeResetPwModal} className="btn btn-md btn-secondary">Cancel</button>
-                <button type="button" onClick={handleResetEmployeePasswordConfirm} className="btn btn-md btn-destructive">Yes, reset password</button>
+                <button
+                  type="button"
+                  onClick={handleResetEmployeePasswordConfirm}
+                  disabled={resetPwResolving || !resetPwTarget}
+                  className="btn btn-md btn-destructive"
+                >
+                  Yes, reset password
+                </button>
               </>
             ) : resetPwState === 'working' ? (
               <button type="button" disabled aria-busy="true" className="btn btn-md btn-destructive is-loading">Yes, reset password</button>
@@ -5655,6 +5620,14 @@ export const RSPDashboard = () => {
                         : ''}
                       ? This generates a new password and invalidates the previous one immediately.
                     </p>
+                    {resetPwResolving && (
+                      <p className="!mb-0 text-xs text-slate-500">Checking employee portal account…</p>
+                    )}
+                    {resetPwTarget && (
+                      <p className="!mb-0 text-xs text-slate-500">
+                        Portal username: <span className="font-mono font-semibold text-slate-700">{resetPwTarget.username}</span>
+                      </p>
+                    )}
                     {lastResetInfo && (
                       <p className="!mb-0 text-xs text-slate-500">
                         Last reset by {lastResetInfo.reset_by || 'unknown'} on{' '}

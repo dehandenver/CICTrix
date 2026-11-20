@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   assignApplicantToSlot: vi.fn(),
   ensureEmployeePortalAccount: vi.fn(),
   createPassword: vi.fn(),
-  upsertEmployeePortalAccount: vi.fn(),
   sendEmail: vi.fn(),
   saveNewlyHired: vi.fn(),
   saveApplicants: vi.fn(),
@@ -53,7 +52,6 @@ vi.mock('./plantillaSlots', () => ({
 vi.mock('./employeePortalData', () => ({
   ensureEmployeePortalAccount: mocks.ensureEmployeePortalAccount,
   createPassword: mocks.createPassword,
-  upsertEmployeePortalAccount: mocks.upsertEmployeePortalAccount,
 }));
 vi.mock('./email', () => ({ sendEmail: mocks.sendEmail }));
 
@@ -108,7 +106,6 @@ const expectNoExternalSideEffects = () => {
   expect(mocks.assignApplicantToSlot).not.toHaveBeenCalled();
   expect(mocks.ensureEmployeePortalAccount).not.toHaveBeenCalled();
   expect(mocks.createPassword).not.toHaveBeenCalled();
-  expect(mocks.upsertEmployeePortalAccount).not.toHaveBeenCalled();
   expect(mocks.sendEmail).not.toHaveBeenCalled();
   expect(mocks.saveNewlyHired).not.toHaveBeenCalled();
 };
@@ -120,7 +117,6 @@ beforeEach(() => {
   mocks.hireApplicant.mockResolvedValue({ employee: { employee_id: 'EMP-9001' }, promotion: null });
   mocks.assignApplicantToSlot.mockResolvedValue({ ok: true });
   mocks.createPassword.mockReturnValue('Temp#1234');
-  mocks.upsertEmployeePortalAccount.mockResolvedValue({ ok: true });
   mocks.ensureEmployeePortalAccount.mockImplementation(async ({ employee, requestedUsername }: any) => ({
     ok: true,
     created: true,
@@ -194,7 +190,6 @@ describe('generateEmployeeCredentials with promotions', () => {
     expect(mocks.assignApplicantToSlot).not.toHaveBeenCalled();
     expect(mocks.ensureEmployeePortalAccount).toHaveBeenCalledTimes(1);
     expect(mocks.createPassword).not.toHaveBeenCalled();
-    expect(mocks.upsertEmployeePortalAccount).not.toHaveBeenCalled();
     expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
     expect(mocks.sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'maria.santos@example.com' }));
     expect(mocks.saveNewlyHired).toHaveBeenCalledTimes(1);
@@ -406,7 +401,6 @@ describe('generateEmployeeCredentials with promotions', () => {
     ]);
     expect(mocks.assignApplicantToSlot).not.toHaveBeenCalled();
     expect(mocks.createPassword).not.toHaveBeenCalled();
-    expect(mocks.upsertEmployeePortalAccount).not.toHaveBeenCalled();
     expect(mocks.sendEmail).not.toHaveBeenCalled();
     expect(mocks.saveNewlyHired).not.toHaveBeenCalled();
   });
