@@ -860,11 +860,12 @@ const recoverLostPortalCredentialUpdate = async (
   expectedRevision: string,
   matchesIntended: (row: PortalAccountRow) => boolean,
   unconfirmedMessage: string,
+  projection: string = AUTH_PROJECTION,
 ): Promise<PortalCredentialChangeResult> => {
   try {
     const { data, error } = await (supabase as any)
       .from('employee_portal_accounts')
-      .select(AUTH_PROJECTION)
+      .select(projection)
       .is('deleted_at', null)
       .eq('id', accountId);
 
@@ -1013,6 +1014,7 @@ export const changeEmployeePortalUsername = async (
           expectedRevision,
           (row) => String(row.username ?? '').trim() === nextRaw,
           unconfirmedMsg,
+          METADATA_PROJECTION,
         );
       }
       return {
@@ -1064,6 +1066,7 @@ export const changeEmployeePortalUsername = async (
         expectedRevision,
         (row) => String(row.username ?? '').trim() === nextRaw,
         unconfirmedMsg,
+        METADATA_PROJECTION,
       );
     }
     return {

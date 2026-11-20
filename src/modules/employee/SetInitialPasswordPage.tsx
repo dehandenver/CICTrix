@@ -31,7 +31,9 @@ export const SetInitialPasswordPage: React.FC<SetInitialPasswordPageProps> = ({
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
   const mountedRef = useRef(true);
-  const employeeNumberRef = useRef(String(employeeNumber ?? '').trim());
+  // Bumped on every employee switch; completions from an older generation are discarded and
+  // must not clear the current generation's duplicate-submit guard.
+  const generationRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -41,7 +43,7 @@ export const SetInitialPasswordPage: React.FC<SetInitialPasswordPageProps> = ({
   }, []);
 
   useEffect(() => {
-    employeeNumberRef.current = String(employeeNumber ?? '').trim();
+    generationRef.current += 1;
     submittingRef.current = false;
     setSaving(false);
     setFailure(null);
@@ -91,10 +93,11 @@ export const SetInitialPasswordPage: React.FC<SetInitialPasswordPageProps> = ({
     }
 
     submittingRef.current = true;
+    const gen = generationRef.current;
     setSaving(true);
     try {
       const lookup = await getEmployeePortalAccountByEmployeeNumber(activeEmployeeNumber);
-      if (!mountedRef.current || employeeNumberRef.current !== activeEmployeeNumber) return;
+      if (!mountedRef.current || gen !== generationRef.current) return;
 
       if (lookup.ok === false) {
         setFailure({
@@ -121,7 +124,7 @@ export const SetInitialPasswordPage: React.FC<SetInitialPasswordPageProps> = ({
         tempPassword,
         newPassword,
       );
-      if (!mountedRef.current || employeeNumberRef.current !== activeEmployeeNumber) return;
+      if (!mountedRef.current || gen !== generationRef.current) return;
 
       if (result.ok === false) {
         setFailure({
@@ -136,9 +139,9 @@ export const SetInitialPasswordPage: React.FC<SetInitialPasswordPageProps> = ({
 
       onDone();
     } finally {
-      submittingRef.current = false;
-      if (mountedRef.current && employeeNumberRef.current === activeEmployeeNumber) {
-        setSaving(false);
+      if (gen === generationRef.current) {
+        submittingRef.current = false;
+        if (mountedRef.current) setSaving(false);
       }
     }
   };

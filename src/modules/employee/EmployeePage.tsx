@@ -1045,9 +1045,18 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
 
   const confirmLoginInFlightRef = useRef(false);
   const credentialMutationInFlightRef = useRef(false);
+  // Generation counter: bumped on every employee switch and every entry to / exit from the
+  // Account & Security tab. Async completions from an older generation are discarded and must
+  // never clear the single-flight guards owned by the current generation.
   const accountLookupSeqRef = useRef(0);
   const currentEmployeeIdRef = useRef(String(currentUser?.employeeId ?? '').trim());
   const mountedRef = useRef(true);
+  const [portalAccountLoading, setPortalAccountLoading] = useState(false);
+  const accountTabActive =
+    location.pathname.includes('/account') &&
+    !['/ipcr-workspace', '/trainings', '/idp', '/archive', '/new-entrants'].some((segment) =>
+      location.pathname.includes(segment),
+    );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1088,9 +1097,13 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
     setShowCurrentPw(false);
     setShowNewPw(false);
     setShowConfirmNewPw(false);
+    setPortalAccountLoading(false);
 
-    if (!employeeId) return;
+    // Resolve remotely on every entry to the Account tab so a rename on another device, a
+    // transient read failure, or an unconfirmed save is re-checked instead of trusting old state.
+    if (!employeeId || !accountTabActive) return;
 
+    setPortalAccountLoading(true);
     void (async () => {
       const lookup = await getEmployeePortalAccountByEmployeeNumber(employeeId);
       if (
@@ -1101,6 +1114,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
         return;
       }
 
+      setPortalAccountLoading(false);
       if (lookup.ok === true) {
         setResolvedPortalAccount(lookup.account);
         setCurrentPortalUsername(lookup.account.username);
@@ -1119,7 +1133,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
         );
       }
     })();
-  }, [currentUser?.employeeId]);
+  }, [currentUser?.employeeId, accountTabActive]);
 
   const handleConfirmLogin = async (event?: React.FormEvent) => {
     event?.preventDefault();
@@ -1128,8 +1142,10 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
 
     if (!resolvedPortalAccount || !currentPortalUsername) {
       setConfirmLoginError(
-        portalAccountLookupError ??
-          'No portal account was found for your record. Contact HR to generate your credentials first.',
+        portalAccountLoading
+          ? 'Still loading your portal account. Please try again in a moment.'
+          : portalAccountLookupError ??
+              'No portal account was found for your record. Contact HR to generate your credentials first.',
       );
       return;
     }
@@ -1146,6 +1162,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
 
     const expectedEmployeeId = String(currentUser?.employeeId ?? '').trim();
     const expectedAccountId = resolvedPortalAccount.id;
+    const gen = accountLookupSeqRef.current;
     confirmLoginInFlightRef.current = true;
     setConfirmLoginVerifying(true);
     try {
@@ -1153,7 +1170,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
         confirmLoginUsername.trim(),
         confirmLoginPassword,
       );
-      if (!mountedRef.current || currentEmployeeIdRef.current !== expectedEmployeeId) {
+      if (
+        !mountedRef.current ||
+        gen !== accountLookupSeqRef.current ||
+        currentEmployeeIdRef.current !== expectedEmployeeId
+      ) {
         return;
       }
 
@@ -1187,9 +1208,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
       setConfirmLoginUsername('');
       setConfirmLoginPassword('');
     } finally {
-      confirmLoginInFlightRef.current = false;
-      if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
-        setConfirmLoginVerifying(false);
+      if (gen === accountLookupSeqRef.current) {
+        confirmLoginInFlightRef.current = false;
+        if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
+          setConfirmLoginVerifying(false);
+        }
       }
     }
   };
@@ -1205,6 +1228,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
     setUsernameMessage(null);
 
     const expectedEmployeeId = String(currentUser?.employeeId ?? '').trim();
+    const gen = accountLookupSeqRef.current;
     const target = {
       accountId: resolvedPortalAccount.id,
       employeeNumber: expectedEmployeeId,
@@ -1215,7 +1239,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
     setCredentialMutationPending(true);
     try {
       const result = await changeEmployeePortalUsername(target, usernameDraft);
-      if (!mountedRef.current || currentEmployeeIdRef.current !== expectedEmployeeId) {
+      if (
+        !mountedRef.current ||
+        gen !== accountLookupSeqRef.current ||
+        currentEmployeeIdRef.current !== expectedEmployeeId
+      ) {
         return;
       }
 
@@ -1233,9 +1261,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
       });
       onPortalUsernameChanged?.(expectedEmployeeId, result.account.username);
     } finally {
-      credentialMutationInFlightRef.current = false;
-      if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
-        setCredentialMutationPending(false);
+      if (gen === accountLookupSeqRef.current) {
+        credentialMutationInFlightRef.current = false;
+        if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
+          setCredentialMutationPending(false);
+        }
       }
     }
   };
@@ -1256,6 +1286,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
     }
 
     const expectedEmployeeId = String(currentUser?.employeeId ?? '').trim();
+    const gen = accountLookupSeqRef.current;
     const target = {
       accountId: resolvedPortalAccount.id,
       employeeNumber: expectedEmployeeId,
@@ -1270,7 +1301,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
         currentPasswordInput,
         newPasswordInput,
       );
-      if (!mountedRef.current || currentEmployeeIdRef.current !== expectedEmployeeId) {
+      if (
+        !mountedRef.current ||
+        gen !== accountLookupSeqRef.current ||
+        currentEmployeeIdRef.current !== expectedEmployeeId
+      ) {
         return;
       }
 
@@ -1289,9 +1324,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
         text: 'Password updated. Use the new password the next time you log in.',
       });
     } finally {
-      credentialMutationInFlightRef.current = false;
-      if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
-        setCredentialMutationPending(false);
+      if (gen === accountLookupSeqRef.current) {
+        credentialMutationInFlightRef.current = false;
+        if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
+          setCredentialMutationPending(false);
+        }
       }
     }
   };
@@ -1717,7 +1754,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
                 </div>
               </div>
 
-              {!currentPortalUsername && (
+              {!currentPortalUsername && portalAccountLoading && (
+                <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  Loading your portal account…
+                </p>
+              )}
+              {!currentPortalUsername && !portalAccountLoading && (
                 <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   {portalAccountLookupError ??
                     'No portal account was found for your record. Contact HR to generate your credentials first.'}
@@ -1823,7 +1865,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
                 </p>
               </div>
 
-              {!currentPortalUsername && (
+              {!currentPortalUsername && portalAccountLoading && (
+                <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  Loading your portal account…
+                </p>
+              )}
+              {!currentPortalUsername && !portalAccountLoading && (
                 <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   {portalAccountLookupError ??
                     'No portal account was found for your record. Contact HR to generate your credentials first.'}

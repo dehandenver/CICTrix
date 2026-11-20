@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Employee } from '../../types/employee.types';
 
@@ -333,5 +333,182 @@ describe('EmployeePage Account & Security and unlinked profile protection (Crede
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(localStorage.getItem('cictrix_employee_portal_accounts')).toBeNull();
     expect(mocks.patchPortalEmployee).not.toHaveBeenCalled();
+  });
+});
+
+describe('EmployeePage Account & Security: read failures, tab re-entry, rejection and stale completions', () => {
+  const Nav = () => {
+    const navigate = useNavigate();
+    return (
+      <>
+        <button type="button" onClick={() => navigate('/employee/profile')}>go-profile</button>
+        <button type="button" onClick={() => navigate('/employee/account')}>go-account</button>
+      </>
+    );
+  };
+
+  const renderAt = (user: Employee, onPortalUsernameChanged?: (id: string, u: string) => void) => {
+    const tree = (u: Employee) => (
+      <MemoryRouter initialEntries={['/employee/account']}>
+        <Nav />
+        <EmployeePage currentUser={u} onPortalUsernameChanged={onPortalUsernameChanged} onLogout={() => {}} />
+      </MemoryRouter>
+    );
+    const view = render(tree(user));
+    return { ...view, rerenderAs: (u: Employee) => view.rerender(tree(u)) };
+  };
+
+  const submitUnlock = (username = 'maria.santos', password = 'Current#Pass1') => {
+    fireEvent.change(screen.getByPlaceholderText('Enter your username'), { target: { value: username } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your current password'), { target: { value: password } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  };
+
+  const unlock = async () => {
+    const input = await screen.findByPlaceholderText('Enter your username');
+    await waitFor(() => expect(input).toBeEnabled());
+    submitUnlock();
+    await screen.findByRole('heading', { name: 'Change Username' });
+  };
+
+  it('shows unavailable/ambiguous read failures and re-resolves a renamed account when the Account tab is re-entered', async () => {
+    mocks.getEmployeePortalAccountByEmployeeNumber.mockResolvedValueOnce({ ok: false, kind: 'lookup_unavailable' });
+    renderAt(makeUser());
+
+    expect(await screen.findByText(/Unable to load your portal account right now/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No portal account was found/i)).not.toBeInTheDocument();
+
+    mocks.getEmployeePortalAccountByEmployeeNumber.mockResolvedValueOnce({ ok: false, kind: 'ambiguous_account' });
+    fireEvent.click(screen.getByRole('button', { name: 'go-profile' }));
+    fireEvent.click(screen.getByRole('button', { name: 'go-account' }));
+    expect(await screen.findByText(/Multiple portal accounts matched your employee number/i)).toBeInTheDocument();
+
+    // Renamed on another device: re-entry resolves the new remote username.
+    mocks.getEmployeePortalAccountByEmployeeNumber.mockResolvedValueOnce({
+      ok: true,
+      account: makeIdentity({ username: 'maria.elsewhere', updatedAt: '2026-11-20T09:00:00.000000+00:00' }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'go-profile' }));
+    fireEvent.click(screen.getByRole('button', { name: 'go-account' }));
+    await waitFor(() => expect(mocks.getEmployeePortalAccountByEmployeeNumber).toHaveBeenCalledTimes(3));
+
+    mocks.authenticateEmployeePortalAccount.mockResolvedValueOnce({
+      ok: true,
+      account: makeIdentity({ username: 'maria.elsewhere', updatedAt: '2026-11-20T09:00:00.000000+00:00' }),
+    });
+    const input = await screen.findByPlaceholderText('Enter your username');
+    await waitFor(() => expect(input).toBeEnabled());
+    submitUnlock('maria.elsewhere');
+    await screen.findByRole('heading', { name: 'Change Username' });
+    const shown = screen.getAllByDisplayValue('maria.elsewhere');
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown[0]).toBeDisabled();
+  });
+
+  it('rejects an unlock whose account has a blank employee identity', async () => {
+    renderAt(makeUser());
+    const input = await screen.findByPlaceholderText('Enter your username');
+    await waitFor(() => expect(input).toBeEnabled());
+
+    mocks.authenticateEmployeePortalAccount.mockResolvedValueOnce({
+      ok: true,
+      account: makeIdentity({ employee: makeUser({ employeeId: '   ' }) }),
+    });
+    submitUnlock();
+
+    expect(await screen.findByText(/don't match the account you're logged in as/i)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Change Username' })).not.toBeInTheDocument();
+  });
+
+  it('keeps retryable input after an explicit rejection and asks for reverification after an unconfirmed outcome', async () => {
+    renderAt(makeUser());
+    await unlock();
+
+    mocks.changeEmployeePortalUsername.mockResolvedValueOnce({
+      ok: false,
+      kind: 'username_taken',
+      error: 'That username is already taken. Pick a different one.',
+    });
+    fireEvent.change(screen.getByPlaceholderText('e.g. mariasantos'), { target: { value: 'maria.taken' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Username/i }));
+
+    expect(await screen.findByText('That username is already taken. Pick a different one.')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('e.g. mariasantos')).toHaveValue('maria.taken');
+
+    mocks.changeEmployeePortalPassword.mockResolvedValueOnce({
+      ok: false,
+      kind: 'unconfirmed',
+      error: 'We could not confirm whether your password change completed. Try signing in with your new password or check Account & Security before trying again.',
+    });
+    fireEvent.change(screen.getByLabelText(/Current Password/i), { target: { value: 'Current#Pass1' } });
+    fireEvent.change(screen.getByLabelText(/^New Password$/i), { target: { value: 'NextPass#99' } });
+    fireEvent.change(screen.getByLabelText(/Confirm New Password/i), { target: { value: 'NextPass#99' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Password/i }));
+
+    const unconfirmed = await screen.findByText(/could not confirm whether your password change completed/i);
+    expect(unconfirmed.textContent).not.toMatch(/failed|was not changed/i);
+    expect(screen.getByLabelText(/^New Password$/i)).toHaveValue('NextPass#99');
+    expect(screen.queryByText(/Password updated/i)).not.toBeInTheDocument();
+  });
+
+  it('does not let a stale unlock completion unlock the tab after leaving and re-entering it', async () => {
+    renderAt(makeUser());
+    const input = await screen.findByPlaceholderText('Enter your username');
+    await waitFor(() => expect(input).toBeEnabled());
+
+    const pendingAuth = deferred<any>();
+    mocks.authenticateEmployeePortalAccount.mockReturnValueOnce(pendingAuth.promise);
+    submitUnlock();
+
+    fireEvent.click(screen.getByRole('button', { name: 'go-profile' }));
+    fireEvent.click(screen.getByRole('button', { name: 'go-account' }));
+    await waitFor(() => expect(mocks.getEmployeePortalAccountByEmployeeNumber).toHaveBeenCalledTimes(2));
+
+    pendingAuth.resolve({ ok: true, account: makeIdentity() });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(screen.queryByRole('heading', { name: 'Change Username' })).not.toBeInTheDocument();
+    expect(await screen.findByPlaceholderText('Enter your username')).toBeInTheDocument();
+  });
+
+  it("keeps employee B's single-flight guard when A's stale save settles after switching employees", async () => {
+    const juan = makeUser({ employeeId: 'EMP-2026-002', fullName: 'Juan Dela Cruz' });
+    const juanIdentity = makeIdentity({ id: 'acct-juan-2', username: 'juan.delacruz', employee: juan });
+    mocks.getEmployeePortalAccountByEmployeeNumber.mockImplementation(async (employeeNumber: string) => ({
+      ok: true,
+      account: employeeNumber === 'EMP-2026-002' ? juanIdentity : makeIdentity(),
+    }));
+    mocks.authenticateEmployeePortalAccount.mockImplementation(async (username: string) => ({
+      ok: true,
+      account: username === 'juan.delacruz' ? juanIdentity : makeIdentity(),
+    }));
+
+    const { rerenderAs } = renderAt(makeUser());
+    await unlock();
+
+    const pendingA = deferred<any>();
+    mocks.changeEmployeePortalUsername.mockReturnValueOnce(pendingA.promise);
+    fireEvent.change(screen.getByPlaceholderText('e.g. mariasantos'), { target: { value: 'maria.late' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Username/i }));
+    expect(mocks.changeEmployeePortalUsername).toHaveBeenCalledTimes(1);
+
+    rerenderAs(juan);
+    const usernameInput = await screen.findByPlaceholderText('Enter your username');
+    await waitFor(() => expect(usernameInput).toBeEnabled());
+    submitUnlock('juan.delacruz');
+    await screen.findByRole('heading', { name: 'Change Username' });
+
+    const pendingB = deferred<any>();
+    mocks.changeEmployeePortalUsername.mockReturnValueOnce(pendingB.promise);
+    fireEvent.change(screen.getByPlaceholderText('e.g. mariasantos'), { target: { value: 'juan.first' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Username/i }));
+    expect(mocks.changeEmployeePortalUsername).toHaveBeenCalledTimes(2);
+
+    // A's stale completion settles while B's save is still pending.
+    pendingA.resolve({ ok: true, account: makeIdentity({ username: 'maria.late' }) });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Username/i }));
+    expect(mocks.changeEmployeePortalUsername).toHaveBeenCalledTimes(2);
   });
 });
