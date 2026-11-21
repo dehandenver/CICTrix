@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { ActionFeedback } from '../../components/action-feedback';
+import { ErrorBanner } from '../../components/ErrorBanner';
 import type {
   AddressParts,
   Employee,
@@ -49,6 +50,9 @@ import {
   listLdInterventions, saveLdInterventions,
   listReferences, saveReferences,
   validatePdsRows,
+  doesSnapshotMatchIntendedSave,
+  type PdsResult,
+  type PdsSectionSnapshot,
 } from '../../lib/api/personalDataSheet';
 
 const BRAND = { blue: '#363EE8', navy: '#040E6B', line: '#C8D1FF' };
@@ -232,13 +236,15 @@ const SelectField: React.FC<{
   value: string;
   onChange: (v: string) => void;
   options: readonly string[];
-}> = ({ label, value, onChange, options }) => (
+  disabled?: boolean;
+}> = ({ label, value, onChange, options, disabled = false }) => (
   <label className="block">
     <span className="mb-1 block text-xs font-semibold" style={{ color: BRAND.navy }}>{label}</span>
     <select
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-lg border bg-white px-3 py-2 text-sm focus:outline-none"
+      className="w-full rounded-lg border bg-white px-3 py-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
       style={{ borderColor: BRAND.line, color: BRAND.navy }}
     >
       <option value="">Select…</option>
@@ -265,22 +271,29 @@ const TextAreaField: React.FC<{
   onChange: (v: string) => void;
   rows?: number;
   placeholder?: string;
-}> = ({ label, value, onChange, rows = 4, placeholder }) => (
+  disabled?: boolean;
+}> = ({ label, value, onChange, rows = 4, placeholder, disabled = false }) => (
   <label className="block">
     <span className="mb-1 block text-xs font-semibold" style={{ color: BRAND.navy }}>{label}</span>
     <textarea
       rows={rows}
       value={value}
       placeholder={placeholder}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none"
+      className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
       style={{ borderColor: BRAND.line, color: BRAND.navy }}
     />
   </label>
 );
 
 /** Tri-state Yes/No toggle for a legal disclosure: unanswered (null) is not the same as "No". Clicking the selected option again clears it back to unanswered. */
-const YesNoField: React.FC<{ label: string; value: boolean | null; onChange: (v: boolean | null) => void }> = ({ label, value, onChange }) => (
+const YesNoField: React.FC<{
+  label: string;
+  value: boolean | null;
+  onChange: (v: boolean | null) => void;
+  disabled?: boolean;
+}> = ({ label, value, onChange, disabled = false }) => (
   <div>
     <span className="mb-1 block text-xs font-semibold" style={{ color: BRAND.navy }}>{label}</span>
     <div className="flex gap-2">
@@ -290,8 +303,9 @@ const YesNoField: React.FC<{ label: string; value: boolean | null; onChange: (v:
           <button
             key={text}
             type="button"
+            disabled={disabled}
             onClick={() => onChange(isSelected ? null : boolVal)}
-            className="rounded-md px-3 py-1.5 text-xs font-semibold"
+            className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             style={{
               border: isSelected ? `1.5px solid ${BRAND.blue}` : `1.5px solid ${BRAND.line}`,
               background: isSelected ? BRAND.blue : '#ffffff',
@@ -413,7 +427,13 @@ const TabNavBar: React.FC<{ activeTab: SubTab; onSelect: (t: SubTab) => void }> 
   );
 };
 
-const SaveBar: React.FC<{ saving: boolean; onSave: () => void; label: string; lastSaved?: string }> = ({ saving, onSave, label, lastSaved }) => (
+const SaveBar: React.FC<{
+  saving: boolean;
+  disabled?: boolean;
+  onSave: () => void;
+  label: string;
+  lastSaved?: string;
+}> = ({ saving, disabled = false, onSave, label, lastSaved }) => (
   <div className="flex items-center justify-between pt-1">
     {lastSaved ? (
       <p className="text-xs" style={{ color: BRAND.navy, opacity: 0.6 }}>
@@ -423,9 +443,9 @@ const SaveBar: React.FC<{ saving: boolean; onSave: () => void; label: string; la
     <button
       type="button"
       onClick={onSave}
-      disabled={saving}
+      disabled={saving || disabled}
       aria-busy={saving || undefined}
-      className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+      className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
       style={{ background: BRAND.blue }}
     >
       {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
@@ -452,6 +472,192 @@ const pickConfirmedFields = (
   return out as Partial<Employee>;
 };
 
+export type PdsSectionStatus = 'loading' | 'ready' | 'failed' | 'saving' | 'uncertain';
+
+type SectionState<Row> = {
+  status: PdsSectionStatus;
+  revision: string | null;
+  baselineRows: Row[];
+  baselineScalars?: Partial<Employee>;
+  draftRows: Row[];
+  loadError: string | null;
+  conflictError: string | null;
+  pendingConflictReload: boolean;
+  uncertainCheckFailed: boolean;
+  pendingSave?: {
+    preSaveRevision: string;
+    rows: Row[];
+    scalars?: Partial<Employee>;
+    submittedDraft: ScalarDraft;
+  };
+};
+
+type ListSectionStateMap = {
+  children: SectionState<EmployeeChild>;
+  education: SectionState<EmployeeEducation>;
+  eligibility: SectionState<EmployeeEligibility>;
+  workExperience: SectionState<EmployeeWorkExperience>;
+  voluntaryWork: SectionState<EmployeeVoluntaryWork>;
+  training: SectionState<EmployeeLdIntervention>;
+  references: SectionState<EmployeeReference>;
+};
+
+const LIST_SECTIONS: readonly PdsListSection[] = [
+  'children',
+  'education',
+  'eligibility',
+  'workExperience',
+  'voluntaryWork',
+  'training',
+  'references',
+];
+
+const SUB_TAB_TO_LIST_SECTION: Partial<Record<SubTab, PdsListSection>> = {
+  family: 'children',
+  education: 'education',
+  eligibility: 'eligibility',
+  workExperience: 'workExperience',
+  voluntaryWork: 'voluntaryWork',
+  training: 'training',
+  background: 'references',
+};
+
+const FAMILY_SCALAR_KEYS: ReadonlyArray<keyof ScalarDraft> = [
+  'spouseSurname', 'spouseFirstName', 'spouseMiddleName', 'spouseNameExtension',
+  'spouseOccupation', 'spouseEmployer', 'spouseBusinessAddress', 'spouseTelephone',
+  'fatherSurname', 'fatherFirstName', 'fatherMiddleName', 'fatherNameExtension',
+  'motherSurname', 'motherFirstName', 'motherMiddleName',
+];
+
+const BACKGROUND_SCALAR_KEYS: ReadonlyArray<keyof ScalarDraft> = [
+  'relatedThirdDegree', 'relatedFourthDegree', 'relatedDetails',
+  'adminOffenseGuilty', 'adminOffenseDetails',
+  'criminallyCharged', 'criminalChargeDetails', 'criminalCaseDateFiled', 'criminalCaseStatus',
+  'convictedOfCrime', 'convictedDetails',
+  'separatedFromService', 'separatedDetails',
+  'electionCandidate', 'electionCandidateDetails',
+  'resignedToCampaign', 'resignedToCampaignDetails',
+  'immigrantStatus', 'immigrantCountry',
+  'indigenousGroupMember', 'indigenousGroupSpecify',
+  'personWithDisability', 'pwdIdNumber',
+  'soloParent', 'soloParentIdNumber',
+  'govIdType', 'govIdNumber', 'govIdIssuedDatePlace',
+];
+
+const LIST_SECTION_META: Record<PdsListSection, {
+  subTab: SubTab;
+  label: string;
+  successMessage: string;
+  listKey: keyof LoadedLists;
+  scalarKeys?: ReadonlyArray<keyof ScalarDraft>;
+  read: (employeeId: string) => Promise<PdsResult<PdsSectionSnapshot<any>>>;
+  save: (
+    employeeId: string,
+    rows: any[],
+    revision: string,
+    scalarPatch?: Partial<Employee>,
+  ) => Promise<PdsResult<PdsSectionSnapshot<any>>>;
+}> = {
+  children: {
+    subTab: 'family',
+    label: 'Family Background',
+    successMessage: 'Family Background saved.',
+    listKey: 'children',
+    scalarKeys: FAMILY_SCALAR_KEYS,
+    read: listChildren,
+    save: saveChildren,
+  },
+  education: {
+    subTab: 'education',
+    label: 'Educational Background',
+    successMessage: 'Educational Background saved.',
+    listKey: 'education',
+    read: listEducation,
+    save: saveEducation,
+  },
+  eligibility: {
+    subTab: 'eligibility',
+    label: 'Civil Service Eligibility',
+    successMessage: 'Civil Service Eligibility saved.',
+    listKey: 'eligibility',
+    read: listEligibility,
+    save: saveEligibility,
+  },
+  workExperience: {
+    subTab: 'workExperience',
+    label: 'Work Experience',
+    successMessage: 'Work Experience saved.',
+    listKey: 'workExperience',
+    read: listWorkExperience,
+    save: saveWorkExperience,
+  },
+  voluntaryWork: {
+    subTab: 'voluntaryWork',
+    label: 'Voluntary Work',
+    successMessage: 'Voluntary Work saved.',
+    listKey: 'voluntaryWork',
+    read: listVoluntaryWork,
+    save: saveVoluntaryWork,
+  },
+  training: {
+    subTab: 'training',
+    label: 'Learning & Development history',
+    successMessage: 'Learning & Development history saved.',
+    listKey: 'ldInterventions',
+    read: listLdInterventions,
+    save: saveLdInterventions,
+  },
+  references: {
+    subTab: 'background',
+    label: 'Background Information',
+    successMessage: 'Background Information saved.',
+    listKey: 'references',
+    scalarKeys: BACKGROUND_SCALAR_KEYS,
+    read: listReferences,
+    save: saveReferences,
+  },
+};
+
+function createEmptySectionState<Row>(employeeId: string): SectionState<Row> {
+  if (!employeeId) {
+    return {
+      status: 'failed',
+      revision: null,
+      baselineRows: [],
+      draftRows: [],
+      loadError: 'Employee record is unavailable.',
+      conflictError: null,
+      pendingConflictReload: false,
+      uncertainCheckFailed: false,
+    };
+  }
+  return {
+    status: 'loading',
+    revision: null,
+    baselineRows: [],
+    draftRows: [],
+    loadError: null,
+    conflictError: null,
+    pendingConflictReload: false,
+    uncertainCheckFailed: false,
+  };
+}
+
+function createInitialListSections(employeeId: string): ListSectionStateMap {
+  return {
+    children: createEmptySectionState<EmployeeChild>(employeeId),
+    education: createEmptySectionState<EmployeeEducation>(employeeId),
+    eligibility: createEmptySectionState<EmployeeEligibility>(employeeId),
+    workExperience: createEmptySectionState<EmployeeWorkExperience>(employeeId),
+    voluntaryWork: createEmptySectionState<EmployeeVoluntaryWork>(employeeId),
+    training: createEmptySectionState<EmployeeLdIntervention>(employeeId),
+    references: createEmptySectionState<EmployeeReference>(employeeId),
+  };
+}
+
+const isMutationFrozen = (status: PdsSectionStatus): boolean =>
+  status === 'failed' || status === 'saving' || status === 'uncertain';
+
 export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile, onSaved }) => {
   const [activeTab, setActiveTab] = useState<SubTab>('personal');
   const [draft, setDraft] = useState<ScalarDraft>(getScalarDraft(profile));
@@ -459,19 +665,25 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const [permanent, setPermanent] = useState<AddressParts>(profile.permanent || emptyAddress());
   const [sameAsResidential, setSameAsResidential] = useState(false);
 
-  const [children, setChildren] = useState<EmployeeChild[]>(profile.children || []);
-  const [education, setEducation] = useState<EmployeeEducation[]>(buildEducationRows(profile.education || []));
-  const [eligibility, setEligibility] = useState<EmployeeEligibility[]>(profile.eligibility || []);
-  const [workExperience, setWorkExperience] = useState<EmployeeWorkExperience[]>(profile.workExperience || []);
-  const [voluntaryWork, setVoluntaryWork] = useState<EmployeeVoluntaryWork[]>(profile.voluntaryWork || []);
-  const [ldInterventions, setLdInterventions] = useState<EmployeeLdIntervention[]>(profile.ldInterventions || []);
-  const [references, setReferences] = useState<EmployeeReference[]>(profile.references || []);
-  const [revisions, setRevisions] = useState<Partial<Record<PdsListSection, string>>>({});
+  const [sections, setSections] = useState<ListSectionStateMap>(() =>
+    createInitialListSections(employeeId),
+  );
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
 
-  const [listsLoading, setListsLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const updateSection = <S extends PdsListSection>(
+    section: S,
+    updater: (prev: ListSectionStateMap[S]) => ListSectionStateMap[S],
+  ) => {
+    const nextSection = updater(sectionsRef.current[section]);
+    const nextMap = { ...sectionsRef.current, [section]: nextSection };
+    sectionsRef.current = nextMap;
+    setSections(nextMap);
+  };
+
+  const [scalarSaving, setScalarSaving] = useState(false);
+  const [saveErrors, setSaveErrors] = useState<Partial<Record<SubTab, string | null>>>({});
+  const [saveSuccesses, setSaveSuccesses] = useState<Partial<Record<SubTab, string | null>>>({});
   const [savedIds, setSavedIds] = useState<Set<SubTab>>(() => getInitiallySavedSections(profile, profile));
 
   // Which scalar inputs the employee has touched. A confirmed save or a new
@@ -487,9 +699,18 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const permanentRef = useRef(permanent);
   residentialRef.current = residential;
   permanentRef.current = permanent;
+  const loadSeqRef = useRef<Record<PdsListSection, number>>({
+    children: 0,
+    education: 0,
+    eligibility: 0,
+    workExperience: 0,
+    voluntaryWork: 0,
+    training: 0,
+    references: 0,
+  });
 
-  // A save response belongs to the employee and mount it started under. The
-  // generation is bumped during render, so a continuation cannot slip through
+  // A save or load response belongs to the employee and mount it started under.
+  // The generation is bumped during render, so a continuation cannot slip through
   // between an identity switch and its reset effect. A → B → A stays stale.
   const currentIdentity = useRef(identityKey);
   const identityGeneration = useRef(0);
@@ -514,6 +735,12 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const markSaved = (...ids: SubTab[]) =>
     setSavedIds((prev) => (ids.every((id) => prev.has(id)) ? prev : new Set([...prev, ...ids])));
 
+  const setTabError = (tab: SubTab, error: string | null) =>
+    setSaveErrors((prev) => ({ ...prev, [tab]: error }));
+
+  const setTabSuccess = (tab: SubTab, message: string | null) =>
+    setSaveSuccesses((prev) => ({ ...prev, [tab]: message }));
+
   // A different employee means nothing from the previous one may remain: clear
   // the lists, revisions, saved markers and dirty drafts before the new reads.
   useEffect(() => {
@@ -522,22 +749,18 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     dirtyScalarFields.current.clear();
     residentialDirty.current = false;
     permanentDirty.current = false;
+    for (const s of LIST_SECTIONS) loadSeqRef.current[s] += 1;
+    const resetMap = createInitialListSections(employeeId);
+    sectionsRef.current = resetMap;
+    setSections(resetMap);
     setDraft(getScalarDraft(profile));
     setResidential(profile.residential || emptyAddress());
     setPermanent(profile.permanent || emptyAddress());
     setSameAsResidential(false);
-    setChildren([]);
-    setEducation([]);
-    setEligibility([]);
-    setWorkExperience([]);
-    setVoluntaryWork([]);
-    setLdInterventions([]);
-    setReferences([]);
-    setRevisions({});
     setSavedIds(getInitiallySavedSections(profile, {}));
-    setSaveError(null);
-    setSaveSuccess(null);
-    setSaving(false);
+    setSaveErrors({});
+    setSaveSuccesses({});
+    setScalarSaving(false);
     // Identity is the trigger; profile is read only for the new initial values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identityKey]);
@@ -577,86 +800,206 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     markSaved(...getInitiallySavedSections(profile, {}));
   }, [profile]);
 
-  useEffect(() => {
-    if (!employeeId) return;
-    let cancelled = false;
-    setListsLoading(true);
-    void (async () => {
-      const [childrenRes, educationRes, eligibilityRes, workExperienceRes, voluntaryWorkRes, ldInterventionsRes, referencesRes] = await Promise.all([
-        listChildren(employeeId),
-        listEducation(employeeId),
-        listEligibility(employeeId),
-        listWorkExperience(employeeId),
-        listVoluntaryWork(employeeId),
-        listLdInterventions(employeeId),
-        listReferences(employeeId),
-      ]);
-      if (cancelled) return;
-      const nextRevisions: Partial<Record<PdsListSection, string>> = {};
-      if (childrenRes.ok !== false) {
-        setChildren(childrenRes.data.rows);
-        nextRevisions.children = childrenRes.data.revision;
+  const hydrateSectionScalars = (
+    section: PdsListSection,
+    scalars: Partial<Employee> | undefined,
+    overwriteDirty: boolean,
+  ) => {
+    const meta = LIST_SECTION_META[section];
+    if (!meta.scalarKeys || !scalars) return;
+    if (overwriteDirty) {
+      for (const key of meta.scalarKeys) dirtyScalarFields.current.delete(key);
+    }
+    if (Object.keys(scalars).length === 0) return;
+    const fresh = getScalarDraft(scalars as Employee);
+    setDraft((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of meta.scalarKeys!) {
+        if (!(key in scalars)) continue;
+        if (!overwriteDirty && dirtyScalarFields.current.has(key)) continue;
+        if (prev[key] !== fresh[key]) {
+          (next as Record<string, unknown>)[key] = fresh[key];
+          changed = true;
+        }
       }
-      if (educationRes.ok !== false) {
-        setEducation(buildEducationRows(educationRes.data.rows));
-        nextRevisions.education = educationRes.data.revision;
-      }
-      if (eligibilityRes.ok !== false) {
-        setEligibility(eligibilityRes.data.rows);
-        nextRevisions.eligibility = eligibilityRes.data.revision;
-      }
-      if (workExperienceRes.ok !== false) {
-        setWorkExperience(workExperienceRes.data.rows);
-        nextRevisions.workExperience = workExperienceRes.data.revision;
-      }
-      if (voluntaryWorkRes.ok !== false) {
-        setVoluntaryWork(voluntaryWorkRes.data.rows);
-        nextRevisions.voluntaryWork = voluntaryWorkRes.data.revision;
-      }
-      if (ldInterventionsRes.ok !== false) {
-        setLdInterventions(ldInterventionsRes.data.rows);
-        nextRevisions.training = ldInterventionsRes.data.revision;
-      }
-      if (referencesRes.ok !== false) {
-        setReferences(referencesRes.data.rows);
-        nextRevisions.references = referencesRes.data.revision;
-      }
-      setRevisions(nextRevisions);
-      markSaved(...getInitiallySavedSections({} as Employee, {
-        children: childrenRes.ok !== false ? childrenRes.data.rows : undefined,
-        education: educationRes.ok !== false ? educationRes.data.rows : undefined,
-        eligibility: eligibilityRes.ok !== false ? eligibilityRes.data.rows : undefined,
-        workExperience: workExperienceRes.ok !== false ? workExperienceRes.data.rows : undefined,
-        voluntaryWork: voluntaryWorkRes.ok !== false ? voluntaryWorkRes.data.rows : undefined,
-        ldInterventions: ldInterventionsRes.ok !== false ? ldInterventionsRes.data.rows : undefined,
-        references: referencesRes.ok !== false ? referencesRes.data.rows : undefined,
-      }));
+      return changed ? next : prev;
+    });
+  };
 
-      // Children and references reads also carry their section's scalar
-      // columns. Seed clean draft fields from that canonical snapshot so the
-      // form baseline matches what the paired save will compare against.
-      const canonicalScalars: Partial<Employee> = {
-        ...(childrenRes.ok !== false ? childrenRes.data.scalars : {}),
-        ...(referencesRes.ok !== false ? referencesRes.data.scalars : {}),
-      };
-      if (Object.keys(canonicalScalars).length > 0) {
-        const fresh = getScalarDraft(canonicalScalars as Employee);
-        setDraft((prev) => {
-          let changed = false;
-          const next = { ...prev };
-          for (const key of Object.keys(fresh) as Array<keyof ScalarDraft>) {
-            if (!(key in canonicalScalars) || dirtyScalarFields.current.has(key)) continue;
-            if (prev[key] !== fresh[key]) {
-              (next as Record<string, unknown>)[key] = fresh[key];
-              changed = true;
-            }
-          }
-          return changed ? next : prev;
-        });
+  const loadListSection = async <S extends PdsListSection>(
+    section: S,
+    mode: 'initial' | 'retry' | 'conflictReload' | 'reconcileUncertain',
+    isCancelled?: () => boolean,
+  ) => {
+    const meta = LIST_SECTION_META[section];
+    if (!employeeId) {
+      updateSection(section, (prev) => ({
+        ...prev,
+        status: 'failed',
+        revision: null,
+        loadError: 'Employee record is unavailable.',
+      }));
+      return;
+    }
+
+    loadSeqRef.current[section] += 1;
+    const seq = loadSeqRef.current[section];
+    const mutation = captureMutation();
+    const isConflictReload =
+      mode === 'conflictReload' ||
+      (mode === 'retry' && sectionsRef.current[section].pendingConflictReload);
+
+    if (mode !== 'reconcileUncertain') {
+      updateSection(section, (prev) => ({
+        ...prev,
+        status: 'loading',
+        loadError: null,
+        conflictError: null,
+        pendingConflictReload: isConflictReload,
+      }));
+      setTabError(meta.subTab, null);
+      setTabSuccess(meta.subTab, null);
+    }
+
+    const res = await meta.read(employeeId);
+    if (isCancelled?.() || !isCurrentMutation(mutation) || seq !== loadSeqRef.current[section]) {
+      return;
+    }
+
+    if (mode === 'reconcileUncertain') {
+      if (res.ok === false) {
+        updateSection(section, (prev) => ({
+          ...prev,
+          status: 'uncertain',
+          uncertainCheckFailed: true,
+        }));
+        return;
       }
-      setListsLoading(false);
-    })();
-    return () => { cancelled = true; };
+
+      const currentState = sectionsRef.current[section];
+      const pending = currentState.pendingSave;
+      const canonicalRows = res.data.rows;
+      const matched = pending
+        ? doesSnapshotMatchIntendedSave(section, pending.rows as never[], pending.scalars, res.data)
+        : false;
+
+      if (matched && pending) {
+        const nextDraftRows =
+          section === 'education'
+            ? buildEducationRows(canonicalRows as EmployeeEducation[])
+            : canonicalRows;
+        updateSection(section, (prev) => ({
+          ...prev,
+          status: 'ready',
+          revision: res.data.revision,
+          baselineRows: canonicalRows,
+          baselineScalars: res.data.scalars,
+          draftRows: nextDraftRows as ListSectionStateMap[S]['draftRows'],
+          loadError: null,
+          conflictError: null,
+          uncertainCheckFailed: false,
+          pendingSave: undefined,
+        }));
+        const confirmedScalars = res.data.scalars ?? {};
+        if (pending.scalars) {
+          applyConfirmedValues(confirmedScalars, pending.scalars, pending.submittedDraft);
+        }
+        onSaved(confirmedScalars);
+        markSaved(meta.subTab);
+        setTabError(meta.subTab, null);
+        setTabSuccess(meta.subTab, meta.successMessage);
+        return;
+      }
+
+      if (pending && res.data.revision === pending.preSaveRevision) {
+        updateSection(section, (prev) => ({
+          ...prev,
+          status: 'ready',
+          revision: res.data.revision,
+          baselineRows: canonicalRows,
+          baselineScalars: res.data.scalars,
+          loadError: null,
+          conflictError: null,
+          uncertainCheckFailed: false,
+          pendingSave: undefined,
+        }));
+        setTabError(
+          meta.subTab,
+          'Your previous save did not reach the server. Your unsaved edits are still here — review and save again.',
+        );
+        return;
+      }
+
+      updateSection(section, (prev) => ({
+        ...prev,
+        status: 'ready',
+        revision: res.data.revision,
+        baselineRows: canonicalRows,
+        baselineScalars: res.data.scalars,
+        loadError: null,
+        conflictError:
+          'This section changed on the server and differs from your unsaved draft. Reload it before saving again.',
+        uncertainCheckFailed: false,
+        pendingSave: undefined,
+      }));
+      return;
+    }
+
+    if (res.ok === false) {
+      updateSection(section, (prev) => ({
+        ...prev,
+        status: 'failed',
+        revision: null,
+        loadError: res.error || `Failed to load ${meta.label}.`,
+        conflictError: null,
+        pendingConflictReload: isConflictReload,
+      }));
+      return;
+    }
+
+    const canonicalRows = res.data.rows;
+    const nextDraftRows =
+      section === 'education'
+        ? buildEducationRows(canonicalRows as EmployeeEducation[])
+        : canonicalRows;
+    updateSection(section, (prev) => ({
+      ...prev,
+      status: 'ready',
+      revision: res.data.revision,
+      baselineRows: canonicalRows,
+      baselineScalars: res.data.scalars,
+      draftRows: nextDraftRows as ListSectionStateMap[S]['draftRows'],
+      loadError: null,
+      conflictError: null,
+      pendingConflictReload: false,
+      uncertainCheckFailed: false,
+      pendingSave: undefined,
+    }));
+    hydrateSectionScalars(section, res.data.scalars, isConflictReload);
+    markSaved(
+      ...getInitiallySavedSections((res.data.scalars ?? {}) as Employee, {
+        [meta.listKey]: canonicalRows,
+      }),
+    );
+  };
+
+  useEffect(() => {
+    if (!employeeId) {
+      const failedMap = createInitialListSections('');
+      sectionsRef.current = failedMap;
+      setSections(failedMap);
+      return;
+    }
+    let cancelled = false;
+    const isCancelled = () => cancelled;
+    for (const section of LIST_SECTIONS) {
+      void loadListSection(section, 'initial', isCancelled);
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeId]);
 
   const set = <K extends keyof ScalarDraft>(key: K, value: ScalarDraft[K]) => {
@@ -720,50 +1063,71 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     }
   };
 
-  const addChild = () => setChildren((prev) => [...prev, { fullName: '', dateOfBirth: '' }]);
-  const removeChild = (i: number) => setChildren((prev) => prev.filter((_, idx) => idx !== i));
+  const updateDraftRows = <S extends PdsListSection>(
+    section: S,
+    updater: (rows: ListSectionStateMap[S]['draftRows']) => ListSectionStateMap[S]['draftRows'],
+  ) =>
+    updateSection(section, (prev) => ({
+      ...prev,
+      draftRows: updater(prev.draftRows),
+    }));
+
+  const addChild = () =>
+    updateDraftRows('children', (prev) => [...prev, { fullName: '', dateOfBirth: '' }]);
+  const removeChild = (i: number) =>
+    updateDraftRows('children', (prev) => prev.filter((_, idx) => idx !== i));
   const updateChild = (i: number, patch: Partial<EmployeeChild>) =>
-    setChildren((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+    updateDraftRows('children', (prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
 
   const updateEducation = (i: number, patch: Partial<EmployeeEducation>) =>
-    setEducation((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    updateDraftRows('education', (prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const addEligibility = () => setEligibility((prev) => [...prev, { eligibilityName: '' }]);
-  const removeEligibility = (i: number) => setEligibility((prev) => prev.filter((_, idx) => idx !== i));
+  const addEligibility = () =>
+    updateDraftRows('eligibility', (prev) => [...prev, { eligibilityName: '' }]);
+  const removeEligibility = (i: number) =>
+    updateDraftRows('eligibility', (prev) => prev.filter((_, idx) => idx !== i));
   const updateEligibility = (i: number, patch: Partial<EmployeeEligibility>) =>
-    setEligibility((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    updateDraftRows('eligibility', (prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const addWorkExperience = () => setWorkExperience((prev) => [...prev, { positionTitle: '' }]);
-  const removeWorkExperience = (i: number) => setWorkExperience((prev) => prev.filter((_, idx) => idx !== i));
+  const addWorkExperience = () =>
+    updateDraftRows('workExperience', (prev) => [...prev, { positionTitle: '' }]);
+  const removeWorkExperience = (i: number) =>
+    updateDraftRows('workExperience', (prev) => prev.filter((_, idx) => idx !== i));
   const updateWorkExperience = (i: number, patch: Partial<EmployeeWorkExperience>) =>
-    setWorkExperience((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    updateDraftRows('workExperience', (prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const addVoluntaryWork = () => setVoluntaryWork((prev) => [...prev, { orgNameAddress: '' }]);
-  const removeVoluntaryWork = (i: number) => setVoluntaryWork((prev) => prev.filter((_, idx) => idx !== i));
+  const addVoluntaryWork = () =>
+    updateDraftRows('voluntaryWork', (prev) => [...prev, { orgNameAddress: '' }]);
+  const removeVoluntaryWork = (i: number) =>
+    updateDraftRows('voluntaryWork', (prev) => prev.filter((_, idx) => idx !== i));
   const updateVoluntaryWork = (i: number, patch: Partial<EmployeeVoluntaryWork>) =>
-    setVoluntaryWork((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    updateDraftRows('voluntaryWork', (prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const addLdIntervention = () => setLdInterventions((prev) => [...prev, { title: '' }]);
-  const removeLdIntervention = (i: number) => setLdInterventions((prev) => prev.filter((_, idx) => idx !== i));
+  const addLdIntervention = () =>
+    updateDraftRows('training', (prev) => [...prev, { title: '' }]);
+  const removeLdIntervention = (i: number) =>
+    updateDraftRows('training', (prev) => prev.filter((_, idx) => idx !== i));
   const updateLdIntervention = (i: number, patch: Partial<EmployeeLdIntervention>) =>
-    setLdInterventions((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    updateDraftRows('training', (prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const addReference = () => setReferences((prev) => [...prev, { name: '' }]);
-  const removeReference = (i: number) => setReferences((prev) => prev.filter((_, idx) => idx !== i));
+  const addReference = () =>
+    updateDraftRows('references', (prev) => [...prev, { name: '' }]);
+  const removeReference = (i: number) =>
+    updateDraftRows('references', (prev) => prev.filter((_, idx) => idx !== i));
   const updateReference = (i: number, patch: Partial<EmployeeReference>) =>
-    setReferences((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    updateDraftRows('references', (prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
   const selectTab = (tab: SubTab) => {
     setActiveTab(tab);
-    setSaveError(null);
-    setSaveSuccess(null);
+    setTabError(tab, null);
+    setTabSuccess(tab, null);
   };
 
   const savePersonalInfo = async () => {
     const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
+    setScalarSaving(true);
+    setTabError('personal', null);
+    setTabSuccess('personal', null);
 
     const effectivePermanent = sameAsResidential ? residential : permanent;
 
@@ -800,32 +1164,129 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     const res = await patchPortalEmployee(employeeId, scalarPatch);
     if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Personal Information. Please try again.');
-      setSaving(false);
+      setTabError('personal', res.error ?? 'Failed to save Personal Information. Please try again.');
+      setScalarSaving(false);
       return;
     }
 
     applyConfirmedValues(res.data, scalarPatch, submittedDraft, submittedAddresses);
     onSaved(pickConfirmedFields(res.data, scalarPatch));
-    setSaveSuccess('Personal Information saved.');
+    setTabSuccess('personal', 'Personal Information saved.');
     markSaved('personal');
-    setSaving(false);
+    setScalarSaving(false);
   };
 
-  const saveFamilyBackground = async () => {
-    const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
+  const saveListSection = async <S extends PdsListSection>(
+    section: S,
+    scalarPatch?: Partial<Employee>,
+  ) => {
+    const meta = LIST_SECTION_META[section];
+    const current = sectionsRef.current[section];
 
-    const childIssues = validatePdsRows('children', children);
-    if (childIssues.length > 0) {
-      setSaveError(describePdsIssues(childIssues));
-      setSaving(false);
+    setTabError(meta.subTab, null);
+    setTabSuccess(meta.subTab, null);
+
+    if (!employeeId || current.status === 'failed' || current.status === 'saving' || current.status === 'uncertain' || current.conflictError) {
       return;
     }
 
-    const scalarPatch: Partial<Employee> = {
+    if (current.status !== 'ready' || !current.revision) {
+      setTabError(meta.subTab, `Reload ${meta.label} before saving.`);
+      return;
+    }
+
+    const issues = validatePdsRows(section, current.draftRows as never[]);
+    if (issues.length > 0) {
+      setTabError(meta.subTab, describePdsIssues(issues));
+      return;
+    }
+
+    const mutation = captureMutation();
+    const preSaveRevision = current.revision;
+    const intendedRows = current.draftRows;
+    const submittedDraft = { ...draft };
+
+    updateSection(section, (prev) => ({
+      ...prev,
+      status: 'saving',
+      conflictError: null,
+    }));
+
+    const res =
+      scalarPatch !== undefined
+        ? await meta.save(employeeId, intendedRows, preSaveRevision, scalarPatch)
+        : await meta.save(employeeId, intendedRows, preSaveRevision);
+
+    if (!isCurrentMutation(mutation)) return;
+
+    if (res.ok === false) {
+      if (res.kind === 'conflict') {
+        updateSection(section, (prev) => ({
+          ...prev,
+          status: 'ready',
+          conflictError:
+            res.error ?? 'This section changed since it was loaded. Reload it before saving again.',
+        }));
+        return;
+      }
+
+      if (res.kind === 'uncertain') {
+        updateSection(section, (prev) => ({
+          ...prev,
+          status: 'uncertain',
+          uncertainCheckFailed: false,
+          pendingSave: {
+            preSaveRevision,
+            rows: intendedRows,
+            scalars: scalarPatch,
+            submittedDraft,
+          },
+        }));
+        return;
+      }
+
+      updateSection(section, (prev) => ({
+        ...prev,
+        status: 'ready',
+      }));
+      setTabError(
+        meta.subTab,
+        res.fieldIssues?.length
+          ? describePdsIssues(res.fieldIssues)
+          : res.error ?? `Failed to save ${meta.label}. Please try again.`,
+      );
+      return;
+    }
+
+    const canonicalRows = res.data.rows;
+    const nextDraftRows =
+      section === 'education'
+        ? buildEducationRows(canonicalRows as EmployeeEducation[])
+        : canonicalRows;
+    updateSection(section, (prev) => ({
+      ...prev,
+      status: 'ready',
+      revision: res.data.revision,
+      baselineRows: canonicalRows,
+      baselineScalars: res.data.scalars,
+      draftRows: nextDraftRows as ListSectionStateMap[S]['draftRows'],
+      loadError: null,
+      conflictError: null,
+      uncertainCheckFailed: false,
+      pendingSave: undefined,
+    }));
+
+    const confirmedScalars = res.data.scalars ?? {};
+    if (scalarPatch !== undefined) {
+      applyConfirmedValues(confirmedScalars, scalarPatch, submittedDraft);
+    }
+    onSaved(confirmedScalars);
+    setTabSuccess(meta.subTab, meta.successMessage);
+    markSaved(meta.subTab);
+  };
+
+  const saveFamilyBackground = () =>
+    saveListSection('children', {
       spouseSurname: draft.spouseSurname.trim(),
       spouseFirstName: draft.spouseFirstName.trim(),
       spouseMiddleName: draft.spouseMiddleName.trim(),
@@ -841,243 +1302,13 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       motherSurname: draft.motherSurname.trim(),
       motherFirstName: draft.motherFirstName.trim(),
       motherMiddleName: draft.motherMiddleName.trim(),
-    };
-
-    const revision = revisions.children;
-    if (!revision) {
-      setSaveError('Reload Family Background before saving.');
-      setSaving(false);
-      return;
-    }
-
-    const submittedDraft = { ...draft };
-    const res = await saveChildren(employeeId, children, revision, scalarPatch);
-    if (!isCurrentMutation(mutation)) return;
-    if (res.ok === false) {
-      setSaveError(
-        res.fieldIssues?.length
-          ? describePdsIssues(res.fieldIssues)
-          : res.error ?? 'Failed to save Family Background. Please try again.',
-      );
-      setSaving(false);
-      return;
-    }
-
-    const confirmedScalars = res.data.scalars ?? {};
-    setChildren(res.data.rows);
-    setRevisions((prev) => ({ ...prev, children: res.data.revision }));
-    applyConfirmedValues(confirmedScalars, scalarPatch, submittedDraft);
-    onSaved(confirmedScalars);
-    setSaveSuccess('Family Background saved.');
-    markSaved('family');
-    setSaving(false);
-  };
-
-  const saveEducationalBackground = async () => {
-    const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    const issues = validatePdsRows('education', education);
-    if (issues.length > 0) {
-      setSaveError(describePdsIssues(issues));
-      setSaving(false);
-      return;
-    }
-
-    const revision = revisions.education;
-    if (!revision) {
-      setSaveError('Reload Educational Background before saving.');
-      setSaving(false);
-      return;
-    }
-
-    const res = await saveEducation(employeeId, education, revision);
-    if (!isCurrentMutation(mutation)) return;
-    if (res.ok === false) {
-      setSaveError(
-        res.fieldIssues?.length
-          ? describePdsIssues(res.fieldIssues)
-          : res.error ?? 'Failed to save Educational Background. Please try again.',
-      );
-      setSaving(false);
-      return;
-    }
-
-    setEducation(buildEducationRows(res.data.rows));
-    setRevisions((prev) => ({ ...prev, education: res.data.revision }));
-    onSaved(res.data.scalars ?? {});
-    setSaveSuccess('Educational Background saved.');
-    markSaved('education');
-    setSaving(false);
-  };
-
-  const saveEligibilitySection = async () => {
-    const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    const issues = validatePdsRows('eligibility', eligibility);
-    if (issues.length > 0) {
-      setSaveError(describePdsIssues(issues));
-      setSaving(false);
-      return;
-    }
-
-    const revision = revisions.eligibility;
-    if (!revision) {
-      setSaveError('Reload Civil Service Eligibility before saving.');
-      setSaving(false);
-      return;
-    }
-
-    const res = await saveEligibility(employeeId, eligibility, revision);
-    if (!isCurrentMutation(mutation)) return;
-    if (res.ok === false) {
-      setSaveError(
-        res.fieldIssues?.length
-          ? describePdsIssues(res.fieldIssues)
-          : res.error ?? 'Failed to save Civil Service Eligibility. Please try again.',
-      );
-      setSaving(false);
-      return;
-    }
-
-    setEligibility(res.data.rows);
-    setRevisions((prev) => ({ ...prev, eligibility: res.data.revision }));
-    onSaved(res.data.scalars ?? {});
-    setSaveSuccess('Civil Service Eligibility saved.');
-    markSaved('eligibility');
-    setSaving(false);
-  };
-
-  const saveWorkExperienceSection = async () => {
-    const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    const issues = validatePdsRows('workExperience', workExperience);
-    if (issues.length > 0) {
-      setSaveError(describePdsIssues(issues));
-      setSaving(false);
-      return;
-    }
-
-    const revision = revisions.workExperience;
-    if (!revision) {
-      setSaveError('Reload Work Experience before saving.');
-      setSaving(false);
-      return;
-    }
-
-    const res = await saveWorkExperience(employeeId, workExperience, revision);
-    if (!isCurrentMutation(mutation)) return;
-    if (res.ok === false) {
-      setSaveError(
-        res.fieldIssues?.length
-          ? describePdsIssues(res.fieldIssues)
-          : res.error ?? 'Failed to save Work Experience. Please try again.',
-      );
-      setSaving(false);
-      return;
-    }
-
-    setWorkExperience(res.data.rows);
-    setRevisions((prev) => ({ ...prev, workExperience: res.data.revision }));
-    onSaved(res.data.scalars ?? {});
-    setSaveSuccess('Work Experience saved.');
-    markSaved('workExperience');
-    setSaving(false);
-  };
-
-  const saveVoluntaryWorkSection = async () => {
-    const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    const issues = validatePdsRows('voluntaryWork', voluntaryWork);
-    if (issues.length > 0) {
-      setSaveError(describePdsIssues(issues));
-      setSaving(false);
-      return;
-    }
-
-    const revision = revisions.voluntaryWork;
-    if (!revision) {
-      setSaveError('Reload Voluntary Work before saving.');
-      setSaving(false);
-      return;
-    }
-
-    const res = await saveVoluntaryWork(employeeId, voluntaryWork, revision);
-    if (!isCurrentMutation(mutation)) return;
-    if (res.ok === false) {
-      setSaveError(
-        res.fieldIssues?.length
-          ? describePdsIssues(res.fieldIssues)
-          : res.error ?? 'Failed to save Voluntary Work. Please try again.',
-      );
-      setSaving(false);
-      return;
-    }
-
-    setVoluntaryWork(res.data.rows);
-    setRevisions((prev) => ({ ...prev, voluntaryWork: res.data.revision }));
-    onSaved(res.data.scalars ?? {});
-    setSaveSuccess('Voluntary Work saved.');
-    markSaved('voluntaryWork');
-    setSaving(false);
-  };
-
-  const saveLdInterventionsSection = async () => {
-    const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    const issues = validatePdsRows('training', ldInterventions);
-    if (issues.length > 0) {
-      setSaveError(describePdsIssues(issues));
-      setSaving(false);
-      return;
-    }
-
-    const revision = revisions.training;
-    if (!revision) {
-      setSaveError('Reload Learning & Development history before saving.');
-      setSaving(false);
-      return;
-    }
-
-    const res = await saveLdInterventions(employeeId, ldInterventions, revision);
-    if (!isCurrentMutation(mutation)) return;
-    if (res.ok === false) {
-      setSaveError(
-        res.fieldIssues?.length
-          ? describePdsIssues(res.fieldIssues)
-          : res.error ?? 'Failed to save Learning & Development history. Please try again.',
-      );
-      setSaving(false);
-      return;
-    }
-
-    setLdInterventions(res.data.rows);
-    setRevisions((prev) => ({ ...prev, training: res.data.revision }));
-    onSaved(res.data.scalars ?? {});
-    setSaveSuccess('Learning & Development history saved.');
-    markSaved('training');
-    setSaving(false);
-  };
+    });
 
   const saveOtherInfoSection = async () => {
     const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
+    setScalarSaving(true);
+    setTabError('otherInfo', null);
+    setTabSuccess('otherInfo', null);
 
     const scalarPatch: Partial<Employee> = {
       specialSkillsHobbies: draft.specialSkillsHobbies.trim(),
@@ -1089,32 +1320,20 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
     const res = await patchPortalEmployee(employeeId, scalarPatch);
     if (!isCurrentMutation(mutation)) return;
     if (res.ok === false) {
-      setSaveError(res.error ?? 'Failed to save Other Information. Please try again.');
-      setSaving(false);
+      setTabError('otherInfo', res.error ?? 'Failed to save Other Information. Please try again.');
+      setScalarSaving(false);
       return;
     }
 
     applyConfirmedValues(res.data, scalarPatch, submittedDraft);
     onSaved(pickConfirmedFields(res.data, scalarPatch));
-    setSaveSuccess('Other Information saved.');
+    setTabSuccess('otherInfo', 'Other Information saved.');
     markSaved('otherInfo');
-    setSaving(false);
+    setScalarSaving(false);
   };
 
-  const saveBackgroundSection = async () => {
-    const mutation = captureMutation();
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    const referenceIssues = validatePdsRows('references', references);
-    if (referenceIssues.length > 0) {
-      setSaveError(describePdsIssues(referenceIssues));
-      setSaving(false);
-      return;
-    }
-
-    const scalarPatch: Partial<Employee> = {
+  const saveBackgroundSection = () =>
+    saveListSection('references', {
       relatedThirdDegree: draft.relatedThirdDegree,
       relatedFourthDegree: draft.relatedFourthDegree,
       relatedDetails: draft.relatedDetails.trim(),
@@ -1143,54 +1362,90 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       govIdType: draft.govIdType.trim(),
       govIdNumber: draft.govIdNumber.trim(),
       govIdIssuedDatePlace: draft.govIdIssuedDatePlace.trim(),
-    };
+    });
 
-    const revision = revisions.references;
-    if (!revision) {
-      setSaveError('Reload Background Information before saving.');
-      setSaving(false);
-      return;
+  const visibleSavedIds = new Set(savedIds);
+  for (const section of LIST_SECTIONS) {
+    const status = sections[section].status;
+    if (status === 'failed' || status === 'uncertain') {
+      visibleSavedIds.delete(LIST_SECTION_META[section].subTab);
     }
+  }
 
-    const submittedDraft = { ...draft };
-    const res = await saveReferences(employeeId, references, revision, scalarPatch);
-    if (!isCurrentMutation(mutation)) return;
-    if (res.ok === false) {
-      setSaveError(
-        res.fieldIssues?.length
-          ? describePdsIssues(res.fieldIssues)
-          : res.error ?? 'Failed to save Background Information. Please try again.',
-      );
-      setSaving(false);
-      return;
-    }
+  const activeListSection = SUB_TAB_TO_LIST_SECTION[activeTab];
+  const activeListState = activeListSection ? sections[activeListSection] : undefined;
+  const activeMeta = activeListSection ? LIST_SECTION_META[activeListSection] : undefined;
+  const activeSaveError = saveErrors[activeTab] ?? null;
+  const activeSaveSuccess = saveSuccesses[activeTab] ?? null;
 
-    const confirmedScalars = res.data.scalars ?? {};
-    setReferences(res.data.rows);
-    setRevisions((prev) => ({ ...prev, references: res.data.revision }));
-    applyConfirmedValues(confirmedScalars, scalarPatch, submittedDraft);
-    onSaved(confirmedScalars);
-    setSaveSuccess('Background Information saved.');
-    markSaved('background');
-    setSaving(false);
+  const children = sections.children.draftRows;
+  const education = sections.education.draftRows;
+  const eligibility = sections.eligibility.draftRows;
+  const workExperience = sections.workExperience.draftRows;
+  const voluntaryWork = sections.voluntaryWork.draftRows;
+  const ldInterventions = sections.training.draftRows;
+  const references = sections.references.draftRows;
+
+  const familyFrozen = isMutationFrozen(sections.children.status);
+  const educationFrozen = isMutationFrozen(sections.education.status);
+  const eligibilityFrozen = isMutationFrozen(sections.eligibility.status);
+  const workFrozen = isMutationFrozen(sections.workExperience.status);
+  const voluntaryFrozen = isMutationFrozen(sections.voluntaryWork.status);
+  const trainingFrozen = isMutationFrozen(sections.training.status);
+  const backgroundFrozen = isMutationFrozen(sections.references.status);
+
+  const isListSaveDisabled = (section: PdsListSection): boolean => {
+    const state = sections[section];
+    return isMutationFrozen(state.status) || Boolean(state.conflictError);
   };
 
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <PdsStepList steps={SUB_TABS} activeId={activeTab} savedIds={savedIds} onSelect={selectTab} />
+        <PdsStepList steps={SUB_TABS} activeId={activeTab} savedIds={visibleSavedIds} onSelect={selectTab} />
         <div className="min-w-0 flex-1 space-y-5">
 
-      {saveError && (
-        <ActionFeedback
-          title="We couldn't save this section."
-          message={saveError}
-          nextStep="Check the marked fields and your connection, then save again."
-          onDismiss={() => setSaveError(null)}
+      {activeListSection && activeListState && activeMeta && activeListState.status === 'failed' && (
+        <ErrorBanner
+          error={activeListState.loadError}
+          action={`load ${activeMeta.label}`}
+          onRetry={() => void loadListSection(activeListSection, 'retry')}
         />
       )}
-      {saveSuccess && (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">{saveSuccess}</p>
+      {activeListSection && activeListState && activeMeta && activeListState.status === 'uncertain' && (
+        <ActionFeedback
+          tone="warning"
+          title={`We couldn't confirm whether ${activeMeta.label} saved.`}
+          message={
+            activeListState.uncertainCheckFailed
+              ? "We still couldn't reach the server to check the saved records. Your edits are kept here."
+              : 'The connection dropped before the server responded. Your changes may or may not have been saved.'
+          }
+          nextStep="Check the latest saved records before making more changes."
+          onRetry={() => void loadListSection(activeListSection, 'reconcileUncertain')}
+          retryLabel={activeListState.uncertainCheckFailed ? 'Retry check' : 'Check saved status'}
+        />
+      )}
+      {activeListSection && activeListState && activeMeta && activeListState.status !== 'failed' && activeListState.status !== 'uncertain' && activeListState.conflictError && (
+        <ActionFeedback
+          tone="error"
+          title={`We couldn't save ${activeMeta.label}.`}
+          message={activeListState.conflictError}
+          nextStep="Reload the latest saved records before saving again."
+          onRetry={() => void loadListSection(activeListSection, 'conflictReload')}
+          retryLabel="Reload"
+        />
+      )}
+      {(!activeListState || (activeListState.status !== 'failed' && activeListState.status !== 'uncertain' && !activeListState.conflictError)) && activeSaveError && (
+        <ActionFeedback
+          title="We couldn't save this section."
+          message={activeSaveError}
+          nextStep="Check the marked fields and your connection, then save again."
+          onDismiss={() => setTabError(activeTab, null)}
+        />
+      )}
+      {activeSaveSuccess && (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">{activeSaveSuccess}</p>
       )}
 
       {activeTab === 'personal' && (
@@ -1252,7 +1507,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         </div>
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void savePersonalInfo()} label="Save Personal Information" lastSaved={profile.pdsUpdatedAt} />
+        <SaveBar saving={scalarSaving} onSave={() => void savePersonalInfo()} label="Save Personal Information" lastSaved={profile.pdsUpdatedAt} />
       </SectionCard>
       )}
 
@@ -1261,16 +1516,16 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <div>
           <h3 className="mb-2 text-sm font-bold" style={{ color: BRAND.navy }}>Spouse</h3>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <Field label="Surname" value={draft.spouseSurname} onChange={(v) => set('spouseSurname', v)} />
-            <Field label="First Name" value={draft.spouseFirstName} onChange={(v) => set('spouseFirstName', v)} />
-            <Field label="Middle Name" value={draft.spouseMiddleName} onChange={(v) => set('spouseMiddleName', v)} />
-            <Field label="Name Extension" value={draft.spouseNameExtension} onChange={(v) => set('spouseNameExtension', v)} />
+            <Field label="Surname" value={draft.spouseSurname} disabled={familyFrozen} onChange={(v) => set('spouseSurname', v)} />
+            <Field label="First Name" value={draft.spouseFirstName} disabled={familyFrozen} onChange={(v) => set('spouseFirstName', v)} />
+            <Field label="Middle Name" value={draft.spouseMiddleName} disabled={familyFrozen} onChange={(v) => set('spouseMiddleName', v)} />
+            <Field label="Name Extension" value={draft.spouseNameExtension} disabled={familyFrozen} onChange={(v) => set('spouseNameExtension', v)} />
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-            <Field label="Occupation" value={draft.spouseOccupation} onChange={(v) => set('spouseOccupation', v)} />
-            <Field label="Employer/Business Name" value={draft.spouseEmployer} onChange={(v) => set('spouseEmployer', v)} />
-            <Field label="Business Address" value={draft.spouseBusinessAddress} onChange={(v) => set('spouseBusinessAddress', v)} />
-            <Field label="Telephone No." value={draft.spouseTelephone} onChange={(v) => set('spouseTelephone', v)} />
+            <Field label="Occupation" value={draft.spouseOccupation} disabled={familyFrozen} onChange={(v) => set('spouseOccupation', v)} />
+            <Field label="Employer/Business Name" value={draft.spouseEmployer} disabled={familyFrozen} onChange={(v) => set('spouseEmployer', v)} />
+            <Field label="Business Address" value={draft.spouseBusinessAddress} disabled={familyFrozen} onChange={(v) => set('spouseBusinessAddress', v)} />
+            <Field label="Telephone No." value={draft.spouseTelephone} disabled={familyFrozen} onChange={(v) => set('spouseTelephone', v)} />
           </div>
         </div>
 
@@ -1279,25 +1534,30 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             <h3 className="text-sm font-bold" style={{ color: BRAND.navy }}>Children</h3>
             <button
               type="button"
+              disabled={familyFrozen}
               onClick={addChild}
-              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
+              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
             >
               <Plus className="h-3 w-3" /> Add child
             </button>
           </div>
-          {children.length === 0 && (
+          {sections.children.status === 'loading' && (
+            <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
+          )}
+          {sections.children.status === 'ready' && children.length === 0 && (
             <p className="text-xs italic" style={{ color: BRAND.navy, opacity: 0.6 }}>No children on record.</p>
           )}
           <div className="space-y-2">
             {children.map((child, i) => (
               <div key={child.id ?? i} className="grid grid-cols-1 items-end gap-3 md:grid-cols-[1fr_180px_auto]">
-                <Field label="Full Name" value={child.fullName} onChange={(v) => updateChild(i, { fullName: v })} />
-                <Field label="Date of Birth" type="date" value={child.dateOfBirth || ''} onChange={(v) => updateChild(i, { dateOfBirth: v })} />
+                <Field label="Full Name" value={child.fullName} disabled={familyFrozen} onChange={(v) => updateChild(i, { fullName: v })} />
+                <Field label="Date of Birth" type="date" value={child.dateOfBirth || ''} disabled={familyFrozen} onChange={(v) => updateChild(i, { dateOfBirth: v })} />
                 <button
                   type="button"
+                  disabled={familyFrozen}
                   onClick={() => removeChild(i)}
-                  className="inline-flex h-9 items-center justify-center rounded-md border px-2 text-red-600"
+                  className="inline-flex h-9 items-center justify-center rounded-md border px-2 text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ borderColor: BRAND.line }}
                   aria-label="Remove child"
                 >
@@ -1311,46 +1571,47 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <div>
           <h3 className="mb-2 text-sm font-bold" style={{ color: BRAND.navy }}>Father</h3>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <Field label="Surname" value={draft.fatherSurname} onChange={(v) => set('fatherSurname', v)} />
-            <Field label="First Name" value={draft.fatherFirstName} onChange={(v) => set('fatherFirstName', v)} />
-            <Field label="Middle Name" value={draft.fatherMiddleName} onChange={(v) => set('fatherMiddleName', v)} />
-            <Field label="Name Extension" value={draft.fatherNameExtension} onChange={(v) => set('fatherNameExtension', v)} />
+            <Field label="Surname" value={draft.fatherSurname} disabled={familyFrozen} onChange={(v) => set('fatherSurname', v)} />
+            <Field label="First Name" value={draft.fatherFirstName} disabled={familyFrozen} onChange={(v) => set('fatherFirstName', v)} />
+            <Field label="Middle Name" value={draft.fatherMiddleName} disabled={familyFrozen} onChange={(v) => set('fatherMiddleName', v)} />
+            <Field label="Name Extension" value={draft.fatherNameExtension} disabled={familyFrozen} onChange={(v) => set('fatherNameExtension', v)} />
           </div>
         </div>
 
         <div>
           <h3 className="mb-2 text-sm font-bold" style={{ color: BRAND.navy }}>Mother's Maiden Name</h3>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <Field label="Surname" value={draft.motherSurname} onChange={(v) => set('motherSurname', v)} />
-            <Field label="First Name" value={draft.motherFirstName} onChange={(v) => set('motherFirstName', v)} />
-            <Field label="Middle Name" value={draft.motherMiddleName} onChange={(v) => set('motherMiddleName', v)} />
+            <Field label="Surname" value={draft.motherSurname} disabled={familyFrozen} onChange={(v) => set('motherSurname', v)} />
+            <Field label="First Name" value={draft.motherFirstName} disabled={familyFrozen} onChange={(v) => set('motherFirstName', v)} />
+            <Field label="Middle Name" value={draft.motherMiddleName} disabled={familyFrozen} onChange={(v) => set('motherMiddleName', v)} />
           </div>
         </div>
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void saveFamilyBackground()} label="Save Family Background" />
+        <SaveBar saving={sections.children.status === 'saving'} disabled={isListSaveDisabled('children')} onSave={() => void saveFamilyBackground()} label="Save Family Background" />
       </SectionCard>
       )}
 
       {activeTab === 'education' && (
       <SectionCard title="III. Educational Background" description="Elementary through Doctorate.">
-        {listsLoading ? (
+        {sections.education.status === 'loading' && (
           <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
-        ) : (
+        )}
+        {sections.education.status !== 'loading' && education.length > 0 && (
           <div className="space-y-4">
             {education.map((row, i) => (
               <div key={row.id ?? `${row.level}-${i}`} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
                 <p className="mb-2 text-xs font-bold uppercase tracking-wide" style={{ color: BRAND.blue }}>{EDUCATION_LEVEL_LABELS[row.level] ?? row.level}</p>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <Field label="Name of School" value={row.school || ''} onChange={(v) => updateEducation(i, { school: v })} />
-                  <Field label="Basic Education/Degree/Course" value={row.degree || ''} onChange={(v) => updateEducation(i, { degree: v })} />
-                  <Field label="Units Earned (if not graduated)" type="number" value={row.highestLevelUnits != null ? String(row.highestLevelUnits) : ''} onChange={(v) => updateEducation(i, { highestLevelUnits: v ? Number(v) : null })} />
+                  <Field label="Name of School" value={row.school || ''} disabled={educationFrozen} onChange={(v) => updateEducation(i, { school: v })} />
+                  <Field label="Basic Education/Degree/Course" value={row.degree || ''} disabled={educationFrozen} onChange={(v) => updateEducation(i, { degree: v })} />
+                  <Field label="Units Earned (if not graduated)" type="number" value={row.highestLevelUnits != null ? String(row.highestLevelUnits) : ''} disabled={educationFrozen} onChange={(v) => updateEducation(i, { highestLevelUnits: v ? Number(v) : null })} />
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <Field label="Year Attended From" type="number" value={row.periodFrom != null ? String(row.periodFrom) : ''} onChange={(v) => updateEducation(i, { periodFrom: v ? Number(v) : null })} />
-                  <Field label="Year Attended To" type="number" value={row.periodTo != null ? String(row.periodTo) : ''} onChange={(v) => updateEducation(i, { periodTo: v ? Number(v) : null })} />
-                  <Field label="Year Graduated" type="number" value={row.yearGraduated != null ? String(row.yearGraduated) : ''} onChange={(v) => updateEducation(i, { yearGraduated: v ? Number(v) : null })} />
-                  <Field label="Scholarship/Academic Honors" value={row.scholarshipHonors || ''} onChange={(v) => updateEducation(i, { scholarshipHonors: v })} />
+                  <Field label="Year Attended From" type="number" value={row.periodFrom != null ? String(row.periodFrom) : ''} disabled={educationFrozen} onChange={(v) => updateEducation(i, { periodFrom: v ? Number(v) : null })} />
+                  <Field label="Year Attended To" type="number" value={row.periodTo != null ? String(row.periodTo) : ''} disabled={educationFrozen} onChange={(v) => updateEducation(i, { periodTo: v ? Number(v) : null })} />
+                  <Field label="Year Graduated" type="number" value={row.yearGraduated != null ? String(row.yearGraduated) : ''} disabled={educationFrozen} onChange={(v) => updateEducation(i, { yearGraduated: v ? Number(v) : null })} />
+                  <Field label="Scholarship/Academic Honors" value={row.scholarshipHonors || ''} disabled={educationFrozen} onChange={(v) => updateEducation(i, { scholarshipHonors: v })} />
                 </div>
               </div>
             ))}
@@ -1358,7 +1619,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         )}
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void saveEducationalBackground()} label="Save Educational Background" />
+        <SaveBar saving={sections.education.status === 'saving'} disabled={isListSaveDisabled('education')} onSave={() => void saveListSection('education')} label="Save Educational Background" />
       </SectionCard>
       )}
 
@@ -1368,14 +1629,18 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           <p className="text-xs" style={{ color: BRAND.navy, opacity: 0.7 }}>CES/CSEE/Career Service/RA 1080 (Board/Bar)/Under Special Laws/eligibilities for uniformed personnel.</p>
           <button
             type="button"
+            disabled={eligibilityFrozen}
             onClick={addEligibility}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
           >
             <Plus className="h-3 w-3" /> Add eligibility
           </button>
         </div>
-        {eligibility.length === 0 && (
+        {sections.eligibility.status === 'loading' && (
+          <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
+        )}
+        {sections.eligibility.status === 'ready' && eligibility.length === 0 && (
           <p className="text-xs italic" style={{ color: BRAND.navy, opacity: 0.6 }}>No eligibility on record.</p>
         )}
         <div className="space-y-3">
@@ -1383,26 +1648,26 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             <div key={row.id ?? i} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs font-bold" style={{ color: BRAND.blue }}>Eligibility {i + 1}</p>
-                <button type="button" onClick={() => removeEligibility(i)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border text-red-600" style={{ borderColor: BRAND.line }} aria-label="Remove eligibility">
+                <button type="button" disabled={eligibilityFrozen} onClick={() => removeEligibility(i)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border text-red-600 disabled:cursor-not-allowed disabled:opacity-50" style={{ borderColor: BRAND.line }} aria-label="Remove eligibility">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <Field label="Eligibility" value={row.eligibilityName} onChange={(v) => updateEligibility(i, { eligibilityName: v })} />
-                <Field label="Rating (if applicable)" type="number" value={row.rating != null ? String(row.rating) : ''} onChange={(v) => updateEligibility(i, { rating: v ? Number.parseFloat(v) : null })} />
-                <Field label="Date of Examination/Conferment" type="date" value={row.examDate || ''} onChange={(v) => updateEligibility(i, { examDate: v })} />
+                <Field label="Eligibility" value={row.eligibilityName} disabled={eligibilityFrozen} onChange={(v) => updateEligibility(i, { eligibilityName: v })} />
+                <Field label="Rating (if applicable)" type="number" value={row.rating != null ? String(row.rating) : ''} disabled={eligibilityFrozen} onChange={(v) => updateEligibility(i, { rating: v ? Number.parseFloat(v) : null })} />
+                <Field label="Date of Examination/Conferment" type="date" value={row.examDate || ''} disabled={eligibilityFrozen} onChange={(v) => updateEligibility(i, { examDate: v })} />
               </div>
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                <Field label="Place of Examination/Conferment" value={row.examPlace || ''} onChange={(v) => updateEligibility(i, { examPlace: v })} />
-                <Field label="License Number" value={row.licenseNumber || ''} onChange={(v) => updateEligibility(i, { licenseNumber: v })} />
-                <Field label="License Valid Until" type="date" value={row.licenseValidUntil || ''} onChange={(v) => updateEligibility(i, { licenseValidUntil: v })} />
+                <Field label="Place of Examination/Conferment" value={row.examPlace || ''} disabled={eligibilityFrozen} onChange={(v) => updateEligibility(i, { examPlace: v })} />
+                <Field label="License Number" value={row.licenseNumber || ''} disabled={eligibilityFrozen} onChange={(v) => updateEligibility(i, { licenseNumber: v })} />
+                <Field label="License Valid Until" type="date" value={row.licenseValidUntil || ''} disabled={eligibilityFrozen} onChange={(v) => updateEligibility(i, { licenseValidUntil: v })} />
               </div>
             </div>
           ))}
         </div>
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void saveEligibilitySection()} label="Save Civil Service Eligibility" />
+        <SaveBar saving={sections.eligibility.status === 'saving'} disabled={isListSaveDisabled('eligibility')} onSave={() => void saveListSection('eligibility')} label="Save Civil Service Eligibility" />
       </SectionCard>
       )}
 
@@ -1411,14 +1676,18 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <div className="mb-2 flex justify-end">
           <button
             type="button"
+            disabled={workFrozen}
             onClick={addWorkExperience}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
           >
             <Plus className="h-3 w-3" /> Add work experience
           </button>
         </div>
-        {workExperience.length === 0 && (
+        {sections.workExperience.status === 'loading' && (
+          <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
+        )}
+        {sections.workExperience.status === 'ready' && workExperience.length === 0 && (
           <p className="text-xs italic" style={{ color: BRAND.navy, opacity: 0.6 }}>No work experience on record.</p>
         )}
         <div className="space-y-3">
@@ -1426,26 +1695,26 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             <div key={row.id ?? i} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs font-bold" style={{ color: BRAND.blue }}>Entry {i + 1}</p>
-                <button type="button" onClick={() => removeWorkExperience(i)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border text-red-600" style={{ borderColor: BRAND.line }} aria-label="Remove work experience">
+                <button type="button" disabled={workFrozen} onClick={() => removeWorkExperience(i)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border text-red-600 disabled:cursor-not-allowed disabled:opacity-50" style={{ borderColor: BRAND.line }} aria-label="Remove work experience">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                <Field label="Date From" type="date" value={row.dateFrom || ''} onChange={(v) => updateWorkExperience(i, { dateFrom: v })} />
-                <Field label="Date To" type="date" value={row.dateTo || ''} onChange={(v) => updateWorkExperience(i, { dateTo: v })} />
-                <Field label="Position Title" value={row.positionTitle} onChange={(v) => updateWorkExperience(i, { positionTitle: v })} />
-                <Field label="Status of Appointment" value={row.statusOfAppointment || ''} onChange={(v) => updateWorkExperience(i, { statusOfAppointment: v })} />
+                <Field label="Date From" type="date" value={row.dateFrom || ''} disabled={workFrozen} onChange={(v) => updateWorkExperience(i, { dateFrom: v })} />
+                <Field label="Date To" type="date" value={row.dateTo || ''} disabled={workFrozen} onChange={(v) => updateWorkExperience(i, { dateTo: v })} />
+                <Field label="Position Title" value={row.positionTitle} disabled={workFrozen} onChange={(v) => updateWorkExperience(i, { positionTitle: v })} />
+                <Field label="Status of Appointment" value={row.statusOfAppointment || ''} disabled={workFrozen} onChange={(v) => updateWorkExperience(i, { statusOfAppointment: v })} />
               </div>
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[1fr_180px]">
-                <Field label="Department/Agency/Office/Company" value={row.departmentAgencyOfficeCompany || ''} onChange={(v) => updateWorkExperience(i, { departmentAgencyOfficeCompany: v })} />
-                <YesNoField label="Gov't Service" value={row.govtService ?? null} onChange={(v) => updateWorkExperience(i, { govtService: v })} />
+                <Field label="Department/Agency/Office/Company" value={row.departmentAgencyOfficeCompany || ''} disabled={workFrozen} onChange={(v) => updateWorkExperience(i, { departmentAgencyOfficeCompany: v })} />
+                <YesNoField label="Gov't Service" value={row.govtService ?? null} disabled={workFrozen} onChange={(v) => updateWorkExperience(i, { govtService: v })} />
               </div>
             </div>
           ))}
         </div>
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void saveWorkExperienceSection()} label="Save Work Experience" />
+        <SaveBar saving={sections.workExperience.status === 'saving'} disabled={isListSaveDisabled('workExperience')} onSave={() => void saveListSection('workExperience')} label="Save Work Experience" />
       </SectionCard>
       )}
 
@@ -1454,14 +1723,18 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <div className="mb-2 flex justify-end">
           <button
             type="button"
+            disabled={voluntaryFrozen}
             onClick={addVoluntaryWork}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
           >
             <Plus className="h-3 w-3" /> Add voluntary work
           </button>
         </div>
-        {voluntaryWork.length === 0 && (
+        {sections.voluntaryWork.status === 'loading' && (
+          <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
+        )}
+        {sections.voluntaryWork.status === 'ready' && voluntaryWork.length === 0 && (
           <p className="text-xs italic" style={{ color: BRAND.navy, opacity: 0.6 }}>No voluntary work on record.</p>
         )}
         <div className="space-y-3">
@@ -1469,23 +1742,23 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             <div key={row.id ?? i} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs font-bold" style={{ color: BRAND.blue }}>Entry {i + 1}</p>
-                <button type="button" onClick={() => removeVoluntaryWork(i)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border text-red-600" style={{ borderColor: BRAND.line }} aria-label="Remove voluntary work">
+                <button type="button" disabled={voluntaryFrozen} onClick={() => removeVoluntaryWork(i)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border text-red-600 disabled:cursor-not-allowed disabled:opacity-50" style={{ borderColor: BRAND.line }} aria-label="Remove voluntary work">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
-              <Field label="Name & Address of Organization" value={row.orgNameAddress} onChange={(v) => updateVoluntaryWork(i, { orgNameAddress: v })} />
+              <Field label="Name & Address of Organization" value={row.orgNameAddress} disabled={voluntaryFrozen} onChange={(v) => updateVoluntaryWork(i, { orgNameAddress: v })} />
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <Field label="Date From" type="date" value={row.dateFrom || ''} onChange={(v) => updateVoluntaryWork(i, { dateFrom: v })} />
-                <Field label="Date To" type="date" value={row.dateTo || ''} onChange={(v) => updateVoluntaryWork(i, { dateTo: v })} />
-                <Field label="Number of Hours" type="number" value={row.numberOfHours != null ? String(row.numberOfHours) : ''} onChange={(v) => updateVoluntaryWork(i, { numberOfHours: v ? Number.parseFloat(v) : null })} />
-                <Field label="Position/Nature of Work" value={row.positionNatureOfWork || ''} onChange={(v) => updateVoluntaryWork(i, { positionNatureOfWork: v })} />
+                <Field label="Date From" type="date" value={row.dateFrom || ''} disabled={voluntaryFrozen} onChange={(v) => updateVoluntaryWork(i, { dateFrom: v })} />
+                <Field label="Date To" type="date" value={row.dateTo || ''} disabled={voluntaryFrozen} onChange={(v) => updateVoluntaryWork(i, { dateTo: v })} />
+                <Field label="Number of Hours" type="number" value={row.numberOfHours != null ? String(row.numberOfHours) : ''} disabled={voluntaryFrozen} onChange={(v) => updateVoluntaryWork(i, { numberOfHours: v ? Number.parseFloat(v) : null })} />
+                <Field label="Position/Nature of Work" value={row.positionNatureOfWork || ''} disabled={voluntaryFrozen} onChange={(v) => updateVoluntaryWork(i, { positionNatureOfWork: v })} />
               </div>
             </div>
           ))}
         </div>
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void saveVoluntaryWorkSection()} label="Save Voluntary Work" />
+        <SaveBar saving={sections.voluntaryWork.status === 'saving'} disabled={isListSaveDisabled('voluntaryWork')} onSave={() => void saveListSection('voluntaryWork')} label="Save Voluntary Work" />
       </SectionCard>
       )}
 
@@ -1494,14 +1767,18 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <div className="mb-2 flex justify-end">
           <button
             type="button"
+            disabled={trainingFrozen}
             onClick={addLdIntervention}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
           >
             <Plus className="h-3 w-3" /> Add training
           </button>
         </div>
-        {ldInterventions.length === 0 && (
+        {sections.training.status === 'loading' && (
+          <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
+        )}
+        {sections.training.status === 'ready' && ldInterventions.length === 0 && (
           <p className="text-xs italic" style={{ color: BRAND.navy, opacity: 0.6 }}>No L&amp;D interventions on record.</p>
         )}
         <div className="space-y-3">
@@ -1509,26 +1786,26 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             <div key={row.id ?? i} className="rounded-lg border p-3" style={{ borderColor: BRAND.line }}>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs font-bold" style={{ color: BRAND.blue }}>Entry {i + 1}</p>
-                <button type="button" onClick={() => removeLdIntervention(i)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border text-red-600" style={{ borderColor: BRAND.line }} aria-label="Remove training">
+                <button type="button" disabled={trainingFrozen} onClick={() => removeLdIntervention(i)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border text-red-600 disabled:cursor-not-allowed disabled:opacity-50" style={{ borderColor: BRAND.line }} aria-label="Remove training">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
-              <Field label="Title of L&D Intervention/Training Program" value={row.title} onChange={(v) => updateLdIntervention(i, { title: v })} />
+              <Field label="Title of L&D Intervention/Training Program" value={row.title} disabled={trainingFrozen} onChange={(v) => updateLdIntervention(i, { title: v })} />
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <Field label="Date From" type="date" value={row.dateFrom || ''} onChange={(v) => updateLdIntervention(i, { dateFrom: v })} />
-                <Field label="Date To" type="date" value={row.dateTo || ''} onChange={(v) => updateLdIntervention(i, { dateTo: v })} />
-                <Field label="Number of Hours" type="number" value={row.numberOfHours != null ? String(row.numberOfHours) : ''} onChange={(v) => updateLdIntervention(i, { numberOfHours: v ? Number.parseFloat(v) : null })} />
-                <Field label="Type (Managerial/Supervisory/Technical/etc)" value={row.ldType || ''} onChange={(v) => updateLdIntervention(i, { ldType: v })} />
+                <Field label="Date From" type="date" value={row.dateFrom || ''} disabled={trainingFrozen} onChange={(v) => updateLdIntervention(i, { dateFrom: v })} />
+                <Field label="Date To" type="date" value={row.dateTo || ''} disabled={trainingFrozen} onChange={(v) => updateLdIntervention(i, { dateTo: v })} />
+                <Field label="Number of Hours" type="number" value={row.numberOfHours != null ? String(row.numberOfHours) : ''} disabled={trainingFrozen} onChange={(v) => updateLdIntervention(i, { numberOfHours: v ? Number.parseFloat(v) : null })} />
+                <Field label="Type (Managerial/Supervisory/Technical/etc)" value={row.ldType || ''} disabled={trainingFrozen} onChange={(v) => updateLdIntervention(i, { ldType: v })} />
               </div>
               <div className="mt-3">
-                <Field label="Conducted/Sponsored By" value={row.conductedBy || ''} onChange={(v) => updateLdIntervention(i, { conductedBy: v })} />
+                <Field label="Conducted/Sponsored By" value={row.conductedBy || ''} disabled={trainingFrozen} onChange={(v) => updateLdIntervention(i, { conductedBy: v })} />
               </div>
             </div>
           ))}
         </div>
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void saveLdInterventionsSection()} label="Save Learning & Development" />
+        <SaveBar saving={sections.training.status === 'saving'} disabled={isListSaveDisabled('training')} onSave={() => void saveListSection('training')} label="Save Learning & Development" />
       </SectionCard>
       )}
 
@@ -1539,7 +1816,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <TextAreaField label="Membership in Association/Organization" value={draft.membershipAssociations} onChange={(v) => set('membershipAssociations', v)} />
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void saveOtherInfoSection()} label="Save Other Information" />
+        <SaveBar saving={scalarSaving} onSave={() => void saveOtherInfoSection()} label="Save Other Information" />
       </SectionCard>
       )}
 
@@ -1548,71 +1825,71 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <div className="space-y-3">
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>34. Are you related by consanguinity or affinity to the appointing or recommending authority, or to the chief of bureau/office or your immediate supervisor?</p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <YesNoField label="a. Within the third degree?" value={draft.relatedThirdDegree} onChange={(v) => set('relatedThirdDegree', v)} />
-            <YesNoField label="b. Within the fourth degree (LGU career employees)?" value={draft.relatedFourthDegree} onChange={(v) => set('relatedFourthDegree', v)} />
+            <YesNoField label="a. Within the third degree?" value={draft.relatedThirdDegree} disabled={backgroundFrozen} onChange={(v) => set('relatedThirdDegree', v)} />
+            <YesNoField label="b. Within the fourth degree (LGU career employees)?" value={draft.relatedFourthDegree} disabled={backgroundFrozen} onChange={(v) => set('relatedFourthDegree', v)} />
           </div>
           {(draft.relatedThirdDegree || draft.relatedFourthDegree) && (
-            <Field label="If YES, give details" value={draft.relatedDetails} onChange={(v) => set('relatedDetails', v)} />
+            <Field label="If YES, give details" value={draft.relatedDetails} disabled={backgroundFrozen} onChange={(v) => set('relatedDetails', v)} />
           )}
         </div>
 
         <div className="space-y-3">
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>35a. Have you ever been found guilty of any administrative offense?</p>
-          <YesNoField label="Found guilty" value={draft.adminOffenseGuilty} onChange={(v) => set('adminOffenseGuilty', v)} />
+          <YesNoField label="Found guilty" value={draft.adminOffenseGuilty} disabled={backgroundFrozen} onChange={(v) => set('adminOffenseGuilty', v)} />
           {draft.adminOffenseGuilty && (
-            <Field label="If YES, give details" value={draft.adminOffenseDetails} onChange={(v) => set('adminOffenseDetails', v)} />
+            <Field label="If YES, give details" value={draft.adminOffenseDetails} disabled={backgroundFrozen} onChange={(v) => set('adminOffenseDetails', v)} />
           )}
         </div>
 
         <div className="space-y-3">
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>35b. Have you been criminally charged before any court?</p>
-          <YesNoField label="Criminally charged" value={draft.criminallyCharged} onChange={(v) => set('criminallyCharged', v)} />
+          <YesNoField label="Criminally charged" value={draft.criminallyCharged} disabled={backgroundFrozen} onChange={(v) => set('criminallyCharged', v)} />
           {draft.criminallyCharged && (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <Field label="If YES, give details" value={draft.criminalChargeDetails} onChange={(v) => set('criminalChargeDetails', v)} />
-              <Field label="Date Filed" type="date" value={draft.criminalCaseDateFiled} onChange={(v) => set('criminalCaseDateFiled', v)} />
-              <Field label="Status of Case" value={draft.criminalCaseStatus} onChange={(v) => set('criminalCaseStatus', v)} />
+              <Field label="If YES, give details" value={draft.criminalChargeDetails} disabled={backgroundFrozen} onChange={(v) => set('criminalChargeDetails', v)} />
+              <Field label="Date Filed" type="date" value={draft.criminalCaseDateFiled} disabled={backgroundFrozen} onChange={(v) => set('criminalCaseDateFiled', v)} />
+              <Field label="Status of Case" value={draft.criminalCaseStatus} disabled={backgroundFrozen} onChange={(v) => set('criminalCaseStatus', v)} />
             </div>
           )}
         </div>
 
         <div className="space-y-3">
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>36. Have you ever been convicted of any crime or violation of any law, decree, ordinance or regulation?</p>
-          <YesNoField label="Convicted" value={draft.convictedOfCrime} onChange={(v) => set('convictedOfCrime', v)} />
+          <YesNoField label="Convicted" value={draft.convictedOfCrime} disabled={backgroundFrozen} onChange={(v) => set('convictedOfCrime', v)} />
           {draft.convictedOfCrime && (
-            <Field label="If YES, give details" value={draft.convictedDetails} onChange={(v) => set('convictedDetails', v)} />
+            <Field label="If YES, give details" value={draft.convictedDetails} disabled={backgroundFrozen} onChange={(v) => set('convictedDetails', v)} />
           )}
         </div>
 
         <div className="space-y-3">
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>37. Have you ever been separated from the service (resignation, retirement, dropped from the rolls, dismissal, termination, end of term, finished contract, or phased out)?</p>
-          <YesNoField label="Separated" value={draft.separatedFromService} onChange={(v) => set('separatedFromService', v)} />
+          <YesNoField label="Separated" value={draft.separatedFromService} disabled={backgroundFrozen} onChange={(v) => set('separatedFromService', v)} />
           {draft.separatedFromService && (
-            <Field label="If YES, give details" value={draft.separatedDetails} onChange={(v) => set('separatedDetails', v)} />
+            <Field label="If YES, give details" value={draft.separatedDetails} disabled={backgroundFrozen} onChange={(v) => set('separatedDetails', v)} />
           )}
         </div>
 
         <div className="space-y-3">
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>38a. Have you ever been a candidate in a national or local election (except Barangay election) held within the last year?</p>
-          <YesNoField label="Candidate" value={draft.electionCandidate} onChange={(v) => set('electionCandidate', v)} />
+          <YesNoField label="Candidate" value={draft.electionCandidate} disabled={backgroundFrozen} onChange={(v) => set('electionCandidate', v)} />
           {draft.electionCandidate && (
-            <Field label="If YES, give details" value={draft.electionCandidateDetails} onChange={(v) => set('electionCandidateDetails', v)} />
+            <Field label="If YES, give details" value={draft.electionCandidateDetails} disabled={backgroundFrozen} onChange={(v) => set('electionCandidateDetails', v)} />
           )}
         </div>
 
         <div className="space-y-3">
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>38b. Have you resigned from the government service during the 3-month period before the last election to campaign for a candidate?</p>
-          <YesNoField label="Resigned to campaign" value={draft.resignedToCampaign} onChange={(v) => set('resignedToCampaign', v)} />
+          <YesNoField label="Resigned to campaign" value={draft.resignedToCampaign} disabled={backgroundFrozen} onChange={(v) => set('resignedToCampaign', v)} />
           {draft.resignedToCampaign && (
-            <Field label="If YES, give details" value={draft.resignedToCampaignDetails} onChange={(v) => set('resignedToCampaignDetails', v)} />
+            <Field label="If YES, give details" value={draft.resignedToCampaignDetails} disabled={backgroundFrozen} onChange={(v) => set('resignedToCampaignDetails', v)} />
           )}
         </div>
 
         <div className="space-y-3">
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>39. Have you acquired the status of an immigrant or permanent resident of another country?</p>
-          <YesNoField label="Immigrant/permanent resident" value={draft.immigrantStatus} onChange={(v) => set('immigrantStatus', v)} />
+          <YesNoField label="Immigrant/permanent resident" value={draft.immigrantStatus} disabled={backgroundFrozen} onChange={(v) => set('immigrantStatus', v)} />
           {draft.immigrantStatus && (
-            <Field label="If YES, which country?" value={draft.immigrantCountry} onChange={(v) => set('immigrantCountry', v)} />
+            <Field label="If YES, which country?" value={draft.immigrantCountry} disabled={backgroundFrozen} onChange={(v) => set('immigrantCountry', v)} />
           )}
         </div>
 
@@ -1620,21 +1897,21 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           <p className="text-xs font-semibold" style={{ color: BRAND.navy }}>40. Indigenous group / person with disability / solo parent status</p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
-              <YesNoField label="a. Member of an indigenous group?" value={draft.indigenousGroupMember} onChange={(v) => set('indigenousGroupMember', v)} />
+              <YesNoField label="a. Member of an indigenous group?" value={draft.indigenousGroupMember} disabled={backgroundFrozen} onChange={(v) => set('indigenousGroupMember', v)} />
               {draft.indigenousGroupMember && (
-                <div className="mt-2"><Field label="Please specify" value={draft.indigenousGroupSpecify} onChange={(v) => set('indigenousGroupSpecify', v)} /></div>
+                <div className="mt-2"><Field label="Please specify" value={draft.indigenousGroupSpecify} disabled={backgroundFrozen} onChange={(v) => set('indigenousGroupSpecify', v)} /></div>
               )}
             </div>
             <div>
-              <YesNoField label="b. Person with disability?" value={draft.personWithDisability} onChange={(v) => set('personWithDisability', v)} />
+              <YesNoField label="b. Person with disability?" value={draft.personWithDisability} disabled={backgroundFrozen} onChange={(v) => set('personWithDisability', v)} />
               {draft.personWithDisability && (
-                <div className="mt-2"><Field label="PWD ID No." value={draft.pwdIdNumber} onChange={(v) => set('pwdIdNumber', v)} /></div>
+                <div className="mt-2"><Field label="PWD ID No." value={draft.pwdIdNumber} disabled={backgroundFrozen} onChange={(v) => set('pwdIdNumber', v)} /></div>
               )}
             </div>
             <div>
-              <YesNoField label="c. Solo parent?" value={draft.soloParent} onChange={(v) => set('soloParent', v)} />
+              <YesNoField label="c. Solo parent?" value={draft.soloParent} disabled={backgroundFrozen} onChange={(v) => set('soloParent', v)} />
               {draft.soloParent && (
-                <div className="mt-2"><Field label="Solo Parent ID No." value={draft.soloParentIdNumber} onChange={(v) => set('soloParentIdNumber', v)} /></div>
+                <div className="mt-2"><Field label="Solo Parent ID No." value={draft.soloParentIdNumber} disabled={backgroundFrozen} onChange={(v) => set('soloParentIdNumber', v)} /></div>
               )}
             </div>
           </div>
@@ -1645,27 +1922,32 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             <h3 className="text-sm font-bold" style={{ color: BRAND.navy }}>41. References</h3>
             <button
               type="button"
+              disabled={backgroundFrozen}
               onClick={addReference}
-              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold"
+              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               style={{ borderColor: BRAND.line, color: BRAND.blue, background: 'var(--color-primary-50)' }}
             >
               <Plus className="h-3 w-3" /> Add reference
             </button>
           </div>
           <p className="mb-2 text-xs" style={{ color: BRAND.navy, opacity: 0.7 }}>Person not related by consanguinity or affinity to you.</p>
-          {references.length === 0 && (
+          {sections.references.status === 'loading' && (
+            <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
+          )}
+          {sections.references.status === 'ready' && references.length === 0 && (
             <p className="text-xs italic" style={{ color: BRAND.navy, opacity: 0.6 }}>No references on record.</p>
           )}
           <div className="space-y-2">
             {references.map((ref, i) => (
               <div key={ref.id ?? i} className="grid grid-cols-1 items-end gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
-                <Field label="Name" value={ref.name} onChange={(v) => updateReference(i, { name: v })} />
-                <Field label="Office/Residential Address" value={ref.address || ''} onChange={(v) => updateReference(i, { address: v })} />
-                <Field label="Contact No. / Email" value={ref.contactInfo || ''} onChange={(v) => updateReference(i, { contactInfo: v })} />
+                <Field label="Name" value={ref.name} disabled={backgroundFrozen} onChange={(v) => updateReference(i, { name: v })} />
+                <Field label="Office/Residential Address" value={ref.address || ''} disabled={backgroundFrozen} onChange={(v) => updateReference(i, { address: v })} />
+                <Field label="Contact No. / Email" value={ref.contactInfo || ''} disabled={backgroundFrozen} onChange={(v) => updateReference(i, { contactInfo: v })} />
                 <button
                   type="button"
+                  disabled={backgroundFrozen}
                   onClick={() => removeReference(i)}
-                  className="inline-flex h-9 items-center justify-center rounded-md border px-2 text-red-600"
+                  className="inline-flex h-9 items-center justify-center rounded-md border px-2 text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ borderColor: BRAND.line }}
                   aria-label="Remove reference"
                 >
@@ -1679,14 +1961,14 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <div>
           <h3 className="mb-2 text-sm font-bold" style={{ color: BRAND.navy }}>42. Government-Issued ID</h3>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <Field label="Government Issued ID (Passport, GSIS, SSS, PRC, Driver's License, etc.)" value={draft.govIdType} onChange={(v) => set('govIdType', v)} />
-            <Field label="ID/License/Passport No." value={draft.govIdNumber} onChange={(v) => set('govIdNumber', v)} />
-            <Field label="Date/Place of Issuance" value={draft.govIdIssuedDatePlace} onChange={(v) => set('govIdIssuedDatePlace', v)} />
+            <Field label="Government Issued ID (Passport, GSIS, SSS, PRC, Driver's License, etc.)" value={draft.govIdType} disabled={backgroundFrozen} onChange={(v) => set('govIdType', v)} />
+            <Field label="ID/License/Passport No." value={draft.govIdNumber} disabled={backgroundFrozen} onChange={(v) => set('govIdNumber', v)} />
+            <Field label="Date/Place of Issuance" value={draft.govIdIssuedDatePlace} disabled={backgroundFrozen} onChange={(v) => set('govIdIssuedDatePlace', v)} />
           </div>
         </div>
 
         <TabNavBar activeTab={activeTab} onSelect={selectTab} />
-        <SaveBar saving={saving} onSave={() => void saveBackgroundSection()} label="Save Background Information" />
+        <SaveBar saving={sections.references.status === 'saving'} disabled={isListSaveDisabled('references')} onSave={() => void saveBackgroundSection()} label="Save Background Information" />
       </SectionCard>
       )}
         </div>

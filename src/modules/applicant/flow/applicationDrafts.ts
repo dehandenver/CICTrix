@@ -14,7 +14,7 @@
  */
 import type { ApplicantFormData } from '../../../types/applicant.types';
 import type { JobPosting, PlantillaSlot } from '../../../types/recruitment.types';
-import type { EmployeePortalAccount } from '../../../lib/employeePortalData';
+import type { PortalAccountIdentity } from '../../../lib/employeePortalData';
 import { plantillaLabel } from '../../../lib/plantillaRules';
 
 export const DRAFTS_KEY = 'cictrix_apply_drafts_v2';
@@ -56,7 +56,7 @@ export interface ApplyDrafts {
   choices: PlantillaChoice[];
   drafts: Record<string, ApplicantFormData>;
   activeKey: string;
-  authenticatedEmployeeAccount: EmployeePortalAccount | null;
+  authenticatedEmployeeAccount: PortalAccountIdentity | null;
   /** Position/department were set by the posting and can't be edited. */
   lockedPosition: boolean;
   /** Current page of Step 2 (flow/formPages.ts), 1-based. */
@@ -76,13 +76,64 @@ export const emptyDrafts = (): ApplyDrafts => ({
   authenticatedEmployeeAccount: null,
 });
 
+export const sanitizeAuthenticatedAccountIdentity = (
+  raw: unknown,
+): PortalAccountIdentity | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const candidate = raw as Record<string, unknown>;
+  const id = String(candidate.id ?? '').trim();
+  const username = String(candidate.username ?? '').trim();
+  const rawEmp = candidate.employee;
+  if (!id || !username || !rawEmp || typeof rawEmp !== 'object') return null;
+  const emp = rawEmp as Record<string, unknown>;
+  const employeeId = String(emp.employeeId ?? '').trim();
+  if (!employeeId) return null;
+
+  return {
+    id,
+    username,
+    mustChangePassword: Boolean(candidate.mustChangePassword),
+    updatedAt: String(candidate.updatedAt ?? ''),
+    employee: {
+      employeeId,
+      fullName: String(emp.fullName ?? ''),
+      email: String(emp.email ?? ''),
+      dateOfBirth: String(emp.dateOfBirth ?? ''),
+      age: Number(emp.age ?? 0),
+      gender: (emp.gender as PortalAccountIdentity['employee']['gender']) || 'Prefer not to say',
+      civilStatus: (emp.civilStatus as PortalAccountIdentity['employee']['civilStatus']) || 'Single',
+      nationality: String(emp.nationality ?? ''),
+      mobileNumber: String(emp.mobileNumber ?? ''),
+      homeAddress: String(emp.homeAddress ?? ''),
+      emergencyContactName: String(emp.emergencyContactName ?? ''),
+      emergencyRelationship: String(emp.emergencyRelationship ?? ''),
+      emergencyContactNumber: String(emp.emergencyContactNumber ?? ''),
+      sssNumber: String(emp.sssNumber ?? ''),
+      philhealthNumber: String(emp.philhealthNumber ?? ''),
+      pagibigNumber: String(emp.pagibigNumber ?? ''),
+      tinNumber: String(emp.tinNumber ?? ''),
+      ...(emp.currentPosition != null ? { currentPosition: String(emp.currentPosition) } : {}),
+      ...(emp.currentDepartment != null ? { currentDepartment: String(emp.currentDepartment) } : {}),
+      ...(emp.currentDivision != null ? { currentDivision: String(emp.currentDivision) } : {}),
+      ...(emp.hireDate != null ? { hireDate: String(emp.hireDate) } : {}),
+    },
+  };
+};
+
 export const loadDrafts = (): ApplyDrafts => {
   try {
     sessionStorage.removeItem(LEGACY_WIZARD_KEY);
     const raw = sessionStorage.getItem(DRAFTS_KEY);
     if (!raw) return emptyDrafts();
     const parsed = JSON.parse(raw);
-    return parsed?.version === 2 ? { ...emptyDrafts(), ...parsed } : emptyDrafts();
+    if (parsed?.version !== 2) return emptyDrafts();
+    return {
+      ...emptyDrafts(),
+      ...parsed,
+      authenticatedEmployeeAccount: sanitizeAuthenticatedAccountIdentity(
+        parsed.authenticatedEmployeeAccount,
+      ),
+    };
   } catch {
     return emptyDrafts();
   }
@@ -90,7 +141,13 @@ export const loadDrafts = (): ApplyDrafts => {
 
 export const saveDrafts = (state: ApplyDrafts): void => {
   try {
-    sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(state));
+    const sanitized: ApplyDrafts = {
+      ...state,
+      authenticatedEmployeeAccount: sanitizeAuthenticatedAccountIdentity(
+        state.authenticatedEmployeeAccount,
+      ),
+    };
+    sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(sanitized));
   } catch {
     // sessionStorage may be unavailable (private mode); not fatal.
   }

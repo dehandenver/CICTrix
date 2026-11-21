@@ -62,7 +62,7 @@
   <main>
     <h1>Plans</h1>
     <p class="lede">Feature plans and their session summaries. Newest first.</p>
-    <p class="counts">136 plans &middot; 128 done</p>
+    <p class="counts">137 plans &middot; 128 done</p>
 
     <section>
       <h2>Plans</h2>
@@ -70,8 +70,13 @@
         <thead><tr><th>Date</th><th>Plan</th><th>Status</th></tr></thead>
         <tbody>
       <tr>
+        <td class="date">2026-11-19</td>
+        <td><a href="2026-11-19-employee-credential-consistency.md">Make employee portal credentials consistent across browsers</a><p class="summary">Coordinated Draft. Repair remote credential persistence, login, and explicit resets after Persistence Task 7 makes provisioning and metadata consumers cache-independent; require joint acceptance before release.</p></td>
+        <td class="status"><span class="badge badge-info">In Progress</span></td>
+      </tr>
+      <tr>
         <td class="date">2026-11-17</td>
-        <td><a href="2026-11-17-persistence-integrity-repairs.md">Repair PDS, external hiring, and training persistence integrity</a><p class="summary">Preserve existing records, replace partial saves with transactions, make external hiring replay-safe, and distinguish failed reads from empty records.</p></td>
+        <td><a href="2026-11-17-persistence-integrity-repairs.md">Repair PDS, external hiring, and training persistence integrity</a><p class="summary">Preserve records and make hiring/training writes truthful and replay-safe, with coordinated employee credential lifecycle ownership and joint PDS/hiring release gates.</p></td>
         <td class="status"><span class="badge badge-info">In Progress</span></td>
       </tr>
       <tr>
@@ -759,8 +764,24 @@
         <thead><tr><th>Date</th><th>Summary</th></tr></thead>
         <tbody>
       <tr>
+        <td class="date">2026-11-21</td>
+        <td><a href="../session-summaries/2026-11-19-employee-credential-consistency-summary.md">Employee Credential Consistency &amp; Release Unit 1 Verification Summary</a><p class="summary">Completed Release Unit 1 (Orders 1-8 across Persistence Tasks 4-7, Credential Tasks 1-5, and PDS/Hiring checkpoint) plus read-only production preflight on fyzdfgxaaowjzbjpwrii and live two-origin rendered browser acceptance against a disposable Docker Supabase Auth+Kong+PostgREST stack; Release Unit 2 also completed (recorded in 2026-11-17 summary). Push/PR/merge/deployment and single-account reconciliation remain approval-gated.</p><p class="meta">Plan: <a href="2026-11-19-employee-credential-consistency.md">2026-11-19-employee-credential-consistency.md</a></p></td>
+      </tr>
+      <tr>
         <td class="date">2026-11-19</td>
         <td><a href="../session-summaries/2026-11-19-persistence-review-corrections-summary.md">Persistence review corrections</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-19</td>
+        <td><a href="../session-summaries/2026-11-19-persistence-production-smoke-summary.md">Persistence integrity: production deployment smoke</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-19</td>
+        <td><a href="../session-summaries/2026-11-19-persistence-credential-coordination-summary.md">Persistence and employee credentials: coordinated plans</a></td>
+      </tr>
+      <tr>
+        <td class="date">2026-11-19</td>
+        <td><a href="../session-summaries/2026-11-19-employee-credential-consistency-planning-summary.md">Employee credential consistency: planning</a></td>
       </tr>
       <tr>
         <td class="date">2026-11-17</td>

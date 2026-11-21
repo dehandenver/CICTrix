@@ -604,6 +604,7 @@ describe('atomic PDS saves', () => {
     expect(result).toEqual({
       ok: false,
       error: 'This section has not been loaded. Reload it before saving.',
+      kind: 'unavailable',
     });
     expect(db.rpc).not.toHaveBeenCalled();
     expect(db.from).not.toHaveBeenCalled();
@@ -619,6 +620,7 @@ describe('atomic PDS saves', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok === true) throw new Error('expected a failed save');
+    expect(result.kind).toBe('unavailable');
     expect(result.error).toContain('Could not find the function');
     expect(db.from).not.toHaveBeenCalled();
   });
@@ -634,7 +636,88 @@ describe('atomic PDS saves', () => {
     expect(result).toEqual({
       ok: false,
       error: 'This section changed since it was loaded. Reload it before saving again.',
+      kind: 'conflict',
     });
     expect(db.from).not.toHaveBeenCalled();
+  });
+
+  it('classifies failure kinds across validation, conflict, uncertain, and unavailable', async () => {
+    // Validation failure
+    const valResult = await saveWorkExperience('emp-1', [{ positionTitle: 'Clerk' }], 'rev-1');
+    expect(valResult.ok).toBe(false);
+    if (valResult.ok === false) expect(valResult.kind).toBe('validation');
+
+    // Conflict via message without code
+    db.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'pds_revision_conflict: stale' },
+    });
+    const conflictResult = await saveWorkExperience('emp-1', [], 'rev-1');
+    expect(conflictResult.ok).toBe(false);
+    if (conflictResult.ok === false) expect(conflictResult.kind).toBe('conflict');
+
+    // Uncertain on thrown fetch error during save
+    db.rpc.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const thrownSave = await saveWorkExperience('emp-1', [], 'rev-1');
+    expect(thrownSave.ok).toBe(false);
+    if (thrownSave.ok === false) expect(thrownSave.kind).toBe('uncertain');
+
+    // Uncertain on gateway timeout / transport error returned by rpc
+    db.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { status: 504, message: 'Gateway Timeout' },
+    });
+    const timeoutSave = await saveWorkExperience('emp-1', [], 'rev-1');
+    expect(timeoutSave.ok).toBe(false);
+    if (timeoutSave.ok === false) expect(timeoutSave.kind).toBe('uncertain');
+
+    db.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'NetworkError when attempting to fetch resource.' },
+    });
+    const networkSave = await saveWorkExperience('emp-1', [], 'rev-1');
+    expect(networkSave.ok).toBe(false);
+    if (networkSave.ok === false) expect(networkSave.kind).toBe('uncertain');
+
+    db.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'TypeError: fetch failed' },
+    });
+    const nodeFetchSave = await saveWorkExperience('emp-1', [], 'rev-1');
+    expect(nodeFetchSave.ok).toBe(false);
+    if (nodeFetchSave.ok === false) expect(nodeFetchSave.kind).toBe('uncertain');
+
+    // Unavailable on definite DB failures (permission denied, missing RPC 42883, unparseable payload)
+    db.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', message: 'permission denied for table employee_work_experience' },
+    });
+    const permSave = await saveWorkExperience('emp-1', [], 'rev-1');
+    expect(permSave.ok).toBe(false);
+    if (permSave.ok === false) expect(permSave.kind).toBe('unavailable');
+
+    db.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42883', message: 'function public.save_pds_section does not exist' },
+    });
+    const missingSave = await saveWorkExperience('emp-1', [], 'rev-1');
+    expect(missingSave.ok).toBe(false);
+    if (missingSave.ok === false) expect(missingSave.kind).toBe('unavailable');
+
+    db.rpc.mockResolvedValueOnce({ data: { unexpected: true }, error: null });
+    const badPayloadSave = await saveWorkExperience('emp-1', [], 'rev-1');
+    expect(badPayloadSave.ok).toBe(false);
+    if (badPayloadSave.ok === false) expect(badPayloadSave.kind).toBe('unavailable');
+
+    // Read errors (including thrown fetch errors and unparseable payloads) are always unavailable
+    db.rpc.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const thrownRead = await listWorkExperience('emp-1');
+    expect(thrownRead.ok).toBe(false);
+    if (thrownRead.ok === false) expect(thrownRead.kind).toBe('unavailable');
+
+    db.rpc.mockResolvedValueOnce({ data: null, error: null });
+    const emptyPayloadRead = await listWorkExperience('emp-1');
+    expect(emptyPayloadRead.ok).toBe(false);
+    if (emptyPayloadRead.ok === false) expect(emptyPayloadRead.kind).toBe('unavailable');
   });
 });

@@ -25,11 +25,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Dialog } from '../../components';
 import { formatDivisionAndOffice, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import {
-    type EmployeePortalAccount,
+    type PortalAccountIdentity,
     PROMOTIONAL_AUTH_ERROR,
     authenticatePromotionalEmployee,
-    getEmployeePortalAccounts,
-    findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
+    getEmployeePortalAccountByEmployeeNumber,
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
@@ -200,7 +199,7 @@ export const ApplicantWizard: React.FC = () => {
     Object.fromEntries(Object.entries(persisted.drafts).map(([key, formData]) => [key, blankApp(formData)])),
   );
   const [activeKey, setActiveKey] = useState(persisted.activeKey);
-  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(
+  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<PortalAccountIdentity | null>(
     persisted.authenticatedEmployeeAccount,
   );
 
@@ -474,16 +473,10 @@ export const ApplicantWizard: React.FC = () => {
       setIsLoadingPrefill(true);
       setNotice('Loading your employee records...');
       try {
-        // Match the portal account by Employee ID alone. The username field is
+        // Match the portal account by Employee ID alone remotely. The username field is
         // an OUTPUT we auto-fill from the matched account — never a filter.
-        let matchedAccount = getEmployeePortalAccounts().find(
-          (account) =>
-            normalizeAuthValue(String(account?.employee?.employeeId ?? '')) === normalizeAuthValue(enteredId),
-        );
-
-        if (!matchedAccount) {
-          matchedAccount = await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(enteredId);
-        }
+        const accountLookup = await getEmployeePortalAccountByEmployeeNumber(enteredId);
+        const matchedAccount = accountLookup.ok === true ? accountLookup.account : undefined;
 
         // The employees table is the authoritative source.
         const lookupEmail = matchedAccount?.employee?.email || activeFormData.email;

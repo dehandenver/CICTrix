@@ -40,6 +40,8 @@ export type { PdsFieldIssue, PdsListSection } from '../../types/employee.types';
 
 const supabase = supabaseClient as any;
 
+export type PdsFailureKind = 'validation' | 'conflict' | 'uncertain' | 'unavailable';
+
 /** Canonical section state returned by both PDS RPCs. */
 export type PdsSectionSnapshot<T> = {
   rows: T[];
@@ -49,7 +51,7 @@ export type PdsSectionSnapshot<T> = {
 
 export type PdsResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: string; fieldIssues?: PdsFieldIssue[] };
+  | { ok: false; error: string; kind?: PdsFailureKind; fieldIssues?: PdsFieldIssue[] };
 
 // ---------------------------------------------------------------------------
 // Row validation shared by every PDS list
@@ -317,11 +319,14 @@ function meaningfulRows<S extends PdsListSection>(
   return rows.filter((row) => hasMeaningfulInput(section, row));
 }
 
-function validationFailure(issues: PdsFieldIssue[]): { ok: false; error: string; fieldIssues: PdsFieldIssue[] } {
+function validationFailure(
+  issues: PdsFieldIssue[],
+): { ok: false; error: string; kind: 'validation'; fieldIssues: PdsFieldIssue[] } {
   const detail = issues.map((issue) => `Row ${issue.rowIndex + 1}: ${issue.message}`).join(' ');
   return {
     ok: false,
     error: `Fix the following entries before saving. ${detail}`,
+    kind: 'validation',
     fieldIssues: issues,
   };
 }
@@ -536,18 +541,117 @@ function rowPayload<S extends PdsListSection>(
   });
 }
 
-function snapshotFailure(
+const UNCERTAIN_MESSAGE_PATTERN =
+  /failed to fetch|fetch failed|networkerror|network request failed|network error|load failed|timeout|timed out|aborted|econnreset|etimedout|socket hang up/i;
+
+const SERVER_VALIDATION_TAGS = new Set([
+  'pds_required_field',
+  'pds_invalid_value',
+  'pds_invalid_date_range',
+  'pds_invalid_row_id',
+  'pds_duplicate_row_id',
+  'pds_row_object_required',
+  'pds_rows_array_required',
+  'pds_scalar_object_required',
+  'pds_invalid_scalar_value',
+]);
+
+function isRevisionConflict(error: any): boolean {
+  const message = String(error?.message ?? '');
+  return error?.code === '40001' || message.includes('pds_revision_conflict');
+}
+
+function isServerValidationError(error: any): boolean {
+  if (error?.code !== '22023') return false;
+  const message = String(error?.message ?? '');
+  for (const tag of SERVER_VALIDATION_TAGS) {
+    if (message.includes(tag)) return true;
+  }
+  return false;
+}
+
+function isDefiniteDbOrRpcError(error: any): boolean {
+  const code = String(error?.code ?? '');
+  const status = Number(error?.status ?? NaN);
+  const message = String(error?.message ?? '').toLowerCase();
+
+  if (code.startsWith('PGRST') || /^[0-9A-Z]{5}$/.test(code)) return true;
+  if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
+    return true;
+  }
+  return (
+    message.includes('could not find the function') ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    message.includes('jwt expired') ||
+    message.includes('does not exist') ||
+    message.includes('unauthorized') ||
+    message.includes('forbidden')
+  );
+}
+
+function isTransportOrTimeoutError(error: any): boolean {
+  const name = String(error?.name ?? '');
+  const status = Number(error?.status ?? NaN);
+  const message = String(error?.message ?? '');
+
+  if (name === 'AbortError' || name === 'TimeoutError') return true;
+  if (status === 408 || status === 502 || status === 503 || status === 504 || status === 0) {
+    return true;
+  }
+  return UNCERTAIN_MESSAGE_PATTERN.test(message);
+}
+
+function readFailure(
   error: any,
   fallback: string,
-): { ok: false; error: string } {
-  const message = String(error?.message ?? '');
-  if (error?.code === '40001' || message.includes('pds_revision_conflict')) {
+): { ok: false; error: string; kind: PdsFailureKind } {
+  return {
+    ok: false,
+    error: error?.message ?? fallback,
+    kind: 'unavailable',
+  };
+}
+
+function writeFailure(
+  error: any,
+  fallback: string,
+  thrown = false,
+): { ok: false; error: string; kind: PdsFailureKind } {
+  if (isRevisionConflict(error)) {
     return {
       ok: false,
       error: 'This section changed since it was loaded. Reload it before saving again.',
+      kind: 'conflict',
     };
   }
-  return { ok: false, error: error?.message ?? fallback };
+  if (isServerValidationError(error)) {
+    return {
+      ok: false,
+      error: error?.message ?? fallback,
+      kind: 'validation',
+    };
+  }
+  if (isDefiniteDbOrRpcError(error)) {
+    return {
+      ok: false,
+      error: error?.message ?? fallback,
+      kind: 'unavailable',
+    };
+  }
+  if (thrown || isTransportOrTimeoutError(error)) {
+    return {
+      ok: false,
+      error:
+        'The connection dropped before the save could be confirmed. Check the latest saved records before saving again.',
+      kind: 'uncertain',
+    };
+  }
+  return {
+    ok: false,
+    error: error?.message ?? fallback,
+    kind: 'unavailable',
+  };
 }
 
 function parseSnapshot<S extends PdsListSection>(
@@ -556,7 +660,7 @@ function parseSnapshot<S extends PdsListSection>(
   fallback: string,
 ): PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>> {
   if (!payload || !Array.isArray(payload.rows) || typeof payload.revision !== 'string') {
-    return { ok: false, error: fallback };
+    return { ok: false, error: fallback, kind: 'unavailable' };
   }
 
   const pairing = pairingForSection(section);
@@ -575,22 +679,130 @@ function parseSnapshot<S extends PdsListSection>(
   };
 }
 
+const normalizeText = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
+const normalizeBool = (value: unknown): boolean | null =>
+  typeof value === 'boolean' ? value : null;
+
+function rowMatchesCanonical<S extends PdsListSection>(
+  section: S,
+  intended: PdsRowBySection[S],
+  actual: PdsRowBySection[S],
+): boolean {
+  const i = intended as any;
+  const a = actual as any;
+  if (i.id && a.id !== i.id) return false;
+
+  switch (section) {
+    case 'children':
+      return (
+        normalizeText(i.fullName) === normalizeText(a.fullName) &&
+        normalizeText(i.dateOfBirth) === normalizeText(a.dateOfBirth)
+      );
+    case 'education':
+      return (
+        normalizeText(i.level) === normalizeText(a.level) &&
+        normalizeText(i.school) === normalizeText(a.school) &&
+        normalizeText(i.degree) === normalizeText(a.degree) &&
+        toNullableInt(i.periodFrom) === toNullableInt(a.periodFrom) &&
+        toNullableInt(i.periodTo) === toNullableInt(a.periodTo) &&
+        toNullableInt(i.highestLevelUnits) === toNullableInt(a.highestLevelUnits) &&
+        toNullableInt(i.yearGraduated) === toNullableInt(a.yearGraduated) &&
+        normalizeText(i.scholarshipHonors) === normalizeText(a.scholarshipHonors)
+      );
+    case 'eligibility':
+      return (
+        normalizeText(i.eligibilityName) === normalizeText(a.eligibilityName) &&
+        toNullableNumber(i.rating) === toNullableNumber(a.rating) &&
+        normalizeText(i.examDate) === normalizeText(a.examDate) &&
+        normalizeText(i.examPlace) === normalizeText(a.examPlace) &&
+        normalizeText(i.licenseNumber) === normalizeText(a.licenseNumber) &&
+        normalizeText(i.licenseValidUntil) === normalizeText(a.licenseValidUntil)
+      );
+    case 'workExperience':
+      return (
+        normalizeText(i.dateFrom) === normalizeText(a.dateFrom) &&
+        normalizeText(i.dateTo) === normalizeText(a.dateTo) &&
+        normalizeText(i.positionTitle) === normalizeText(a.positionTitle) &&
+        normalizeText(i.departmentAgencyOfficeCompany) ===
+          normalizeText(a.departmentAgencyOfficeCompany) &&
+        normalizeText(i.statusOfAppointment) === normalizeText(a.statusOfAppointment) &&
+        normalizeBool(i.govtService) === normalizeBool(a.govtService)
+      );
+    case 'voluntaryWork':
+      return (
+        normalizeText(i.orgNameAddress) === normalizeText(a.orgNameAddress) &&
+        normalizeText(i.dateFrom) === normalizeText(a.dateFrom) &&
+        normalizeText(i.dateTo) === normalizeText(a.dateTo) &&
+        toNullableNumber(i.numberOfHours) === toNullableNumber(a.numberOfHours) &&
+        normalizeText(i.positionNatureOfWork) === normalizeText(a.positionNatureOfWork)
+      );
+    case 'training':
+      return (
+        normalizeText(i.title) === normalizeText(a.title) &&
+        normalizeText(i.dateFrom) === normalizeText(a.dateFrom) &&
+        normalizeText(i.dateTo) === normalizeText(a.dateTo) &&
+        toNullableNumber(i.numberOfHours) === toNullableNumber(a.numberOfHours) &&
+        normalizeText(i.ldType) === normalizeText(a.ldType) &&
+        normalizeText(i.conductedBy) === normalizeText(a.conductedBy)
+      );
+    case 'references':
+      return (
+        normalizeText(i.name) === normalizeText(a.name) &&
+        normalizeText(i.address) === normalizeText(a.address) &&
+        normalizeText(i.contactInfo) === normalizeText(a.contactInfo)
+      );
+  }
+}
+
+/**
+ * Compare an uncertain write's intended rows and paired scalars against a
+ * fresh canonical snapshot from `read_pds_section`.
+ */
+export function doesSnapshotMatchIntendedSave<S extends PdsListSection>(
+  section: S,
+  intendedRows: readonly PdsRowBySection[S][],
+  intendedScalars: Partial<Employee> | undefined,
+  snapshot: PdsSectionSnapshot<PdsRowBySection[S]>,
+): boolean {
+  const intended = meaningfulRows(section, intendedRows);
+  if (intended.length !== snapshot.rows.length) return false;
+  for (let idx = 0; idx < intended.length; idx += 1) {
+    if (!rowMatchesCanonical(section, intended[idx], snapshot.rows[idx])) return false;
+  }
+
+  if (intendedScalars && pairingForSection(section)) {
+    const actualScalars = snapshot.scalars ?? {};
+    for (const [key, value] of Object.entries(intendedScalars)) {
+      const actual = (actualScalars as Record<string, unknown>)[key];
+      if (typeof value === 'boolean' || value === null) {
+        if (normalizeBool(value) !== normalizeBool(actual)) return false;
+      } else if (typeof value === 'string') {
+        if (normalizeText(value) !== normalizeText(actual)) return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 async function readPdsSection<S extends PdsListSection>(
   employeeId: string,
   section: S,
 ): Promise<PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
+  if (!employeeId) return { ok: false, error: 'No employee id.', kind: 'unavailable' };
 
   try {
     const { data, error } = await supabase.rpc('read_pds_section', {
       p_employee_id: employeeId,
       p_section: section,
     });
-    if (error) return snapshotFailure(error, `Failed to load ${section}.`);
+    if (error) return readFailure(error, `Failed to load ${section}.`);
     return parseSnapshot(section, data, `Failed to load ${section}.`);
   } catch (err: any) {
     console.error(`[personalDataSheet] read ${section} error:`, err);
-    return snapshotFailure(err, `Failed to load ${section}.`);
+    return readFailure(err, `Failed to load ${section}.`);
   }
 }
 
@@ -601,9 +813,13 @@ async function writePdsSection<S extends PdsListSection>(
   expectedRevision: string,
   scalarPatch: Partial<Employee> = {},
 ): Promise<PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
+  if (!employeeId) return { ok: false, error: 'No employee id.', kind: 'unavailable' };
   if (!expectedRevision) {
-    return { ok: false, error: 'This section has not been loaded. Reload it before saving.' };
+    return {
+      ok: false,
+      error: 'This section has not been loaded. Reload it before saving.',
+      kind: 'unavailable',
+    };
   }
 
   const issues = validatePdsRows(section, rows);
@@ -620,11 +836,11 @@ async function writePdsSection<S extends PdsListSection>(
       p_expected_revision: expectedRevision,
       p_scalar_patch: columns,
     });
-    if (error) return snapshotFailure(error, `Failed to save ${section}.`);
+    if (error) return writeFailure(error, `Failed to save ${section}.`);
     return parseSnapshot(section, data, `Failed to save ${section}.`);
   } catch (err: any) {
     console.error(`[personalDataSheet] save ${section} error:`, err);
-    return snapshotFailure(err, `Failed to save ${section}.`);
+    return writeFailure(err, `Failed to save ${section}.`, true);
   }
 }
 

@@ -296,50 +296,27 @@ describe('hireApplicant: promotions', () => {
   });
 });
 
-describe('hireApplicant: external applicants keep the existing path', () => {
-  it('returns the backend employee when the backend succeeds', async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 201, json: async () => ({ id: 'backend-employee' }) });
-
+describe('hireApplicant: external applicants route through complete_external_hire', () => {
+  it('calls complete_external_hire and returns the view row without fetch or client inserts', async () => {
     const employee = await hireApplicant(EXTERNAL_ID);
 
-    expect(employee).toEqual({ id: 'backend-employee' });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toMatch(new RegExp(`/employees/from-applicant/${EXTERNAL_ID}$`));
-    expect(fake.rpcCalls).toEqual([]);
+    expect(employee).toEqual(employeeView);
+    expect(fake.rpcCalls).toEqual([
+      { name: 'complete_external_hire', args: { p_applicant_id: EXTERNAL_ID } },
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(writes()).toEqual([]);
   });
 
-  it.each([
-    ['unreachable', () => fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))],
-    ['failing', () => fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })],
-  ])('falls back to a client-side insert when the backend is %s', async (_label, arrange) => {
-    arrange();
-    fake.viewRow = { id: 'inserted-employee-uuid', employee_id: 'EMP-AAAAAAAA' };
-
-    const employee = await hireApplicant(EXTERNAL_ID);
-
-    expect(fake.rpcCalls).toEqual([]);
-    const inserts = fake.calls.filter((c) => c.table === 'employees' && c.op === 'insert');
-    expect(inserts).toHaveLength(1);
-    expect(inserts[0].payload).toMatchObject({
-      first_name: 'Ana',
-      last_name: 'Reyes',
-      email: 'ana.reyes@example.org',
-      position: 'Clerk I',
-      department: 'Human Resource Management Office',
-    });
-    const statusUpdate = fake.calls.find((c) => c.table === 'applicants' && c.op === 'update');
-    expect(statusUpdate?.payload).toMatchObject({ status: 'Hired' });
-    expect(employee).toMatchObject({ id: 'inserted-employee-uuid' });
-  });
-
-  it('treats a missing application_type as external', async () => {
+  it('treats a missing application_type as external and calls complete_external_hire', async () => {
     fake.applicants[EXTERNAL_ID].application_type = null;
-    fetchMock.mockResolvedValue({ ok: true, status: 201, json: async () => ({ id: 'backend-employee' }) });
 
     await hireApplicant(EXTERNAL_ID);
 
-    expect(fake.rpcCalls).toEqual([]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fake.rpcCalls).toEqual([
+      { name: 'complete_external_hire', args: { p_applicant_id: EXTERNAL_ID } },
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(writes()).toEqual([]);
   });
 });

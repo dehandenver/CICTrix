@@ -723,3 +723,596 @@ describe('Personal Data Sheet persistence', () => {
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ placeOfBirth: 'B Saved' }));
   });
 });
+
+describe('PDS load, conflict, and uncertain-outcome states', () => {
+  it('shows error + Retry and disables save for one failed list while keeping 6 successful lists editable and saveable', async () => {
+    pdsApi.listWorkExperience.mockResolvedValue({
+      ok: false,
+      kind: 'unavailable',
+      error: 'Database unavailable',
+    });
+    pdsApi.listEligibility.mockResolvedValue({
+      ok: true,
+      data: {
+        rows: [{ id: 'elig-1', eligibilityName: 'CSC Professional', rating: 85 }],
+        revision: 'elig-rev-1',
+        scalars: {},
+      },
+    });
+
+    renderSection();
+
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load Work Experience/i);
+    expect(screen.queryByText('No work experience on record.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Add work experience/ })).toBeDisabled();
+    expect(within(nav).getByRole('button', { name: /Work Experience/ })).not.toHaveTextContent('(saved)');
+
+    // Successful list section remains editable and saveable.
+    fireEvent.click(within(nav).getByRole('button', { name: /Civil Service Eligibility/ }));
+    expect(await screen.findByDisplayValue('CSC Professional')).toBeEnabled();
+    expect(within(nav).getByRole('button', { name: /Civil Service Eligibility/ })).toHaveTextContent('(saved)');
+    fireEvent.change(screen.getByLabelText('Eligibility'), { target: { value: 'CSC Sub-Professional' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Civil Service Eligibility' }));
+    await waitFor(() => expect(pdsApi.saveEligibility).toHaveBeenCalledTimes(1));
+    expect(pdsApi.saveEligibility.mock.calls[0][2]).toBe('elig-rev-1');
+
+    // Retrying the failed section loads its canonical data and unlocks saving.
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+    pdsApi.listWorkExperience.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'work-1',
+            dateFrom: '2022-01-01',
+            positionTitle: 'Administrative Aide',
+            departmentAgencyOfficeCompany: 'City Hall',
+          },
+        ],
+        revision: 'work-rev-1',
+        scalars: {},
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
+    expect(await screen.findByDisplayValue('Administrative Aide')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeEnabled();
+  });
+
+  it('explicitly deletes all loaded rows when ready, while unavailable or uninitialized lists cannot be saved', async () => {
+    pdsApi.listWorkExperience.mockResolvedValue({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'work-1',
+            dateFrom: '2022-01-01',
+            positionTitle: 'Administrative Aide',
+            departmentAgencyOfficeCompany: 'City Hall',
+          },
+        ],
+        revision: 'work-rev-1',
+        scalars: {},
+      },
+    });
+    pdsApi.listEligibility.mockResolvedValue({
+      ok: false,
+      kind: 'unavailable',
+      error: 'Read failed',
+    });
+
+    renderSection();
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+    expect(await screen.findByDisplayValue('Administrative Aide')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove work experience' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Work Experience' }));
+
+    await waitFor(() => expect(pdsApi.saveWorkExperience).toHaveBeenCalledTimes(1));
+    expect(pdsApi.saveWorkExperience).toHaveBeenCalledWith('emp-1', [], 'work-rev-1');
+    expect(await screen.findByText('Work Experience saved.')).toBeInTheDocument();
+    expect(within(nav).getByRole('button', { name: /Work Experience/ })).toHaveTextContent('(saved)');
+
+    fireEvent.click(within(nav).getByRole('button', { name: /Civil Service Eligibility/ }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Civil Service Eligibility' })).toBeDisabled();
+    expect(pdsApi.saveEligibility).not.toHaveBeenCalled();
+
+    // Uninitialized (empty employeeId) cannot save any list.
+    cleanup();
+    render(
+      <PersonalDataSheetSection
+        employeeId=""
+        profile={baseProfile({ supabaseId: '' })}
+        onSaved={vi.fn()}
+      />,
+    );
+    const uninitNav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(uninitNav).getByRole('button', { name: /Work Experience/ }));
+    expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeDisabled();
+    expect(pdsApi.saveWorkExperience).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores delayed load responses after an employee switch including A -> B -> A reuse', async () => {
+    const firstA = deferred<unknown>();
+    const secondA = deferred<unknown>();
+    let emp1Calls = 0;
+    pdsApi.listWorkExperience.mockImplementation((id: string) => {
+      if (id === 'emp-1') {
+        emp1Calls += 1;
+        return emp1Calls === 1 ? firstA.promise : secondA.promise;
+      }
+      return Promise.resolve({
+        ok: true,
+        data: {
+          rows: [
+            {
+              id: 'work-b',
+              dateFrom: '2023-01-01',
+              positionTitle: 'B Role',
+              departmentAgencyOfficeCompany: 'Office B',
+            },
+          ],
+          revision: 'rev-b',
+          scalars: {},
+        },
+      });
+    });
+
+    const profileA = baseProfile({ supabaseId: 'emp-1', employeeId: 'EMP-1' });
+    const profileB = baseProfile({ supabaseId: 'emp-2', employeeId: 'EMP-2' });
+    const view = renderSection(profileA);
+
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+
+    // Switch A -> B: emp-2 loads its own snapshot while firstA is still pending.
+    view.rerender(<PersonalDataSheetSection employeeId="emp-2" profile={profileB} onSaved={vi.fn()} />);
+    expect(await screen.findByDisplayValue('B Role')).toBeInTheDocument();
+
+    // Switch B -> A (reuse): secondA resolves with fresh A data, then delayed firstA arrives.
+    view.rerender(<PersonalDataSheetSection employeeId="emp-1" profile={profileA} onSaved={vi.fn()} />);
+    await act(async () => {
+      secondA.resolve({
+        ok: true,
+        data: {
+          rows: [
+            {
+              id: 'work-a-fresh',
+              dateFrom: '2024-01-01',
+              positionTitle: 'FRESH A ROLE',
+              departmentAgencyOfficeCompany: 'Fresh Office',
+            },
+          ],
+          revision: 'rev-a-fresh',
+          scalars: {},
+        },
+      });
+    });
+    expect(await screen.findByDisplayValue('FRESH A ROLE')).toBeInTheDocument();
+
+    await act(async () => {
+      firstA.resolve({
+        ok: true,
+        data: {
+          rows: [
+            {
+              id: 'work-a-stale',
+              dateFrom: '2020-01-01',
+              positionTitle: 'STALE A ROLE',
+              departmentAgencyOfficeCompany: 'Old Office',
+            },
+          ],
+          revision: 'rev-a-stale',
+          scalars: {},
+        },
+      });
+    });
+    expect(screen.queryByDisplayValue('STALE A ROLE')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('FRESH A ROLE')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Work Experience' }));
+    await waitFor(() => expect(pdsApi.saveWorkExperience).toHaveBeenCalledTimes(1));
+    expect(pdsApi.saveWorkExperience.mock.calls[0][2]).toBe('rev-a-fresh');
+  });
+
+  it('blocks paired family or background saves when children or references fail to load while other sections keep working', async () => {
+    pdsApi.listChildren.mockResolvedValue({
+      ok: false,
+      kind: 'unavailable',
+      error: 'Children read failed',
+    });
+    pdsApi.listReferences.mockResolvedValue({
+      ok: false,
+      kind: 'unavailable',
+      error: 'References read failed',
+    });
+
+    renderSection(baseProfile({ motherSurname: 'Santos', govIdType: 'Passport' }));
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+
+    // Family Background blocked & shows no saved checkmark.
+    fireEvent.click(within(nav).getByRole('button', { name: /Family Background/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load Family Background/i);
+    expect(screen.getByRole('button', { name: 'Save Family Background' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Add child/ })).toBeDisabled();
+    expect(screen.getAllByLabelText('Surname')[0]).toBeDisabled();
+    expect(within(nav).getByRole('button', { name: /Family Background/ })).not.toHaveTextContent('(saved)');
+    expect(pdsApi.saveChildren).not.toHaveBeenCalled();
+
+    // Background Information blocked & shows no saved checkmark.
+    fireEvent.click(within(nav).getByRole('button', { name: /Background Information/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load Background Information/i);
+    expect(screen.getByRole('button', { name: 'Save Background Information' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Add reference/ })).toBeDisabled();
+    expect(within(nav).getByRole('button', { name: /Background Information/ })).not.toHaveTextContent('(saved)');
+    expect(pdsApi.saveReferences).not.toHaveBeenCalled();
+
+    // Unrelated sections keep working.
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Add work experience/ }));
+    fireEvent.change(screen.getByLabelText('Date From'), { target: { value: '2023-01-01' } });
+    fireEvent.change(screen.getByLabelText('Position Title'), { target: { value: 'Analyst' } });
+    fireEvent.change(screen.getByLabelText('Department/Agency/Office/Company'), { target: { value: 'HRMO' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Work Experience' }));
+    await waitFor(() => expect(pdsApi.saveWorkExperience).toHaveBeenCalledTimes(1));
+
+    // Reloading children unblocks Family Background save.
+    fireEvent.click(within(nav).getByRole('button', { name: /Family Background/ }));
+    pdsApi.listChildren.mockResolvedValueOnce({
+      ok: true,
+      data: { rows: [], revision: 'children-rev-2', scalars: { motherSurname: 'Santos' } },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Family Background' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Save Family Background' }));
+    await waitFor(() => expect(pdsApi.saveChildren).toHaveBeenCalledTimes(1));
+    expect(pdsApi.saveChildren.mock.calls[0][2]).toBe('children-rev-2');
+  });
+
+  it('retains draft on conflict, never overwrites automatically, and reconciles on Reload (preserving input if reload fails)', async () => {
+    pdsApi.listWorkExperience.mockResolvedValue({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'work-1',
+            dateFrom: '2022-01-01',
+            positionTitle: 'Original Title',
+            departmentAgencyOfficeCompany: 'City Hall',
+          },
+        ],
+        revision: 'work-rev-1',
+        scalars: {},
+      },
+    });
+    pdsApi.saveWorkExperience.mockResolvedValueOnce({
+      ok: false,
+      kind: 'conflict',
+      error: 'This section changed since it was loaded. Reload it before saving again.',
+    });
+
+    renderSection();
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+    expect(await screen.findByDisplayValue('Original Title')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Position Title'), { target: { value: 'My Unsaved Draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Work Experience' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed since it was loaded/i);
+    expect(screen.getByDisplayValue('My Unsaved Draft')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeDisabled();
+
+    // If the reload fails, user input must stay visible (disabled) and not be cleared.
+    pdsApi.listWorkExperience.mockResolvedValueOnce({
+      ok: false,
+      kind: 'unavailable',
+      error: 'Temporary outage',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load Work Experience/i);
+    expect(screen.getByDisplayValue('My Unsaved Draft')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeDisabled();
+
+    // Next retry succeeds and reconciles against the fresh server snapshot.
+    pdsApi.listWorkExperience.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'work-1',
+            dateFrom: '2022-01-01',
+            positionTitle: 'Server Newer Title',
+            departmentAgencyOfficeCompany: 'City Hall',
+          },
+        ],
+        revision: 'work-rev-2',
+        scalars: {},
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
+    expect(await screen.findByDisplayValue('Server Newer Title')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeEnabled();
+
+    pdsApi.saveWorkExperience.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'work-1',
+            dateFrom: '2022-01-01',
+            positionTitle: 'Updated After Reload',
+            departmentAgencyOfficeCompany: 'City Hall',
+          },
+        ],
+        revision: 'work-rev-3',
+        scalars: {},
+      },
+    });
+    fireEvent.change(screen.getByLabelText('Position Title'), { target: { value: 'Updated After Reload' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Work Experience' }));
+    await waitFor(() => expect(pdsApi.saveWorkExperience).toHaveBeenCalledTimes(2));
+    expect(pdsApi.saveWorkExperience.mock.calls[1][2]).toBe('work-rev-2');
+  });
+
+  it('reconciles paired scalars when a conflict reload fails and is later retried', async () => {
+    pdsApi.listChildren.mockResolvedValue({
+      ok: true,
+      data: {
+        rows: [],
+        revision: 'fam-rev-1',
+        scalars: { spouseSurname: 'Original Spouse' },
+      },
+    });
+    pdsApi.saveChildren.mockResolvedValueOnce({
+      ok: false,
+      kind: 'conflict',
+      error: 'This section changed since it was loaded. Reload it before saving again.',
+    });
+
+    renderSection();
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Family Background/ }));
+    expect(await screen.findByDisplayValue('Original Spouse')).toBeInTheDocument();
+
+    fireEvent.change(screen.getAllByLabelText('Surname')[0], { target: { value: 'Dirty Spouse Draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Family Background' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed since it was loaded/i);
+    expect(screen.getByDisplayValue('Dirty Spouse Draft')).toBeInTheDocument();
+
+    // First Reload attempt fails: dirty scalar draft remains visible (disabled).
+    pdsApi.listChildren.mockResolvedValueOnce({
+      ok: false,
+      kind: 'unavailable',
+      error: 'Temporary outage',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load Family Background/i);
+    expect(screen.getByDisplayValue('Dirty Spouse Draft')).toBeDisabled();
+
+    // Retrying via Try again reconciles paired scalars to the fresh server snapshot.
+    pdsApi.listChildren.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [],
+        revision: 'fam-rev-2',
+        scalars: { spouseSurname: 'Server Spouse' },
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
+    expect(await screen.findByDisplayValue('Server Spouse')).toBeEnabled();
+    expect(screen.queryByDisplayValue('Dirty Spouse Draft')).not.toBeInTheDocument();
+  });
+
+  it('freezes uncertain save resubmission until fresh read reconciles rows and paired scalars, staying uncertain if read fails', async () => {
+    pdsApi.listChildren.mockResolvedValue({
+      ok: true,
+      data: {
+        rows: [],
+        revision: 'fam-rev-1',
+        scalars: { spouseSurname: '' },
+      },
+    });
+    pdsApi.saveChildren.mockResolvedValueOnce({
+      ok: false,
+      kind: 'uncertain',
+      error: 'The connection dropped before the save could be confirmed.',
+    });
+
+    renderSection();
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Family Background/ }));
+    await waitFor(() => expect(pdsApi.listChildren).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getAllByLabelText('Surname')[0], { target: { value: 'Santos' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add child/ }));
+    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Baby Santos' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Family Background' }));
+
+    const statusNotice = await screen.findByRole('status');
+    expect(statusNotice).toHaveTextContent(/unknown|couldn't confirm/i);
+    expect(screen.queryByText('Family Background saved.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/nothing was saved/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Family Background' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Add child/ })).toBeDisabled();
+    expect(screen.getAllByLabelText('Surname')[0]).toBeDisabled();
+    expect(within(nav).getByRole('button', { name: /Family Background/ })).not.toHaveTextContent('(saved)');
+
+    // Reconciliation read fails -> stays uncertain, never reports definite success or failure.
+    pdsApi.listChildren.mockResolvedValueOnce({
+      ok: false,
+      kind: 'unavailable',
+      error: 'Offline',
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Check saved status/i }));
+    await waitFor(() => expect(pdsApi.listChildren).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('status')).toHaveTextContent(/couldn't reach the server|unknown/i);
+    expect(screen.getByRole('button', { name: 'Save Family Background' })).toBeDisabled();
+    expect(screen.queryByText('Family Background saved.')).not.toBeInTheDocument();
+
+    // Reconciliation read succeeds and confirms rows + paired scalars committed.
+    pdsApi.listChildren.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [{ id: 'child-99', fullName: 'Baby Santos', sortOrder: 0 }],
+        revision: 'fam-rev-2',
+        scalars: { spouseSurname: 'Santos' },
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Retry check/i }));
+    expect(await screen.findByText('Family Background saved.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Family Background' })).toBeEnabled();
+    expect(within(nav).getByRole('button', { name: /Family Background/ })).toHaveTextContent('(saved)');
+  });
+
+  it('reconciles uncertain save as not committed when server still holds pre-save snapshot', async () => {
+    pdsApi.listWorkExperience.mockResolvedValue({
+      ok: true,
+      data: { rows: [], revision: 'work-rev-1', scalars: {} },
+    });
+    pdsApi.saveWorkExperience.mockResolvedValueOnce({
+      ok: false,
+      kind: 'uncertain',
+      error: 'Timeout',
+    });
+
+    renderSection();
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+    await waitFor(() => expect(pdsApi.listWorkExperience).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /Add work experience/ }));
+    fireEvent.change(screen.getByLabelText('Date From'), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText('Position Title'), { target: { value: 'New Role' } });
+    fireEvent.change(screen.getByLabelText('Department/Agency/Office/Company'), { target: { value: 'HRMO' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Work Experience' }));
+
+    expect(await screen.findByRole('status')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeDisabled();
+
+    pdsApi.listWorkExperience.mockResolvedValueOnce({
+      ok: true,
+      data: { rows: [], revision: 'work-rev-1', scalars: {} },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Check saved status/i }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeEnabled());
+    expect(screen.getByDisplayValue('New Role')).toBeEnabled();
+    expect(screen.queryByText('Work Experience saved.')).not.toBeInTheDocument();
+    expect(within(nav).getByRole('button', { name: /Work Experience/ })).not.toHaveTextContent('(saved)');
+  });
+
+  it('keeps step navigation clickable across all 9 PDS sections while disabling mutations on failed, saving, and uncertain sections', async () => {
+    const pendingVoluntary = deferred<unknown>();
+    pdsApi.listWorkExperience.mockResolvedValue({ ok: false, kind: 'unavailable', error: 'Load failed' });
+    pdsApi.saveEligibility.mockResolvedValueOnce({ ok: false, kind: 'uncertain', error: 'Dropped' });
+    pdsApi.saveVoluntaryWork.mockReturnValueOnce(pendingVoluntary.promise);
+
+    renderSection();
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+
+    // Put Eligibility in uncertain state.
+    fireEvent.click(within(nav).getByRole('button', { name: /Civil Service Eligibility/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Civil Service Eligibility' }));
+    expect(await screen.findByRole('status')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Civil Service Eligibility' })).toBeDisabled();
+
+    // Put Voluntary Work in saving state.
+    fireEvent.click(within(nav).getByRole('button', { name: /Voluntary Work/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Voluntary Work' }));
+    await waitFor(() => expect(pdsApi.saveVoluntaryWork).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Save Voluntary Work' })).toBeDisabled();
+
+    // All 9 step buttons stay enabled and clickable.
+    const stepButtons = within(nav).getAllByRole('button');
+    expect(stepButtons).toHaveLength(9);
+    for (const button of stepButtons) {
+      expect(button).toBeEnabled();
+    }
+
+    // Switching to failed Work Experience works and mutations are disabled, while healthy section works.
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Work Experience' })).toBeDisabled();
+
+    fireEvent.click(within(nav).getByRole('button', { name: /Learning & Development/ }));
+    expect(screen.getByRole('button', { name: 'Save Learning & Development' })).toBeEnabled();
+
+    await act(async () => {
+      pendingVoluntary.resolve({ ok: true, data: { rows: [], revision: 'vol-rev-2', scalars: {} } });
+    });
+  });
+
+  it('replaces baseline, IDs, and revision from confirmed snapshot and never marks failed saves from filtered local payload as saved', async () => {
+    pdsApi.listWorkExperience.mockResolvedValue({
+      ok: true,
+      data: { rows: [], revision: 'work-rev-1', scalars: {} },
+    });
+    pdsApi.saveWorkExperience.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'canonical-work-1',
+            dateFrom: '2024-01-01',
+            positionTitle: 'Clerk (Canonical)',
+            departmentAgencyOfficeCompany: 'City Hall',
+            sortOrder: 0,
+          },
+        ],
+        revision: 'work-rev-2',
+        scalars: {},
+      },
+    });
+    pdsApi.saveEducation.mockResolvedValueOnce({
+      ok: false,
+      kind: 'unavailable',
+      error: 'Save failed',
+    });
+
+    renderSection();
+    const nav = await screen.findByRole('navigation', { name: 'PDS sections' });
+
+    fireEvent.click(within(nav).getByRole('button', { name: /Work Experience/ }));
+    await waitFor(() => expect(pdsApi.listWorkExperience).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: /Add work experience/ }));
+    fireEvent.change(screen.getByLabelText('Date From'), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText('Position Title'), { target: { value: 'Clerk' } });
+    fireEvent.change(screen.getByLabelText('Department/Agency/Office/Company'), { target: { value: 'City Hall' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Work Experience' }));
+
+    expect(await screen.findByDisplayValue('Clerk (Canonical)')).toBeInTheDocument();
+
+    pdsApi.saveWorkExperience.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'canonical-work-1',
+            dateFrom: '2024-01-01',
+            positionTitle: 'Clerk (Canonical)',
+            departmentAgencyOfficeCompany: 'City Hall',
+            sortOrder: 0,
+          },
+        ],
+        revision: 'work-rev-3',
+        scalars: {},
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Work Experience' }));
+    await waitFor(() => expect(pdsApi.saveWorkExperience).toHaveBeenCalledTimes(2));
+    expect(pdsApi.saveWorkExperience.mock.calls[1][1][0].id).toBe('canonical-work-1');
+    expect(pdsApi.saveWorkExperience.mock.calls[1][2]).toBe('work-rev-2');
+
+    // Failed save on education with blank placeholder rows must not mark it saved.
+    fireEvent.click(within(nav).getByRole('button', { name: /Educational Background/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Educational Background' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(within(nav).getByRole('button', { name: /Educational Background/ })).not.toHaveTextContent('(saved)');
+  });
+});

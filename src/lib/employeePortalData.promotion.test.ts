@@ -65,6 +65,7 @@ const accountRow = (overrides: Row = {}): Row => ({
   created_at: '2026-01-01T00:00:00.000Z',
   updated_at: '2026-01-01T00:00:00.000Z',
   deleted_at: null,
+  must_change_password: false,
   ...overrides,
 });
 
@@ -270,5 +271,18 @@ describe('authenticatePromotionalEmployee', () => {
       error: PROMOTIONAL_AUTH_ERROR.INVALID_CREDENTIALS,
     });
     expect(remote.queries).toEqual([]);
+  });
+
+  it('strips password and requires boolean must_change_password on the remote row', async () => {
+    const valid = await authenticatePromotionalEmployee('maria.santos', 'Correct#123');
+    expect(valid.ok).toBe(true);
+    expect(valid.account).toBeDefined();
+    expect('password' in (valid.account as Record<string, unknown>)).toBe(false);
+    expect((valid.account as { mustChangePassword?: boolean }).mustChangePassword).toBe(false);
+
+    remote.rows = [accountRow({ must_change_password: undefined })];
+    const invalidFlag = await authenticatePromotionalEmployee('maria.santos', 'Correct#123');
+    expect(invalidFlag).toEqual({ ok: false, error: PROMOTIONAL_AUTH_ERROR.LOOKUP_UNAVAILABLE });
+    expect(invalidFlag.account).toBeUndefined();
   });
 });

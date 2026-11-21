@@ -9,6 +9,7 @@ import {
   generateEmployeeCredentials,
   printCredentialCards,
   type CredentialResult,
+  type ExistingPortalAccountOutcome,
   type PromotionOutcome,
   type ReservedApplicant,
 } from '../lib/hiringFlow';
@@ -68,6 +69,7 @@ export const GenerateCredentialsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialResult[]>([]);
   const [promotions, setPromotions] = useState<PromotionOutcome[]>([]);
+  const [existingAccounts, setExistingAccounts] = useState<ExistingPortalAccountOutcome[]>([]);
   const [failures, setFailures] = useState<string[]>([]);
   const [unconfirmed, setUnconfirmed] = useState(0);
   // A failed read is reported, not shown as "nobody is awaiting credentials".
@@ -137,10 +139,16 @@ export const GenerateCredentialsPage = () => {
       setSelected(new Set());
       setCredentials(outcome.credentials);
       setPromotions(outcome.promotions);
+      setExistingAccounts(outcome.existingAccounts ?? []);
       setFailures(outcome.failures);
       setUnconfirmed(outcome.unconfirmed ?? 0);
       // When every row failed, the result modal lists each reason, so no banner blames the connection.
-      if (outcome.credentials.length === 0 && outcome.promotions.length === 0 && outcome.failures.length === 0) {
+      if (
+        outcome.credentials.length === 0 &&
+        outcome.promotions.length === 0 &&
+        (outcome.existingAccounts?.length ?? 0) === 0 &&
+        outcome.failures.length === 0
+      ) {
         setError("We couldn't generate any credentials. Check your connection and try again.");
       }
     } catch (err) {
@@ -154,19 +162,21 @@ export const GenerateCredentialsPage = () => {
     }
   };
 
-  const closeResults = () => { setCredentials([]); setPromotions([]); setFailures([]); setUnconfirmed(0); };
+  const closeResults = () => { setCredentials([]); setPromotions([]); setExistingAccounts([]); setFailures([]); setUnconfirmed(0); };
   // Every selected row failed: the modal only lists reasons and claims nothing was created or emailed.
-  const nothingCompleted = credentials.length === 0 && promotions.length === 0;
-  // A promotion with no answer may have committed, so "nothing" could be false.
+  const nothingCompleted = credentials.length === 0 && promotions.length === 0 && existingAccounts.length === 0;
+  // A promotion or hire with no answer may have committed, so "nothing" could be false.
   const resultTitle = nothingCompleted && unconfirmed > 0
     ? 'Result Not Confirmed'
     : nothingCompleted
     ? 'Nothing Was Completed'
-    : credentials.length > 0 && promotions.length > 0
+    : credentials.length > 0 && (promotions.length > 0 || existingAccounts.length > 0)
       ? 'Appointments Completed'
-      : credentials.length === 0
-        ? 'Promotions Completed'
-        : 'Employee Records Created';
+      : credentials.length === 0 && existingAccounts.length > 0 && promotions.length === 0
+        ? 'Existing Accounts Preserved'
+        : credentials.length === 0
+          ? 'Promotions Completed'
+          : 'Employee Records Created';
   const resultSubtitle = nothingCompleted && unconfirmed > 0
     ? "We couldn't confirm every result. Check the reasons below."
     : nothingCompleted
@@ -174,6 +184,9 @@ export const GenerateCredentialsPage = () => {
     : [
       credentials.length > 0
         ? `${plural(credentials.length, 'account')} generated. Credentials were emailed where an address was on file.`
+        : null,
+      existingAccounts.length > 0
+        ? `${plural(existingAccounts.length, 'existing account')} kept unchanged.`
         : null,
       promotions.length > 0 ? `${plural(promotions.length, 'promotion')} completed.` : null,
     ].filter(Boolean).join(' ');
@@ -412,7 +425,7 @@ export const GenerateCredentialsPage = () => {
       {/* Result: credentials + print (option A cut-out cards). Not dismissible:
           the temporary passwords are shown once, so closing is an explicit Done. */}
       <Modal
-        open={credentials.length > 0 || promotions.length > 0 || failures.length > 0}
+        open={credentials.length > 0 || promotions.length > 0 || existingAccounts.length > 0 || failures.length > 0}
         onClose={closeResults}
         dismissible={false}
         size="lg"
@@ -460,6 +473,7 @@ export const GenerateCredentialsPage = () => {
                 <th scope="col" className="pb-2">Name</th>
                 <th scope="col" className="pb-2">Position / Office</th>
                 <th scope="col" className="pb-2">Employee ID</th>
+                <th scope="col" className="pb-2">Username</th>
                 <th scope="col" className="pb-2">Temporary Password</th>
                 <th scope="col" className="pb-2">Email</th>
               </tr>
@@ -476,6 +490,7 @@ export const GenerateCredentialsPage = () => {
                     <p className="text-xs text-[var(--neutral-600)]">{c.department || '—'}</p>
                   </td>
                   <td className="py-3 pr-4 font-mono font-semibold text-[var(--color-primary-900)]">{c.employeeId}</td>
+                  <td className="py-3 pr-4 font-mono">{c.username}</td>
                   <td className="py-3 pr-4 font-mono">{c.tempPassword}</td>
                   <td className="py-3">
                     {!c.email ? (
@@ -496,6 +511,42 @@ export const GenerateCredentialsPage = () => {
           <p className="mt-4 text-xs text-[var(--neutral-600)]">
             Employees must change their temporary password at first login. Keep this list confidential.
           </p>
+        )}
+        {existingAccounts.length > 0 && (
+          <div className={credentials.length > 0 ? 'mt-6' : undefined}>
+            {credentials.length > 0 && (
+              <h3 className="mb-2 text-base font-semibold text-[var(--color-primary-900)]">Existing portal accounts</h3>
+            )}
+            <div className="abyan-table-wrap">
+              <table className="abyan-table w-full">
+                <thead>
+                  <tr className="border-b border-[var(--neutral-200)] text-left text-[13px] font-semibold text-[var(--color-primary-900)]">
+                    <th scope="col" className="pb-2">Name</th>
+                    <th scope="col" className="pb-2">Position / Office</th>
+                    <th scope="col" className="pb-2">Employee ID</th>
+                    <th scope="col" className="pb-2">Username</th>
+                    <th scope="col" className="pb-2">Account Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--neutral-200)]">
+                  {existingAccounts.map((acc) => (
+                    <tr key={acc.applicantId}>
+                      <td className="py-3 pr-4 font-semibold text-[var(--color-primary-900)]">{acc.fullName || acc.employeeNumber}</td>
+                      <td className="py-3 pr-4">
+                        <p>{acc.position || '—'}{acc.plantilla ? ` · ${acc.plantilla}` : ''}</p>
+                        <p className="text-xs text-[var(--neutral-600)]">{acc.department || '—'}</p>
+                      </td>
+                      <td className="py-3 pr-4 font-mono font-semibold text-[var(--color-primary-900)]">{acc.employeeNumber}</td>
+                      <td className="py-3 pr-4 font-mono">{acc.username}</td>
+                      <td className="py-3 text-[var(--neutral-800)]">
+                        Existing portal account kept unchanged (no password issued). Use Accounts → Reset Password if a new temporary password is needed.
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
         {promotions.length > 0 && (
           <div className={credentials.length > 0 ? 'mt-6' : undefined}>

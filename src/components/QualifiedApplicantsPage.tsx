@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { hireApplicant } from '../lib/api/employeesApi';
+import { ExternalHireError, hireApplicantWithOutcome } from '../lib/api/employeesApi';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
   ensureRecruitmentSeedData,
@@ -27,7 +27,7 @@ import {
   saveApplicants,
 } from '../lib/recruitmentData';
 import { sendEmail } from '../lib/email';
-import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
+import { ensureEmployeePortalAccount } from '../lib/employeePortalData';
 import { runSingleFlight } from '../lib/singleFlight';
 import { supabase } from '../lib/supabase';
 import { applicantAttachmentDocument, hasDocumentFile, listApplicantDocumentAttachments, type ApplicantDocumentAttachment, type ViewerDocument } from '../lib/documentViewing';
@@ -967,18 +967,20 @@ export const QualifiedApplicantsPage = () => {
         const department = job?.department ?? 'Unassigned';
 
         try {
-          const employeeRow = await hireApplicant(row.id);
+          const hireOutcome = await hireApplicantWithOutcome(row.id);
           hiredIdSet.add(row.id);
 
-          // Generate a temp password and provision the portal account so the
-          // applicant can log in with the printed/emailed credentials.
-          const tempPassword = createPassword();
-          const employeeId = employeeRow?.employee_id ?? row.id;
-          upsertEmployeePortalAccount({
-            id: `portal-${employeeId}`,
-            username: employeeId,
-            password: tempPassword,
-            mustChangePassword: true,
+          if (hireOutcome.promotion) {
+            continue;
+          }
+
+          const employeeId = String(hireOutcome.employee?.employee_id ?? '').trim();
+          if (!employeeId) {
+            skippedRows.push(`${fullName} (missing confirmed employee number)`);
+            continue;
+          }
+
+          const provision = await ensureEmployeePortalAccount({
             employee: {
               employeeId,
               fullName,
@@ -1002,8 +1004,19 @@ export const QualifiedApplicantsPage = () => {
               status: 'Active',
               hireDate: nowIsoForLocalUpdate,
             } as any,
+            requestedUsername: employeeId,
           });
 
+          if (provision.ok === false) {
+            skippedRows.push(`${fullName} (hired ${employeeId}, account ${provision.kind === 'unconfirmed' ? 'unconfirmed' : 'not created'}: ${provision.error})`);
+            continue;
+          }
+
+          if (provision.created === false) {
+            continue;
+          }
+
+          const tempPassword = provision.credentials.password;
           newCredentials.push({
             fullName,
             email: row.personalInfo.email ?? '',
@@ -1013,8 +1026,8 @@ export const QualifiedApplicantsPage = () => {
             tempPassword,
           });
 
-          // Send login credentials by email. Fire-and-forget: failure here
-          // shouldn't roll back the hire (HR can still use Print Credentials).
+          // Send login credentials by email only when a fresh account was created.
+          // Failure here shouldn't roll back the hire (HR can still use Print Credentials).
           const recipient = (row.personalInfo.email ?? '').trim();
           if (recipient) {
             void sendEmail({
@@ -1026,6 +1039,7 @@ export const QualifiedApplicantsPage = () => {
                 `Position: ${position}\n` +
                 `Department: ${department}\n\n` +
                 `Employee ID: ${employeeId}\n` +
+                `Username: ${provision.credentials.username}\n` +
                 `Temporary password: ${tempPassword}\n\n` +
                 `Log in to the employee portal and you will be prompted to set a new password before accessing any modules.\n\n` +
                 `If you did not expect this email, please contact HR.\n`,
@@ -1037,7 +1051,7 @@ export const QualifiedApplicantsPage = () => {
           }
         } catch (err) {
           console.error(`Failed to hire applicant ${row.id}`, err);
-          skippedRows.push(fullName);
+          skippedRows.push(err instanceof ExternalHireError ? `${fullName} (${err.message})` : fullName);
         }
       }
 
@@ -1084,7 +1098,9 @@ export const QualifiedApplicantsPage = () => {
       if (hiredIdSet.size > 0) {
         // Dispatch event to notify other pages (NewlyHiredPage) to refresh their data
         window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
-        navigate('/admin/rsp/new-hired');
+        if (newCredentials.length === 0) {
+          navigate('/admin/rsp/new-hired');
+        }
       }
     } catch (error) {
       console.error('Error confirming hires:', error);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Copy, FilePlus2, Heart, Lock, Mail, MapPin, Phone, X } from 'lucide-react';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 
@@ -6,10 +6,9 @@ import { supabase as supabaseClient } from '../../../lib/supabase';
 // used elsewhere in the codebase.
 const supabase = supabaseClient as any;
 import {
-  createPassword,
-  findEmployeePortalAccount,
-  getEmployeePortalAccounts,
-  upsertEmployeePortalAccount,
+  getEmployeePortalAccountByEmployeeNumber,
+  resetEmployeePortalPassword,
+  type PortalAccountIdentity,
 } from '../../../lib/employeePortalData';
 import { createDocumentRequest } from '../../../lib/employeeDocuments';
 import ChangePositionModal from './ChangePositionModal';
@@ -59,9 +58,21 @@ export default function EmployeeDetailPage({ employee, onRefresh }: Props) {
 
   // Reset password flow
   const [resetState, setResetState] = useState<'idle' | 'confirm' | 'working' | 'done' | 'error'>('idle');
+  const [resetResolving, setResetResolving] = useState(false);
+  const [resetTarget, setResetTarget] = useState<PortalAccountIdentity | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState<string | null>(null);
   const [resetUsername, setResetUsername] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
+  const resetSeqRef = useRef(0);
+  const resetInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Request Document flow — HR creates an hr_request row that lands in the
   // employee's Submission Bin.
@@ -73,6 +84,16 @@ export default function EmployeeDetailPage({ employee, onRefresh }: Props) {
   const [requestError, setRequestError] = useState<string | null>(null);
 
   useEffect(() => {
+    resetSeqRef.current += 1;
+    resetInFlightRef.current = false;
+    setResetResolving(false);
+    setResetTarget(null);
+    setResetState('idle');
+    setResetPasswordValue(null);
+    setResetUsername(null);
+    setResetError(null);
+    setFullEmployee(employee);
+
     // Check if this is a newly hired applicant or an established employee
     if (employee.id.startsWith('applicant-')) {
       // For newly hired applicants, fetch from applicants table
@@ -161,70 +182,95 @@ export default function EmployeeDetailPage({ employee, onRefresh }: Props) {
 
   const age = calculateAge(fullEmployee.date_of_birth);
 
-  /**
-   * Locate the Employee Portal account for this employee. Portal accounts are
-   * keyed by employee_id / email, so we try the most reliable identifiers
-   * in order.
-   */
-  const findPortalAccountForEmployee = () => {
-    const accounts = getEmployeePortalAccounts();
-    const empId = String(fullEmployee.employee_id ?? '').trim();
-    const email = String(fullEmployee.email ?? '').trim().toLowerCase();
+  const openResetModal = async () => {
+    const seq = ++resetSeqRef.current;
+    resetInFlightRef.current = false;
+    setResetState('confirm');
+    setResetResolving(true);
+    setResetTarget(null);
+    setResetPasswordValue(null);
+    setResetUsername(null);
+    setResetError(null);
 
-    return (
-      accounts.find((account) =>
-        String(account.employee.employeeId ?? '').trim() === empId,
-      ) ??
-      accounts.find((account) =>
-        String(account.employee.email ?? '').trim().toLowerCase() === email,
-      ) ??
-      null
-    );
+    const empNumber = String(fullEmployee.employee_id ?? '').trim();
+    if (!empNumber) {
+      setResetResolving(false);
+      setResetError('This employee record has no confirmed employee number.');
+      setResetState('error');
+      return;
+    }
+
+    const lookup = await getEmployeePortalAccountByEmployeeNumber(empNumber);
+    if (!mountedRef.current || seq !== resetSeqRef.current) return;
+    setResetResolving(false);
+
+    if (lookup.ok === false) {
+      setResetError(
+        lookup.kind === 'not_found'
+          ? `No employee-portal account exists for ${empNumber}. Generate credentials from Newly Hired first.`
+          : lookup.kind === 'ambiguous_account'
+            ? 'Multiple employee portal accounts matched this employee number. Contact an administrator before resetting.'
+            : 'Unable to check the employee portal account right now. Please try again.',
+      );
+      setResetState('error');
+      return;
+    }
+
+    setResetTarget(lookup.account);
   };
 
   const handleResetPasswordConfirm = async () => {
+    if (resetInFlightRef.current || resetResolving || resetState === 'working') return;
+    const empNumber = String(fullEmployee.employee_id ?? '').trim();
+    if (!empNumber || !resetTarget) {
+      setResetError('No verified employee portal account is loaded for this reset.');
+      setResetState('error');
+      return;
+    }
+
+    const gen = resetSeqRef.current;
+    resetInFlightRef.current = true;
     setResetState('working');
     setResetError(null);
+    setResetPasswordValue(null);
 
     try {
-      const account = findPortalAccountForEmployee();
-      if (!account) {
-        setResetError(
-          `No employee-portal account exists for ${fullEmployee.employee_id} / ${fullEmployee.email}. ` +
-            `Generate credentials from Newly Hired first.`,
-        );
-        setResetState('error');
-        return;
-      }
-
-      const newPassword = createPassword();
-
-      upsertEmployeePortalAccount({
-        id: account.id,
-        username: account.username,
-        password: newPassword,
-        employee: account.employee,
+      const result = await resetEmployeePortalPassword({
+        accountId: resetTarget.id,
+        employeeNumber: empNumber,
+        expectedRevision: resetTarget.updatedAt,
       });
+      if (!mountedRef.current || gen !== resetSeqRef.current) return;
 
-      // Sanity check that the new credential pair works for login.
-      const verify = findEmployeePortalAccount(account.username, newPassword);
-      if (!verify) {
-        setResetError('Password was generated but could not be verified. Please retry.');
+      if (result.ok === false) {
+        setResetPasswordValue(null);
+        setResetError(result.error);
         setResetState('error');
         return;
       }
 
-      setResetUsername(account.username);
-      setResetPasswordValue(newPassword);
+      setResetTarget(result.account);
+      setResetUsername(result.credentials.username);
+      setResetPasswordValue(result.credentials.password);
       setResetState('done');
     } catch (error) {
+      if (!mountedRef.current || gen !== resetSeqRef.current) return;
       console.error('handleResetPasswordConfirm: failed', error);
+      setResetPasswordValue(null);
       setResetError(error instanceof Error ? error.message : String(error));
       setResetState('error');
+    } finally {
+      if (gen === resetSeqRef.current) {
+        resetInFlightRef.current = false;
+      }
     }
   };
 
   const closeResetModal = () => {
+    resetSeqRef.current += 1;
+    resetInFlightRef.current = false;
+    setResetResolving(false);
+    setResetTarget(null);
     setResetState('idle');
     setResetPasswordValue(null);
     setResetUsername(null);
@@ -521,7 +567,7 @@ export default function EmployeeDetailPage({ employee, onRefresh }: Props) {
                 <div className="pt-6 border-t border-gray-200">
                   <button
                     type="button"
-                    onClick={() => { setResetState('confirm'); setResetError(null); }}
+                    onClick={() => void openResetModal()}
                     className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center gap-2 transition-colors"
                   >
                     <Lock size={18} />
@@ -766,6 +812,14 @@ export default function EmployeeDetailPage({ employee, onRefresh }: Props) {
                     </span>{' '}
                     ({fullEmployee.employee_id})? The old password will stop working immediately.
                   </p>
+                  {resetResolving && (
+                    <p className="text-xs text-slate-500">Checking employee portal account…</p>
+                  )}
+                  {resetTarget && (
+                    <p className="text-xs text-slate-500">
+                      Portal username: <span className="font-mono font-semibold text-slate-700">{resetTarget.username}</span>
+                    </p>
+                  )}
                   <div className="flex justify-end gap-2">
                     <button
                       type="button"
@@ -777,7 +831,8 @@ export default function EmployeeDetailPage({ employee, onRefresh }: Props) {
                     <button
                       type="button"
                       onClick={handleResetPasswordConfirm}
-                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                      disabled={resetResolving || !resetTarget}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                     >
                       Yes, reset password
                     </button>
