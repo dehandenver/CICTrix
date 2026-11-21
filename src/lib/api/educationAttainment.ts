@@ -8,10 +8,10 @@
  * legacy column kept as a fallback for employees whose PDS was never filled in.
  *
  * Two consumers shape the output:
- *   - `educationRank` (successionCriteria.ts) reads degree words —
+ *   - `normalizeDegree` (successionPipelineV2.ts) reads degree words —
  *     master / doctorate / bachelor — so the course text matters.
- *   - the education gate tokenises the text to compare fields of study
- *     (succession.ts), so every degree is offered, not just the highest.
+ *   - qualification checks tokenise the text to compare fields of study,
+ *     so every degree is offered, not just the highest.
  */
 
 export interface EducationRow {

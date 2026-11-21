@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const client = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock('../supabase', () => ({ supabase: client }));
 
-import { getLatestOverallScores, getSuccessionDashboardOverview, listAutoSuccessors, listAutoSuccessorsForPositions } from './succession';
+import {
+  fetchSuccessionPoolV2,
+  fetchSuccessionPoolsV2,
+  getLatestOverallScores,
+  getSuccessionDashboardOverview,
+} from './succession';
 
 type Row = Record<string, any>;
 type Query = { table: string; columns: string; count?: string; filters: { column: string; values: unknown[] }[] };
@@ -173,27 +178,41 @@ describe('getLatestOverallScores query boundary', () => {
   });
 });
 
-describe('succession scoring integration', () => {
+describe('succession scoring integration (V2)', () => {
   beforeEach(() => {
-    tables.critical_positions = [{ id: 'p', title: 'Engineer III', department_id: 'd-b', min_ipcr_rating: 4.1 }];
-    tables.positions = [{ id: 1, name: 'Engineer I', salary_grade: 11 }, { id: 2, name: 'Engineer III', salary_grade: 18 }];
+    tables.critical_positions = [
+      {
+        id: 'p',
+        title: 'Engineer III',
+        department_id: 'd-b',
+        min_years_experience: 1,
+        required_training_hours: 10,
+        required_education: 'Bachelor of Science in Civil Engineering',
+        required_eligibility: 'None',
+      },
+    ];
+    tables.employee_training = [
+      { id: 't-a', employee_id: 'a', training_title: 'Engineering Seminar', number_of_hours: 20, from_date: '2024-01-01', to_date: '2024-01-02' },
+      { id: 't-b', employee_id: 'b', training_title: 'Engineering Seminar', number_of_hours: 20, from_date: '2024-01-01', to_date: '2024-01-02' },
+    ];
     // This manual candidate is from a different office and outside the active pool.
     tables.employees[0].status = 'Resigned';
     tables.succession_candidates = [{ id: 'manual', employee_id: 'a', critical_position_id: 'p' }];
   });
 
-  it('uses corrected employee-specific scores consistently in single and batch results', async () => {
-    const single = await listAutoSuccessors('p');
-    expect(single).toEqual((await listAutoSuccessorsForPositions(['p'])).get('p'));
-    expect(single.ok).toBe(true);
-    if ('error' in single) throw new Error(single.error);
-    expect(single.data.qualified.map((e) => [e.employeeId, e.readiness.ipcrScore])).toEqual([['b', 4.2], ['a', 3.5]]);
+  it('uses corrected employee-specific scores consistently in single and batch V2 results', async () => {
+    const single = await fetchSuccessionPoolV2('p', '2026-10-28');
+    const batch = await fetchSuccessionPoolsV2(['p'], '2026-10-28');
+    expect(single).toEqual(batch.get('p'));
+    expect(single.ranked.map((r) => [r.candidate.employeeId, r.audit.performanceRating])).toEqual([
+      ['b', 4.2],
+      ['a', 3.5],
+    ]);
   });
 
-  it('returns failures and unknown overview counts, not successful empty pools, when scores cannot be loaded', async () => {
+  it('rejects pool fetch and leaves overview count unknown, not empty, when scores cannot be loaded', async () => {
     errors.add('department_weighting_configs');
-    const result = await listAutoSuccessors('p');
-    expect(result).toMatchObject({ ok: false });
+    await expect(fetchSuccessionPoolV2('p', '2026-10-28')).rejects.toThrow(/IPCR|weight/i);
     const overview = await getSuccessionDashboardOverview();
     expect(overview).toMatchObject({ ok: true, data: { positions: [{ id: 'p', successorCount: null }] } });
   });
