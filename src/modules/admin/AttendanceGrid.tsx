@@ -117,6 +117,7 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
     setAttendance(new Map());
     setLoadError(null);
     setMutationError(null);
+    setBusy(null);
     setExcuse(null);
     void loadAttendanceData('initial');
     return () => {
@@ -147,16 +148,24 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
     note?: string | null,
   ): Promise<boolean> => {
     if (!hasLoaded || staleBlocked) return false;
+    const gen = loadGenRef.current;
+    const targetScope = scopeKeyRef.current;
     setBusy(`${enrollmentId}:${dayKey}:${session}`);
     setMutationError(null);
-    const res = await setDayAttendance({ enrollmentId, dayKey, session, status, note });
-    setBusy(null);
-    if (res.ok !== true) {
-      setMutationError(res.error || 'Could not save attendance.');
-      return false;
+    try {
+      const res = await setDayAttendance({ enrollmentId, dayKey, session, status, note });
+      if (gen !== loadGenRef.current || targetScope !== scopeKeyRef.current) return false;
+      if (res.ok !== true) {
+        setMutationError(res.error || 'Could not save attendance.');
+        return false;
+      }
+      applyLocal(enrollmentId, dayKey, session, status, status === 'Excused' ? (note ?? '') : null);
+      return true;
+    } finally {
+      if (gen === loadGenRef.current && targetScope === scopeKeyRef.current) {
+        setBusy(null);
+      }
     }
-    applyLocal(enrollmentId, dayKey, session, status, status === 'Excused' ? (note ?? '') : null);
-    return true;
   };
 
   const clickStatus = (enrollmentId: string, dayKey: string, session: SessionHalf, status: DayStatus) => {

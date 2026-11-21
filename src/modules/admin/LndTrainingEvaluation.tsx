@@ -169,6 +169,10 @@ export const LndTrainingEvaluation = () => {
       );
       boardRef.current = b;
       editsRef.current = nextEdits;
+      savingRowsRef.current = {};
+      setSavingRows({});
+      setUploadingId(null);
+      setSavingNotes(false);
       setBoard(b);
       setReportNotes(b.reportNotes ?? '');
       setEdits(nextEdits);
@@ -197,6 +201,10 @@ export const LndTrainingEvaluation = () => {
     boardGenRef.current += 1;
     boardRef.current = null;
     editsRef.current = {};
+    savingRowsRef.current = {};
+    setSavingRows({});
+    setUploadingId(null);
+    setSavingNotes(false);
     setBoard(null);
     setEdits({});
     setReportNotes('');
@@ -254,6 +262,61 @@ export const LndTrainingEvaluation = () => {
     });
   };
 
+  type RowMutationResult = {
+    ok: boolean;
+    error?: string;
+    conflict?: boolean;
+    partialFailure?: boolean;
+    updatedAt?: string;
+  };
+
+  /** Guard per-row mutations against stale boards, refreshes, and session switches. */
+  const runRowMutation = async <T extends RowMutationResult>(
+    row: EvalRow,
+    opts: {
+      isUpload?: boolean;
+      execute: (currentRow: EvalRow, sessionId: string) => Promise<T>;
+      onSuccess: (res: T) => { patch: Partial<EvalRow>; notice?: string };
+      errorMessage: (res: T) => string;
+      conflictFallback?: string;
+    },
+  ) => {
+    if (boardStatus !== 'ready' || refreshError || !boardRef.current) return;
+    if (savingRowsRef.current[row.enrollmentId]) return;
+
+    const gen = boardGenRef.current;
+    const sessionId = selectedIdRef.current;
+    const currentRow = boardRef.current.rows.find((x) => x.enrollmentId === row.enrollmentId) ?? row;
+
+    setRowSaving(row.enrollmentId, true);
+    if (opts.isUpload) setUploadingId(row.enrollmentId);
+    try {
+      const res = await opts.execute(currentRow, sessionId);
+      if (gen !== boardGenRef.current || sessionId !== selectedIdRef.current) return;
+      if (res.ok !== true) {
+        if (res.conflict) {
+          setConflictError(
+            res.error || opts.conflictFallback || 'This evaluation changed concurrently. Refresh to see the latest record.',
+          );
+        } else {
+          flash(opts.errorMessage(res));
+        }
+        return;
+      }
+      const { patch, notice: successNotice } = opts.onSuccess(res);
+      updateRow(row.enrollmentId, {
+        ...patch,
+        ...(res.updatedAt !== undefined ? { updatedAt: res.updatedAt } : {}),
+      });
+      if (successNotice) flash(successNotice);
+    } finally {
+      if (gen === boardGenRef.current && sessionId === selectedIdRef.current) {
+        setRowSaving(row.enrollmentId, false);
+        if (opts.isUpload) setUploadingId(null);
+      }
+    }
+  };
+
   const commitScores = async (row: EvalRow, field?: 'pre' | 'post') => {
     if (boardStatus !== 'ready' || refreshError) return;
     if (savingRowsRef.current[row.enrollmentId]) return;
@@ -277,117 +340,63 @@ export const LndTrainingEvaluation = () => {
     }
     if (Object.keys(patch).length === 0) return;
 
-    setRowSaving(row.enrollmentId, true);
-    try {
-      const res = await saveScores(row.enrollmentId, patch, currentRow.updatedAt);
-      if (res.ok !== true) {
-        if (res.conflict) {
-          setConflictError(res.error || 'This evaluation changed concurrently. Refresh to see the latest record.');
-        } else {
-          flash(`Could not save scores: ${res.error}`);
-        }
-        return;
-      }
-      updateRow(row.enrollmentId, {
-        ...patch,
-        ...(res.updatedAt !== undefined ? { updatedAt: res.updatedAt } : {}),
-      });
-    } finally {
-      setRowSaving(row.enrollmentId, false);
-    }
+    await runRowMutation(row, {
+      execute: (cur) => saveScores(row.enrollmentId, patch, cur.updatedAt),
+      onSuccess: () => ({ patch }),
+      errorMessage: (res) => `Could not save scores: ${res.error}`,
+    });
   };
 
-  const changeMode = async (row: EvalRow, mode: AssessmentMode) => {
-    if (boardStatus !== 'ready' || refreshError) return;
-    if (savingRowsRef.current[row.enrollmentId]) return;
-    const currentRow = boardRef.current?.rows.find((x) => x.enrollmentId === row.enrollmentId) ?? row;
-    setRowSaving(row.enrollmentId, true);
-    try {
-      const res = await setAssessmentMode(row.enrollmentId, mode, currentRow.updatedAt);
-      if (res.ok !== true) {
-        if (res.conflict) {
-          setConflictError(res.error || 'This evaluation changed concurrently. Refresh to see the latest record.');
-        } else {
-          flash(`Could not change mode: ${res.error}`);
-        }
-        return;
-      }
-      updateRow(row.enrollmentId, {
-        mode,
-        ...(res.updatedAt !== undefined ? { updatedAt: res.updatedAt } : {}),
-      });
-    } finally {
-      setRowSaving(row.enrollmentId, false);
-    }
-  };
+  const changeMode = (row: EvalRow, mode: AssessmentMode) =>
+    runRowMutation(row, {
+      execute: (cur) => setAssessmentMode(row.enrollmentId, mode, cur.updatedAt),
+      onSuccess: () => ({ patch: { mode } }),
+      errorMessage: (res) => `Could not change mode: ${res.error}`,
+    });
 
-  const changeReview = async (row: EvalRow, status: ReviewStatus) => {
-    if (boardStatus !== 'ready' || refreshError) return;
-    if (savingRowsRef.current[row.enrollmentId]) return;
-    const currentRow = boardRef.current?.rows.find((x) => x.enrollmentId === row.enrollmentId) ?? row;
-    setRowSaving(row.enrollmentId, true);
-    try {
-      const res = await setReviewStatus(row.enrollmentId, status, currentRow.updatedAt);
-      if (res.ok !== true) {
-        if (res.conflict) {
-          setConflictError(res.error || 'This evaluation changed concurrently. Refresh to see the latest record.');
-        } else {
-          flash(`Could not update review: ${res.error}`);
-        }
-        return;
-      }
-      updateRow(row.enrollmentId, {
-        reviewStatus: status,
-        ...(res.updatedAt !== undefined ? { updatedAt: res.updatedAt } : {}),
-      });
-    } finally {
-      setRowSaving(row.enrollmentId, false);
-    }
-  };
+  const changeReview = (row: EvalRow, status: ReviewStatus) =>
+    runRowMutation(row, {
+      execute: (cur) => setReviewStatus(row.enrollmentId, status, cur.updatedAt),
+      onSuccess: () => ({ patch: { reviewStatus: status } }),
+      errorMessage: (res) => `Could not update review: ${res.error}`,
+    });
 
-  const handleFile = async (row: EvalRow, file: File | undefined) => {
-    if (!file || !boardRef.current || boardStatus !== 'ready' || refreshError) return;
-    if (savingRowsRef.current[row.enrollmentId]) return;
-    const currentRow = boardRef.current.rows.find((x) => x.enrollmentId === row.enrollmentId) ?? row;
-    const sessionId = boardRef.current.training.id;
-    setRowSaving(row.enrollmentId, true);
-    setUploadingId(row.enrollmentId);
-    try {
-      const res = await uploadOutput(sessionId, row.enrollmentId, file, currentRow.updatedAt);
-      if (res.ok !== true) {
-        if (res.conflict) {
-          setConflictError(res.error || 'File uploaded, but updating the evaluation conflicted. Refresh before retrying.');
-        } else {
-          flash(res.partialFailure ? (res.error || 'Partial upload failure.') : `Upload failed: ${res.error}`);
-        }
-        return;
-      }
-      updateRow(row.enrollmentId, {
-        mode: 'output',
-        submissionUrl: res.url ?? null,
-        submissionName: res.name ?? file.name,
-        ...(res.updatedAt !== undefined ? { updatedAt: res.updatedAt } : {}),
-      });
-      flash(`Uploaded “${file.name}”.`);
-    } finally {
-      setUploadingId(null);
-      setRowSaving(row.enrollmentId, false);
-    }
+  const handleFile = (row: EvalRow, file: File | undefined) => {
+    if (!file) return Promise.resolve();
+    return runRowMutation(row, {
+      isUpload: true,
+      execute: (cur, sessionId) => uploadOutput(sessionId, row.enrollmentId, file, cur.updatedAt),
+      onSuccess: (res) => ({
+        patch: {
+          mode: 'output',
+          submissionUrl: res.url ?? null,
+          submissionName: res.name ?? file.name,
+        },
+        notice: `Uploaded “${file.name}”.`,
+      }),
+      errorMessage: (res) => (res.partialFailure ? (res.error || 'Partial upload failure.') : `Upload failed: ${res.error}`),
+      conflictFallback: 'File uploaded, but updating the evaluation conflicted. Refresh before retrying.',
+    });
   };
 
   const commitReportNotes = async () => {
     if (!boardRef.current || boardStatus !== 'ready' || refreshError || savingNotes) return;
     if (reportNotes === (boardRef.current.reportNotes ?? '')) return;
-    const sessionId = boardRef.current.training.id;
+    const gen = boardGenRef.current;
+    const sessionId = selectedIdRef.current;
+    if (!sessionId) return;
     setSavingNotes(true);
     try {
       const res = await saveReportNotes(sessionId, reportNotes);
+      if (gen !== boardGenRef.current || sessionId !== selectedIdRef.current) return;
       if (res.ok !== true) { flash(`Could not save recommendations: ${res.error}`); return; }
       const updateNotes = (prev: EvalBoard | null) => (prev && prev.training.id === sessionId ? { ...prev, reportNotes } : prev);
       boardRef.current = updateNotes(boardRef.current);
       setBoard(updateNotes);
     } finally {
-      setSavingNotes(false);
+      if (gen === boardGenRef.current && sessionId === selectedIdRef.current) {
+        setSavingNotes(false);
+      }
     }
   };
 

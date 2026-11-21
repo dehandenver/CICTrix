@@ -253,4 +253,37 @@ describe('LndTrainingEvaluation', () => {
     await waitFor(() => expect(apiMocks.uploadOutput).toHaveBeenCalledTimes(1));
     expect(screen.queryByText('partial.pdf')).not.toBeInTheDocument();
   });
+
+  it('ignores late row mutation failures from an earlier training after switching sessions', async () => {
+    const slowSave = deferred<{ ok: boolean; conflict?: boolean; error?: string }>();
+    const boardA = makeBoard('sess-1', 'Training A', { enrollmentId: 'enr-1', name: 'Ana Cruz', pre: 70, post: 80 });
+    const boardB = makeBoard('sess-2', 'Training B', { enrollmentId: 'enr-1', name: 'Ben Reyes', pre: 60, post: 75 });
+    apiMocks.listEvaluableTrainings.mockResolvedValue([boardA.training, boardB.training]);
+    apiMocks.getEvaluationBoard
+      .mockResolvedValueOnce(boardA)
+      .mockResolvedValueOnce(boardB);
+    apiMocks.saveScores.mockReturnValueOnce(slowSave.promise);
+
+    render(<LndTrainingEvaluation />);
+    const preA = (await screen.findByLabelText('Pre-test score for Ana Cruz')) as HTMLInputElement;
+    fireEvent.change(preA, { target: { value: '75' } });
+    fireEvent.blur(preA);
+    await waitFor(() => expect(apiMocks.saveScores).toHaveBeenCalledTimes(1));
+
+    const select = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'sess-2' } });
+    const preB = (await screen.findByLabelText('Pre-test score for Ben Reyes')) as HTMLInputElement;
+    expect(preB).toBeEnabled();
+
+    // Training A's in-flight save settles with conflict after Training B is loaded.
+    slowSave.resolve({ ok: false, conflict: true, error: 'Stale conflict from Training A' });
+    await Promise.resolve();
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(preB).toBeEnabled();
+
+    fireEvent.change(preB, { target: { value: '68' } });
+    fireEvent.blur(preB);
+    await waitFor(() => expect(apiMocks.saveScores).toHaveBeenCalledTimes(2));
+  });
 });

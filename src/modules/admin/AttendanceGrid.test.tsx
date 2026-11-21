@@ -167,4 +167,40 @@ describe('AttendanceGrid', () => {
     expect(alertSpy).not.toHaveBeenCalled();
     expect((screen.getByPlaceholderText(/medical appointment/i) as HTMLTextAreaElement).value).toBe('Medical cert');
   });
+
+  it('ignores late setDayAttendance completion after switching session scope', async () => {
+    const slowSave = deferred<{ ok: boolean; error?: string }>();
+    apiMocks.listAttendance
+      .mockResolvedValueOnce(new Map())
+      .mockResolvedValueOnce(new Map([['enr-2', new Map([[`${TODAY_KEY}|AM`, { status: 'Present', note: null }]])]]));
+    apiMocks.setDayAttendance.mockReturnValueOnce(slowSave.promise);
+
+    const { rerender } = render(
+      <AttendanceGrid
+        startDate={TODAY_ISO}
+        endDate={TODAY_ISO}
+        attendees={[{ enrollmentId: 'enr-1', name: 'Ana Cruz', department: 'HRMO' }]}
+      />,
+    );
+
+    await screen.findByText('0P');
+    fireEvent.click(screen.getAllByTitle('Absent · Morning')[0]);
+
+    rerender(
+      <AttendanceGrid
+        startDate={TODAY_ISO}
+        endDate={TODAY_ISO}
+        attendees={[{ enrollmentId: 'enr-2', name: 'Ben Reyes', department: 'Accounting' }]}
+      />,
+    );
+    expect(await screen.findByText('1P')).toBeInTheDocument();
+
+    // Late error from the previous session settles after switching to enr-2.
+    slowSave.resolve({ ok: false, error: 'Stale session write failed' });
+    await Promise.resolve();
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('1P')).toBeInTheDocument();
+    expect(screen.getAllByTitle('Present · Morning')[0]).toBeEnabled();
+  });
 });
