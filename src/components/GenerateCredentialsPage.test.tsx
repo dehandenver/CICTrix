@@ -79,8 +79,9 @@ describe('Generate Employee Credentials', () => {
 
   it('generates only the ticked applicants and shows their credentials', async () => {
     generateEmployeeCredentials.mockResolvedValue({
-      credentials: [{ fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' }],
+      credentials: [{ fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', username: 'juan.delacruz', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' }],
       promotions: [],
+      existingAccounts: [],
       failures: [],
     });
     await renderPage();
@@ -91,6 +92,7 @@ describe('Generate Employee Credentials', () => {
     await screen.findByText('Employee Records Created');
     expect(generateEmployeeCredentials).toHaveBeenCalledWith([expect.objectContaining({ id: 'a' })]);
     expect(screen.getByText('EMP-1')).toBeInTheDocument();
+    expect(screen.getByText('juan.delacruz')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Print Credentials/ })).toBeEnabled();
   });
 
@@ -139,8 +141,8 @@ describe('Generate Employee Credentials', () => {
   });
 
   it('shows both kinds in a mixed result and prints only the credentials', async () => {
-    const credential = { fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' };
-    generateEmployeeCredentials.mockResolvedValue({ credentials: [credential], promotions: [promotionOutcome], failures: [] });
+    const credential = { fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', username: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' };
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [credential], promotions: [promotionOutcome], existingAccounts: [], failures: [] });
     await generateSelected('Juan Dela Cruz', 'Ligaya Bautista');
 
     const dialog = await screen.findByRole('dialog', { name: 'Appointments Completed' });
@@ -186,8 +188,8 @@ describe('Generate Employee Credentials', () => {
   });
 
   it('keeps the credential title and failure list when some credentials were issued', async () => {
-    const credential = { fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' };
-    generateEmployeeCredentials.mockResolvedValue({ credentials: [credential], promotions: [], failures: ['Ana Reyes: could not be hired.'] });
+    const credential = { fullName: 'Juan Dela Cruz', employeeId: 'EMP-1', username: 'EMP-1', tempPassword: 'pw-1', email: 'a@x.ph', emailSent: true, position: 'Engineer II', department: "City Engineer's Office", plantilla: 'Plantilla 1' };
+    generateEmployeeCredentials.mockResolvedValue({ credentials: [credential], promotions: [], existingAccounts: [], failures: ['Ana Reyes: could not be hired.'] });
     await generateSelected('Juan Dela Cruz', 'Ana Reyes');
 
     const dialog = await screen.findByRole('dialog', { name: 'Employee Records Created' });
@@ -237,6 +239,34 @@ describe('Generate Employee Credentials', () => {
     const alert = await screen.findByText(/We couldn't revoke the selection./);
     expect(alert.textContent).toContain("You don't have permission");
     expect(alert.textContent).not.toContain('plantilla_slots');
+  });
+
+  it('displays existingAccounts without a fabricated password and keeps Print Credentials disabled when credentials is empty', async () => {
+    generateEmployeeCredentials.mockResolvedValue({
+      credentials: [],
+      promotions: [],
+      existingAccounts: [
+        {
+          applicantId: 'a',
+          employeeNumber: 'EMP-2026-0042',
+          accountId: 'acct-custom-9',
+          username: 'juan.custom',
+          fullName: 'Juan Dela Cruz',
+          position: 'Engineer II',
+          department: "City Engineer's Office",
+          plantilla: 'Plantilla 1',
+        },
+      ],
+      failures: [],
+    });
+    await generateSelected('Juan Dela Cruz');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Existing Accounts Preserved' });
+    expect(within(dialog).getByText('EMP-2026-0042')).toBeInTheDocument();
+    expect(within(dialog).getByText('juan.custom')).toBeInTheDocument();
+    expect(within(dialog).getByText(/Reset Password/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /Print Credentials/ })).toBeDisabled();
+    expect(screen.queryByText(/couldn't generate any credentials/i)).toBeNull();
   });
 });
 

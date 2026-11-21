@@ -27,4 +27,20 @@ describe('formPages', () => {
     expect(clampFormPage(99)).toBe(FORM_PAGE_COUNT);
     expect(clampFormPage(3)).toBe(3);
   });
+
+  it('routes education_school to Page 3 and work_experience_entries to Page 4', () => {
+    const errors = {
+      education_school: 'School or institution is required',
+      work_experience_entries: 'Please complete or fix the highlighted work experience entries',
+    };
+
+    expect(pageErrors(3, errors, '').errors).toEqual({
+      education_school: 'School or institution is required',
+    });
+    expect(pageErrors(4, errors, '').errors).toEqual({
+      work_experience_entries: 'Please complete or fix the highlighted work experience entries',
+    });
+    expect(firstPageWithErrors({ education_school: 'required' }, '')).toBe(3);
+    expect(firstPageWithErrors({ work_experience_entries: 'required' }, '')).toBe(4);
+  });
 });

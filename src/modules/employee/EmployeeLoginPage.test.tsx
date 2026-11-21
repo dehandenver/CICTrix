@@ -261,4 +261,33 @@ describe('EmployeeLoginPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /sign in/i })).toBeEnabled());
     expect(readEmployeeSession).toHaveBeenCalledOnce();
   });
+
+  it('distinguishes lookup_unavailable from invalid credentials and advises retrying', async () => {
+    const unavailableErr = Object.assign(new Error('Lookup unavailable'), {
+      kind: 'lookup_unavailable',
+    });
+    const onLogin = vi.fn().mockRejectedValue(unavailableErr);
+    render(<EmployeeLoginPage onLogin={onLogin} />);
+    fillCredentials();
+    submitForm();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).not.toHaveTextContent("That username and password don't match an account.");
+    expect(alert.textContent).toMatch(/reach the employee sign-in service|Check your connection/i);
+  });
+
+  it('distinguishes ambiguous_account with contact-HR guidance without exposing counts', async () => {
+    const ambiguousErr = Object.assign(new Error('Ambiguous account'), {
+      kind: 'ambiguous_account',
+    });
+    const onLogin = vi.fn().mockRejectedValue(ambiguousErr);
+    render(<EmployeeLoginPage onLogin={onLogin} />);
+    fillCredentials();
+    submitForm();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).not.toHaveTextContent("That username and password don't match an account.");
+    expect(alert.textContent).toMatch(/contact hr/i);
+    expect(alert.textContent).not.toMatch(/\b(2|two|multiple|count|duplicates)\b/i);
+  });
 });

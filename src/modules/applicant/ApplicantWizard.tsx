@@ -25,11 +25,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Dialog } from '../../components';
 import { formatDivisionAndOffice, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import {
-    type EmployeePortalAccount,
+    type PortalAccountIdentity,
     PROMOTIONAL_AUTH_ERROR,
     authenticatePromotionalEmployee,
-    getEmployeePortalAccounts,
-    findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
+    getEmployeePortalAccountByEmployeeNumber,
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
@@ -41,6 +40,12 @@ import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
 import type { JobPosting } from '../../types/recruitment.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
+import {
+    computeWorkExperienceTotalMonths,
+    computeWorkExperienceYearsDecimal,
+    filterMeaningfulWorkExperienceEntries,
+    formatWorkExperienceTotal,
+} from '../../utils/workExperience';
 import { duplicatePlantillaMessage, isDuplicatePlantillaApplication, normalizeApplicantEmail } from '../../lib/plantillaRules';
 import { logErrorForAdmin } from '../../utils/errorLogger';
 import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
@@ -113,6 +118,7 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   relevant_experience_position: '',
   relevant_experience_company: '',
   relevant_experience_duties: '',
+  work_experience_entries: [],
   gov_id_type: '',
   gov_id_expiration: '',
 };
@@ -200,7 +206,7 @@ export const ApplicantWizard: React.FC = () => {
     Object.fromEntries(Object.entries(persisted.drafts).map(([key, formData]) => [key, blankApp(formData)])),
   );
   const [activeKey, setActiveKey] = useState(persisted.activeKey);
-  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(
+  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<PortalAccountIdentity | null>(
     persisted.authenticatedEmployeeAccount,
   );
 
@@ -416,7 +422,7 @@ export const ApplicantWizard: React.FC = () => {
     });
   }, []);
 
-  const changeHandlers = useRef<Record<string, (field: keyof ApplicantFormData, value: string | boolean) => void>>({});
+  const changeHandlers = useRef<Record<string, (field: keyof ApplicantFormData, value: any) => void>>({});
   /** A stable onChange per application, so child effects keyed on it don't loop. */
   const handleFormChangeFor = (key: string) => {
     if (!changeHandlers.current[key]) {
@@ -474,16 +480,10 @@ export const ApplicantWizard: React.FC = () => {
       setIsLoadingPrefill(true);
       setNotice('Loading your employee records...');
       try {
-        // Match the portal account by Employee ID alone. The username field is
+        // Match the portal account by Employee ID alone remotely. The username field is
         // an OUTPUT we auto-fill from the matched account — never a filter.
-        let matchedAccount = getEmployeePortalAccounts().find(
-          (account) =>
-            normalizeAuthValue(String(account?.employee?.employeeId ?? '')) === normalizeAuthValue(enteredId),
-        );
-
-        if (!matchedAccount) {
-          matchedAccount = await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(enteredId);
-        }
+        const accountLookup = await getEmployeePortalAccountByEmployeeNumber(enteredId);
+        const matchedAccount = accountLookup.ok === true ? accountLookup.account : undefined;
 
         // The employees table is the authoritative source.
         const lookupEmail = matchedAccount?.employee?.email || activeFormData.email;
@@ -533,6 +533,7 @@ export const ApplicantWizard: React.FC = () => {
                 relevant_experience_position: profile?.relevantExperiencePosition || prev.relevant_experience_position,
                 relevant_experience_company: profile?.relevantExperienceCompany || prev.relevant_experience_company,
                 relevant_experience_duties: profile?.relevantExperienceDuties || prev.relevant_experience_duties,
+                work_experience_entries: (profile as any)?.workExperienceEntries ?? prev.work_experience_entries ?? [],
               },
             };
           });
@@ -548,9 +549,11 @@ export const ApplicantWizard: React.FC = () => {
           if (!(profile?.contactNumber || matchedAccount?.employee?.mobileNumber)) notOnFile.push('Contact Number');
           if (!(profile?.address || matchedAccount?.employee?.homeAddress)) notOnFile.push('Address');
           if (!profile?.educationAttainment) notOnFile.push('Highest Educational Attainment');
-          if (!profile?.relevantExperiencePosition) notOnFile.push('Position Held');
-          if (!profile?.relevantExperienceCompany) notOnFile.push('Company / Organization');
-          if (!profile?.relevantExperienceDuties) notOnFile.push('Description of Duties');
+          if (((profile as any)?.workExperienceEntries?.length ?? 0) === 0 && !profile?.relevantExperiencePosition) {
+            notOnFile.push('Position Held');
+            if (!profile?.relevantExperienceCompany) notOnFile.push('Company / Organization');
+            if (!profile?.relevantExperienceDuties) notOnFile.push('Description of Duties');
+          }
 
           const baseNotice = profile
             ? 'We filled in your details from your employee record. Review each field and update anything that has changed.'
@@ -677,6 +680,9 @@ export const ApplicantWizard: React.FC = () => {
       ...target,
       formData: {
         ...source.formData,
+        work_experience_entries: source.formData.work_experience_entries
+          ? source.formData.work_experience_entries.map((entry) => ({ ...entry }))
+          : [],
         // Each copy keeps its own plantilla identity.
         item_number: target.formData.item_number,
         position: target.formData.position,
@@ -920,9 +926,13 @@ export const ApplicantWizard: React.FC = () => {
     const existing = await findExistingApplication(formData.email, choice?.slotId ?? null, plantillaItemNo);
     if (existing) return { status: 'already', referenceNo: existing.referenceNo };
 
+    const meaningfulEntries = filterMeaningfulWorkExperienceEntries(formData.work_experience_entries);
     const experienceYears = parseInt(formData.work_experience_years || '0', 10) || 0;
     const experienceMonths = parseInt(formData.work_experience_months || '0', 10) || 0;
-    const totalExperienceYears = +(experienceYears + experienceMonths / 12).toFixed(2);
+    const totalExperienceYears =
+      meaningfulEntries.length > 0
+        ? (computeWorkExperienceYearsDecimal(meaningfulEntries) ?? 0)
+        : +(experienceYears + experienceMonths / 12).toFixed(2);
 
     const applicantPayload: Record<string, any> = {
       first_name: formData.first_name.trim(),
@@ -941,6 +951,7 @@ export const ApplicantWizard: React.FC = () => {
       application_type: applicationType,
       status: 'New Application',
       years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
+      work_experience_entries: meaningfulEntries,
       education_level: formData.education_attainment || null,
       // Persist degree/course + school (migration 20260812). Stripped on the
       // retry below if that migration hasn't run, so submission never breaks.
@@ -980,26 +991,31 @@ export const ApplicantWizard: React.FC = () => {
         return names.some((name) => text.includes(name));
       };
 
-      let { data, error } = await insertWith('id, item_number, reference_no');
+      let selectCols = 'id, item_number, reference_no';
+      let { data, error } = await insertWith(selectCols);
 
-      // Migration 20260928 not applied yet: file without the direct link (the
-      // link table below still records the plantilla).
-      if (isMissingColumn(error, 'plantilla_slot_id')) {
-        delete applicantPayload.plantilla_slot_id;
-        ({ data, error } = await insertWith('id, item_number, reference_no'));
-      }
-
-      if (isMissingColumn(error, 'reference_no')) {
-        ({ data, error } = await insertWith('id, item_number'));
-      }
-
-      if (isMissingColumn(error, 'education_degree', 'education_school')) {
-        delete applicantPayload.education_degree;
-        delete applicantPayload.education_school;
-        ({ data, error } = await insertWith('id, item_number, reference_no'));
-        if (isMissingColumn(error, 'reference_no')) {
-          ({ data, error } = await insertWith('id, item_number'));
+      for (let attempt = 0; attempt < 4 && error; attempt += 1) {
+        if (isMissingColumn(error, 'plantilla_slot_id') && 'plantilla_slot_id' in applicantPayload) {
+          // Migration 20260928 not applied yet: file without the direct link (the
+          // link table below still records the plantilla).
+          delete applicantPayload.plantilla_slot_id;
+        } else if (isMissingColumn(error, 'reference_no') && selectCols !== 'id, item_number') {
+          selectCols = 'id, item_number';
+        } else if (
+          isMissingColumn(error, 'education_degree', 'education_school') &&
+          ('education_degree' in applicantPayload || 'education_school' in applicantPayload)
+        ) {
+          delete applicantPayload.education_degree;
+          delete applicantPayload.education_school;
+        } else if (
+          isMissingColumn(error, 'work_experience_entries') &&
+          'work_experience_entries' in applicantPayload
+        ) {
+          delete applicantPayload.work_experience_entries;
+        } else {
+          break;
         }
+        ({ data, error } = await insertWith(selectCols));
       }
 
       if (error || !data?.id) {
@@ -1291,6 +1307,7 @@ export const ApplicantWizard: React.FC = () => {
         relevant_experience_position: profile?.relevantExperiencePosition || '',
         relevant_experience_company: profile?.relevantExperienceCompany || '',
         relevant_experience_duties: profile?.relevantExperienceDuties || '',
+        work_experience_entries: (profile as any)?.workExperienceEntries ?? [],
       }),
     });
 
@@ -1875,14 +1892,34 @@ export const ApplicantWizard: React.FC = () => {
                           <div><dt>PWD Status</dt><dd>{fd.is_pwd ? 'Yes' : 'No'}</dd></div>
                           <div>
                             <dt>Educational Background</dt>
-                            <dd>{[fd.education_attainment, fd.education_degree].filter(Boolean).join(', ') || '-'}</dd>
+                            <dd>{[fd.education_attainment, fd.education_degree, fd.education_school].filter(Boolean).join(' · ') || '-'}</dd>
                           </div>
                           <div>
                             <dt>Relevant Work Experience</dt>
                             <dd>
-                              {fd.work_experience_years || fd.work_experience_months || fd.relevant_experience_position
-                                ? `${fd.work_experience_years || 0} yr ${fd.work_experience_months || 0} mo${fd.relevant_experience_position ? ` · ${fd.relevant_experience_position}` : ''}${fd.relevant_experience_company ? `, ${fd.relevant_experience_company}` : ''}`
-                                : '-'}
+                              {(() => {
+                                const meaningfulEntries = filterMeaningfulWorkExperienceEntries(fd.work_experience_entries);
+                                if (meaningfulEntries.length > 0) {
+                                  const totalMonths = computeWorkExperienceTotalMonths(meaningfulEntries);
+                                  return (
+                                    <div>
+                                      <div style={{ fontWeight: 600, color: 'var(--color-primary-900)', marginBottom: 4 }}>
+                                        Total: {formatWorkExperienceTotal(totalMonths)}
+                                      </div>
+                                      <ul style={{ margin: 0, paddingLeft: 16, display: 'grid', gap: 4 }}>
+                                        {meaningfulEntries.map((entry, idx) => (
+                                          <li key={`${entry.from_date}-${entry.position_title}-${idx}`}>
+                                            {entry.position_title} · {entry.company_name} ({entry.from_date} – {entry.is_present ? 'Present' : entry.to_date})
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  );
+                                }
+                                return fd.work_experience_years || fd.work_experience_months || fd.relevant_experience_position
+                                  ? `${fd.work_experience_years || 0} yr ${fd.work_experience_months || 0} mo${fd.relevant_experience_position ? ` · ${fd.relevant_experience_position}` : ''}${fd.relevant_experience_company ? `, ${fd.relevant_experience_company}` : ''}`
+                                  : '-';
+                              })()}
                             </dd>
                           </div>
                           {fd.gov_id_type && (

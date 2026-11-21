@@ -613,5 +613,294 @@ describe('successionPipelineV2', () => {
         /Failed to load critical positions: DB connection lost/,
       );
     });
+
+    it('selects only live-schema employee_work_experience columns without department_agency_office_company', async () => {
+      const selectCalls: Record<string, string[]> = {};
+      const baseDb = createMockDb({
+        critical_positions: [
+          {
+            id: 'pos-1',
+            title: 'IT Officer II',
+            department_id: 'dept-1',
+            min_years_experience: 1,
+            required_training_hours: 8,
+            required_education: "Bachelor's Degree in IT",
+            required_eligibility: 'None required',
+          },
+        ],
+        departments: [{ id: 'dept-1', name: 'IT' }],
+        employees: [
+          { id: 'emp-1', first_name: 'Ana', last_name: 'Cruz', department: 'IT', employment_status: 'Regular', status: 'Active', date_hired: '2020-01-01' },
+        ],
+        eligibility_types: DEFAULT_ELIGIBILITY_TYPES,
+      });
+
+      (supabase.from as any).mockImplementation((table: string) => {
+        const q = baseDb(table);
+        const origSelect = q.select;
+        q.select = vi.fn((cols: string) => {
+          selectCalls[table] = [...(selectCalls[table] ?? []), cols];
+          return origSelect(cols);
+        });
+        return q;
+      });
+
+      vi.spyOn(successionReviews, 'fetchSuccessionReviews').mockResolvedValue([]);
+      vi.spyOn(successionApi, 'getLatestOverallScores').mockResolvedValue(new Map());
+
+      await fetchSuccessionPoolV2('pos-1', '2026-10-28');
+
+      const workSelect = selectCalls.employee_work_experience?.[0] ?? '';
+      expect(workSelect).toContain('company_name');
+      expect(workSelect).not.toContain('department_agency_office_company');
+      expect(workSelect).toBe('id, employee_id, from_date, to_date, is_present, position_title, company_name');
+    });
+
+    it.each([
+      'departments',
+      'succession_candidates',
+      'employees_dept',
+      'employees_manual',
+      'employee_work_experience',
+      'employee_training',
+      'employee_education',
+      'employee_eligibility',
+      'critical_position_competency_requirements',
+      'employee_training_competencies',
+    ])('throws when %s query fails instead of falling back to date_hired or empty lists', async (failingTarget) => {
+      const dbError = { message: `Query failed on ${failingTarget}`, code: '42703' };
+
+      const tables: Record<string, Row[]> = {
+        critical_positions: [
+          {
+            id: 'pos-1',
+            title: 'IT Officer II',
+            department_id: 'dept-1',
+            min_years_experience: 1,
+            required_training_hours: 8,
+            required_education: "Bachelor's Degree in IT",
+            required_eligibility: 'None required',
+          },
+        ],
+        departments: [{ id: 'dept-1', name: 'IT' }],
+        succession_candidates: [{ id: 'cand-1', critical_position_id: 'pos-1', employee_id: 'emp-manual', note: null }],
+        employees: [
+          { id: 'emp-1', first_name: 'Ana', last_name: 'Cruz', department: 'IT', employment_status: 'Regular', status: 'Active', date_hired: '2018-01-01' },
+          { id: 'emp-manual', first_name: 'Ben', last_name: 'Reyes', department: 'Finance', employment_status: 'Regular', status: 'Active', date_hired: '2019-01-01' },
+        ],
+        employee_training: [
+          { id: 'tr-1', employee_id: 'emp-1', training_title: 'Security', number_of_hours: 12, from_date: '2024-01-01', to_date: '2024-01-02' },
+        ],
+        eligibility_types: DEFAULT_ELIGIBILITY_TYPES,
+      };
+
+      const baseDb = createMockDb(tables);
+      (supabase.from as any).mockImplementation((table: string) => {
+        if (table === 'employees' && (failingTarget === 'employees_dept' || failingTarget === 'employees_manual')) {
+          const inner = baseDb('employees');
+          const filters: { op: string; column: string; value: unknown }[] = [];
+          const q: any = {
+            select: vi.fn((cols: string) => {
+              inner.select(cols);
+              return q;
+            }),
+            eq: vi.fn((col: string, val: unknown) => {
+              filters.push({ op: 'eq', column: col, value: val });
+              inner.eq(col, val);
+              return q;
+            }),
+            in: vi.fn((col: string, val: unknown[]) => {
+              filters.push({ op: 'in', column: col, value: val });
+              inner.in(col, val);
+              return q;
+            }),
+            then: (resolve: (r: any) => unknown) => {
+              const isManual = filters.some((f) => f.op === 'in' && f.column === 'id');
+              if ((isManual && failingTarget === 'employees_manual') || (!isManual && failingTarget === 'employees_dept')) {
+                return Promise.resolve(resolve({ data: null, error: dbError }));
+              }
+              return inner.then(resolve);
+            },
+          };
+          return q;
+        }
+        if (table === failingTarget) {
+          return createMockDb(tables, { errors: { [failingTarget]: dbError.message } })(table);
+        }
+        return baseDb(table);
+      });
+
+      vi.spyOn(successionReviews, 'fetchSuccessionReviews').mockResolvedValue([]);
+      vi.spyOn(successionApi, 'getLatestOverallScores').mockResolvedValue(new Map());
+
+      await expect(fetchSuccessionPoolV2('pos-1', '2026-10-28')).rejects.toThrow(`Query failed on ${failingTarget}`);
+    });
+
+    it('preserves two College degrees, Doctorate, work metadata, and non-stale evidence reviews across PDS round-trip', async () => {
+      const reqSnapshot = {
+        experienceYears: 2,
+        trainingHours: 40,
+        education: { minimum: 'bachelor' as const, field: 'Public Administration' },
+        eligibility: { kind: 'required' as const, key: 'CSC Professional' },
+      };
+
+      const preservedWork = [
+        {
+          id: 'work-uuid-1',
+          employee_id: 'emp-1',
+          from_date: '2018-01-01',
+          to_date: '2021-12-31',
+          is_present: false,
+          position_title: 'Administrative Officer II',
+          company_name: 'Private Corp',
+          duties_responsibilities: 'Records management',
+          separation_reason: 'Resignation',
+        },
+        {
+          id: 'work-uuid-2',
+          employee_id: 'emp-1',
+          from_date: '2022-01-01',
+          to_date: null,
+          is_present: true,
+          position_title: 'Administrative Officer IV',
+          company_name: 'City Hall',
+          duties_responsibilities: 'Supervises HR records',
+          separation_reason: null,
+        },
+      ];
+      const preservedEducation = [
+        { id: 'edu-col-1', employee_id: 'emp-1', level: 'College', course: 'BS Public Administration', year_graduated: 2014 },
+        { id: 'edu-col-2', employee_id: 'emp-1', level: 'College', course: 'BS Information Systems', year_graduated: 2016 },
+        { id: 'edu-doc-1', employee_id: 'emp-1', level: 'Doctorate', course: 'Doctor of Public Administration', year_graduated: 2024 },
+      ];
+
+      const work1Review: successionReviews.SuccessionEvidenceReview = {
+        id: 'rev-work-1',
+        criticalPositionId: 'pos-1',
+        employeeId: 'emp-1',
+        criterion: 'work',
+        sourceRecordId: 'work-uuid-1',
+        isRelevant: true,
+        isCityHall: false,
+        matchesRequirement: null,
+        evidenceSnapshot: {
+          from_date: '2018-01-01',
+          to_date: '2021-12-31',
+          is_present: false,
+          position_title: 'Administrative Officer II',
+        },
+        requirementsSnapshot: reqSnapshot,
+        reviewedBy: 'admin@lgu.test',
+        reviewedAt: '2026-10-01T00:00:00Z',
+        createdAt: '2026-10-01T00:00:00Z',
+        updatedAt: '2026-10-01T00:00:00Z',
+      };
+
+      const preservedWork1Snap = {
+        from_date: preservedWork[0].from_date,
+        to_date: preservedWork[0].to_date,
+        is_present: preservedWork[0].is_present,
+        position_title: preservedWork[0].position_title,
+      };
+      expect(successionReviews.isReviewStale(work1Review, preservedWork1Snap, reqSnapshot)).toBe(false);
+      expect(
+        successionReviews.isReviewStale(
+          work1Review,
+          { ...preservedWork1Snap, position_title: 'Drifted Title' },
+          reqSnapshot,
+        ),
+      ).toBe(true);
+      expect(
+        successionReviews.isReviewStale(
+          work1Review,
+          preservedWork1Snap,
+          { ...reqSnapshot, experienceYears: 5 },
+        ),
+      ).toBe(true);
+
+      vi.spyOn(successionReviews, 'fetchSuccessionReviews').mockResolvedValue([
+        work1Review,
+        {
+          id: 'rev-work-2',
+          criticalPositionId: 'pos-1',
+          employeeId: 'emp-1',
+          criterion: 'work',
+          sourceRecordId: 'work-uuid-2',
+          isRelevant: true,
+          isCityHall: true,
+          matchesRequirement: null,
+          evidenceSnapshot: {
+            from_date: '2022-01-01',
+            to_date: null,
+            is_present: true,
+            position_title: 'Administrative Officer IV',
+          },
+          requirementsSnapshot: reqSnapshot,
+          reviewedBy: 'admin@lgu.test',
+          reviewedAt: '2026-10-01T00:00:00Z',
+          createdAt: '2026-10-01T00:00:00Z',
+          updatedAt: '2026-10-01T00:00:00Z',
+        },
+        {
+          id: 'rev-doc-1',
+          criticalPositionId: 'pos-1',
+          employeeId: 'emp-1',
+          criterion: 'education',
+          sourceRecordId: 'edu-doc-1',
+          isRelevant: true,
+          isCityHall: null,
+          matchesRequirement: true,
+          evidenceSnapshot: { level: 'Doctorate', course: 'Doctor of Public Administration' },
+          requirementsSnapshot: reqSnapshot,
+          reviewedBy: 'admin@lgu.test',
+          reviewedAt: '2026-10-01T00:00:00Z',
+          createdAt: '2026-10-01T00:00:00Z',
+          updatedAt: '2026-10-01T00:00:00Z',
+        },
+      ]);
+
+      vi.spyOn(successionApi, 'getLatestOverallScores').mockResolvedValue(
+        new Map([['emp-1', { overallScore: 4.5, adjectival: 'Outstanding', period: '2026', cycleId: 1 }]]),
+      );
+
+      (supabase.from as any).mockImplementation(
+        createMockDb({
+          critical_positions: [
+            {
+              id: 'pos-1',
+              title: 'Department Head',
+              department_id: 'dept-1',
+              min_years_experience: 2,
+              required_training_hours: 40,
+              required_education: "Bachelor's Degree in Public Administration",
+              required_eligibility: 'CSC Professional',
+            },
+          ],
+          departments: [{ id: 'dept-1', name: 'Admin' }],
+          employees: [
+            { id: 'emp-1', first_name: 'Maria', last_name: 'Santos', department: 'Admin', employment_status: 'Regular', status: 'Active', date_hired: '2022-01-01' },
+          ],
+          employee_work_experience: preservedWork,
+          employee_training: [
+            { id: 'tr-1', employee_id: 'emp-1', training_title: 'Leadership', number_of_hours: 40, from_date: '2025-01-01', to_date: '2025-01-05', conducted_by: 'CSC' },
+          ],
+          employee_education: preservedEducation,
+          employee_eligibility: [
+            { id: 'el-1', employee_id: 'emp-1', eligibility_type: 'CSC Professional', validity_date: null },
+          ],
+          eligibility_types: DEFAULT_ELIGIBILITY_TYPES,
+        }),
+      );
+
+      const pool = await fetchSuccessionPoolV2('pos-1', '2026-10-28');
+      expect(pool.ranked).toHaveLength(1);
+      const ranked = pool.ranked[0];
+      expect(ranked.audit.highestRelevantDegree).toBe('doctorate');
+      // Honoring rev-work-1 (isCityHall: false) excludes the 2018-2021 private role,
+      // leaving only work-uuid-2 (~4.82 yrs) instead of defaulting to >8 yrs.
+      expect(ranked.audit.relevantYears).toBeGreaterThan(4);
+      expect(ranked.audit.relevantYears).toBeLessThan(5.5);
+      expect(ranked.contributions.education).toBe(15);
+    });
   });
 });

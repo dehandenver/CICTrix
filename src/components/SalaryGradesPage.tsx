@@ -432,7 +432,7 @@ function GradeDrawer({ row, reload, onClose, onSaved }: GradeDrawerProps) {
         aria-labelledby="grade-drawer-title"
         onKeyDown={onKeyDown}
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-full flex-col bg-white shadow-[var(--shadow-3)] sm:max-w-[480px]"
+        className="flex h-full w-full flex-col bg-white shadow-[shadow:var(--shadow-3)] sm:max-w-[480px]"
       >
         <div className="flex items-start justify-between gap-3 border-b border-[var(--neutral-200)] px-6 py-5">
           <div>

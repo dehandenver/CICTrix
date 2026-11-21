@@ -23,12 +23,24 @@ const supabase = supabaseClient as any;
 const OUTPUT_BUCKET = 'employee-documents';
 
 export type MutationResult = { ok: boolean; error?: string };
+export type EvalMutationResult = MutationResult & {
+  updatedAt?: string;
+  conflict?: boolean;
+  partialFailure?: boolean;
+};
 
 export type AssessmentMode = 'test' | 'output';
 export type ReviewStatus = 'Pending' | 'Reviewed' | 'Verified';
 export type CompletionStatus = 'Not started' | 'Pre-test done' | 'Post-test done' | 'Complete';
 
 const nowIso = () => new Date().toISOString();
+
+const nextUpdatedAt = (expectedUpdatedAt: string | null): string => {
+  if (!expectedUpdatedAt) return nowIso();
+  const parsed = Date.parse(expectedUpdatedAt);
+  const targetMs = Number.isFinite(parsed) ? Math.max(Date.now(), parsed + 2) : Date.now();
+  return new Date(targetMs).toISOString();
+};
 
 export type EvalTraining = {
   id: string;
@@ -58,6 +70,8 @@ export type EvalRow = {
   submissionNotes: string | null;
   reviewStatus: ReviewStatus;
   lndNotes: string | null;
+  /** Raw updated_at token from Postgres, or null when no evaluation row exists yet. */
+  updatedAt: string | null;
 };
 
 export type EvalBoard = {
@@ -100,7 +114,7 @@ export async function listEvaluableTrainings(): Promise<EvalTraining[]> {
 
   if (error) {
     console.error('Error listing evaluable trainings:', error);
-    return [];
+    throw new Error(error.message || 'Could not load evaluable trainings.');
   }
 
   return (data ?? [])
@@ -131,7 +145,7 @@ async function resolveIdentities(employeeIds: string[]): Promise<Map<string, Ide
     .in('id', ids);
   if (error) {
     console.error('Error resolving attendee identities:', error);
-    return map;
+    throw new Error(error.message || 'Could not load attendee identities.');
   }
   for (const e of (data ?? []) as any[]) {
     map.set(String(e.id), {
@@ -150,10 +164,11 @@ export async function getEvaluationBoard(sessionId: string): Promise<EvalBoard |
     .eq('id', sessionId)
     .maybeSingle();
 
-  if (sErr || !session) {
-    if (sErr) console.error('Error loading training:', sErr);
-    return null;
+  if (sErr) {
+    console.error('Error loading training:', sErr);
+    throw new Error(sErr.message || 'Could not load training.');
   }
+  if (!session) return null;
 
   const { data: enrollments, error: eErr } = await supabase
     .from('training_enrollments')
@@ -161,7 +176,7 @@ export async function getEvaluationBoard(sessionId: string): Promise<EvalBoard |
     .eq('session_id', sessionId);
   if (eErr) {
     console.error('Error loading enrollments:', eErr);
-    return null;
+    throw new Error(eErr.message || 'Could not load training enrollments.');
   }
 
   const active = (enrollments ?? []).filter(isActive);
@@ -174,15 +189,22 @@ export async function getEvaluationBoard(sessionId: string): Promise<EvalBoard |
       .from('training_evaluations')
       .select('*')
       .in('enrollment_id', enrollmentIds);
-    if (evErr) console.error('Error loading evaluations:', evErr);
+    if (evErr) {
+      console.error('Error loading evaluations:', evErr);
+      throw new Error(evErr.message || 'Could not load evaluations.');
+    }
     for (const ev of (evals ?? []) as any[]) evalByEnrollment.set(String(ev.enrollment_id), ev);
   }
 
-  const { data: notes } = await supabase
+  const { data: notes, error: nErr } = await supabase
     .from('training_report_notes')
     .select('recommendations')
     .eq('session_id', sessionId)
     .maybeSingle();
+  if (nErr) {
+    console.error('Error loading training report notes:', nErr);
+    throw new Error(nErr.message || 'Could not load report notes.');
+  }
 
   const rows: EvalRow[] = active
     .map((e: any): EvalRow => {
@@ -204,6 +226,7 @@ export async function getEvaluationBoard(sessionId: string): Promise<EvalBoard |
         submissionNotes: ev?.submission_notes ?? null,
         reviewStatus: (ev?.review_status as ReviewStatus) ?? 'Pending',
         lndNotes: ev?.lnd_notes ?? null,
+        updatedAt: ev?.updated_at != null ? String(ev.updated_at) : null,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -228,69 +251,131 @@ export async function getEvaluationBoard(sessionId: string): Promise<EvalBoard |
 // ── Writes ───────────────────────────────────────────────────────────────────
 
 /**
- * Ensure a training_evaluations row exists for the enrollment, then apply a
- * partial patch. The insert ignores conflicts so it never clobbers columns the
- * patch isn't touching — the update carries the actual change.
+ * Apply a partial evaluation patch guarded by optimistic concurrency:
+ * - expectedUpdatedAt === null inserts a brand-new row and treats a 23505
+ *   duplicate race as a conflict without overwriting concurrent changes.
+ * - expectedUpdatedAt !== null updates only when updated_at matches verbatim,
+ *   returning a conflict when zero rows matched.
  */
 async function patchEvaluation(
   enrollmentId: string,
   patch: Record<string, unknown>,
-  actor: string
-): Promise<MutationResult> {
-  const { error: insErr } = await supabase
-    .from('training_evaluations')
-    .upsert([{ enrollment_id: enrollmentId }], { onConflict: 'enrollment_id', ignoreDuplicates: true });
-  if (insErr) return { ok: false, error: insErr.message };
+  actor: string,
+  expectedUpdatedAt: string | null,
+): Promise<EvalMutationResult> {
+  if (!Object.keys(patch).length) {
+    return { ok: false, error: 'No evaluation changes to save.' };
+  }
+  for (const key of ['pre_test_score', 'post_test_score'] as const) {
+    if (!(key in patch)) continue;
+    const v = patch[key];
+    if (v !== null && (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 100)) {
+      return { ok: false, error: 'Scores must be a number between 0 and 100.' };
+    }
+  }
 
-  const { error } = await supabase
+  if (expectedUpdatedAt === null) {
+    const { data, error } = await supabase
+      .from('training_evaluations')
+      .insert([{ enrollment_id: enrollmentId, ...patch, updated_by: actor, updated_at: nextUpdatedAt(null) }])
+      .select('updated_at');
+
+    if (error) {
+      if (error.code === '23505' || /duplicate key|unique constraint/i.test(error.message ?? '')) {
+        await supabase
+          .from('training_evaluations')
+          .select('updated_at')
+          .eq('enrollment_id', enrollmentId)
+          .maybeSingle();
+        return {
+          ok: false,
+          conflict: true,
+          error: 'This evaluation already exists or was updated elsewhere. Refresh to reconcile before saving again.',
+        };
+      }
+      return { ok: false, error: error.message };
+    }
+    if (!data?.length || data[0]?.updated_at == null) {
+      return { ok: false, error: 'Evaluation save affected no rows.' };
+    }
+    return { ok: true, updatedAt: String(data[0].updated_at) };
+  }
+
+  const { data, error } = await supabase
     .from('training_evaluations')
-    .update({ ...patch, updated_by: actor, updated_at: nowIso() })
-    .eq('enrollment_id', enrollmentId);
-  return error ? { ok: false, error: error.message } : { ok: true };
+    .update({ ...patch, updated_by: actor, updated_at: nextUpdatedAt(expectedUpdatedAt) })
+    .eq('enrollment_id', enrollmentId)
+    .eq('updated_at', expectedUpdatedAt)
+    .select('updated_at');
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) {
+    return {
+      ok: false,
+      conflict: true,
+      error: 'This evaluation changed since you loaded it. Refresh to see the latest record before saving again.',
+    };
+  }
+  if (data[0]?.updated_at == null) {
+    return { ok: false, error: 'Evaluation save affected no rows.' };
+  }
+  return { ok: true, updatedAt: String(data[0].updated_at) };
 }
 
 export const saveScores = (
   enrollmentId: string,
-  scores: { pre: number | null; post: number | null },
-  actor = 'LND Admin'
-): Promise<MutationResult> =>
-  patchEvaluation(enrollmentId, { pre_test_score: scores.pre, post_test_score: scores.post }, actor);
+  scores: Partial<{ pre: number | null; post: number | null }>,
+  expectedUpdatedAt: string | null,
+  actor = 'LND Admin',
+): Promise<EvalMutationResult> => {
+  const patch: Record<string, unknown> = {};
+  if ('pre' in scores && scores.pre !== undefined) patch.pre_test_score = scores.pre;
+  if ('post' in scores && scores.post !== undefined) patch.post_test_score = scores.post;
+  return patchEvaluation(enrollmentId, patch, actor, expectedUpdatedAt);
+};
 
 export const setAssessmentMode = (
   enrollmentId: string,
   mode: AssessmentMode,
-  actor = 'LND Admin'
-): Promise<MutationResult> => patchEvaluation(enrollmentId, { assessment_mode: mode }, actor);
+  expectedUpdatedAt: string | null,
+  actor = 'LND Admin',
+): Promise<EvalMutationResult> => patchEvaluation(enrollmentId, { assessment_mode: mode }, actor, expectedUpdatedAt);
 
 export const setReviewStatus = (
   enrollmentId: string,
   status: ReviewStatus,
-  actor = 'LND Admin'
-): Promise<MutationResult> => patchEvaluation(enrollmentId, { review_status: status }, actor);
+  expectedUpdatedAt: string | null,
+  actor = 'LND Admin',
+): Promise<EvalMutationResult> => patchEvaluation(enrollmentId, { review_status: status }, actor, expectedUpdatedAt);
 
 export const saveSubmission = (
   enrollmentId: string,
   submission: { url: string | null; name: string | null; notes?: string | null },
-  actor = 'LND Admin'
-): Promise<MutationResult> =>
+  expectedUpdatedAt: string | null,
+  actor = 'LND Admin',
+): Promise<EvalMutationResult> =>
   patchEvaluation(
     enrollmentId,
     { submission_url: submission.url, submission_name: submission.name, submission_notes: submission.notes ?? null },
-    actor
+    actor,
+    expectedUpdatedAt,
   );
 
 export async function saveReportNotes(
   sessionId: string,
   recommendations: string,
-  actor = 'LND Admin'
+  actor = 'LND Admin',
 ): Promise<MutationResult> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('training_report_notes')
     .upsert(
       [{ session_id: sessionId, recommendations, prepared_by: actor, updated_at: nowIso() }],
-      { onConflict: 'session_id' }
-    );
-  return error ? { ok: false, error: error.message } : { ok: true };
+      { onConflict: 'session_id' },
+    )
+    .select('session_id');
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) return { ok: false, error: 'Report notes save affected no rows.' };
+  return { ok: true };
 }
 
 const sanitizeKey = (name: string): string =>
@@ -301,8 +386,9 @@ export async function uploadOutput(
   sessionId: string,
   enrollmentId: string,
   file: File,
-  actor = 'LND Admin'
-): Promise<MutationResult & { url?: string; name?: string }> {
+  expectedUpdatedAt: string | null,
+  actor = 'LND Admin',
+): Promise<EvalMutationResult & { url?: string; name?: string }> {
   const objectKey = `training-outputs/${sessionId}/${enrollmentId}/${Date.now()}-${sanitizeKey(file.name)}`;
 
   const uploadResult = await supabase.storage
@@ -321,8 +407,20 @@ export async function uploadOutput(
   const res = await patchEvaluation(
     enrollmentId,
     { assessment_mode: 'output', submission_url: publicUrl, submission_name: file.name },
-    actor
+    actor,
+    expectedUpdatedAt,
   );
-  if (!res.ok) return res;
-  return { ok: true, url: publicUrl, name: file.name };
+  if (res.ok !== true) {
+    return {
+      ok: false,
+      partialFailure: true,
+      conflict: res.conflict,
+      url: publicUrl,
+      name: file.name,
+      error: res.error
+        ? `File uploaded to storage, but updating the evaluation failed: ${res.error}`
+        : 'File uploaded to storage, but updating the evaluation failed.',
+    };
+  }
+  return { ok: true, url: publicUrl, name: file.name, updatedAt: res.updatedAt };
 }

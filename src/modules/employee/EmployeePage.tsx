@@ -111,17 +111,18 @@ const OfficeAccountLockedNote = ({ section }: { section: string }) => (
   </div>
 );
 import {
+  authenticateEmployeePortalAccount,
   changeEmployeePortalPassword,
   changeEmployeePortalUsername,
-  findEmployeeByEmployeeId,
-  findEmployeePortalAccount,
-  updateEmployeePortalEmployee,
+  getEmployeePortalAccountByEmployeeNumber,
+  type PortalAccountIdentity,
 } from '../../lib/employeePortalData';
 import { Employee } from '../../types/employee.types';
 
 interface EmployeePageProps {
   currentUser: Employee;
   loginUsername?: string;
+  onPortalUsernameChanged?: (employeeId: string, username: string) => void;
   onLogout: () => void;
 }
 
@@ -185,7 +186,12 @@ const getWizardStartStep = (p: Employee): 1 | 2 | 3 => {
 // Figma shows ISO-style dates (e.g. "2026-02-20"). Keep it timezone-safe by
 // reading the date parts rather than constructing a Date in local time.
 
-export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUsername, onLogout }) => {
+export const EmployeePage: React.FC<EmployeePageProps> = ({
+  currentUser,
+  loginUsername,
+  onPortalUsernameChanged,
+  onLogout,
+}) => {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<Employee>(currentUser);
   const [hasOfficeRole, setHasOfficeRole] = useState(false);
@@ -1015,15 +1021,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
 
 
 
-  // Account & Security tab — username + password change forms
-  const portalAccountAtMount = useMemo(
-    () => (currentUser?.employeeId ? findEmployeeByEmployeeId(currentUser.employeeId) : null),
-    [currentUser?.employeeId],
-  );
-  const [currentPortalUsername, setCurrentPortalUsername] = useState<string>(
-    portalAccountAtMount?.username ?? '',
-  );
-  const [usernameDraft, setUsernameDraft] = useState<string>(portalAccountAtMount?.username ?? '');
+  // Account & Security tab — remote account resolution, identity-bound unlock, and serialized mutations
+  const [resolvedPortalAccount, setResolvedPortalAccount] = useState<PortalAccountIdentity | null>(null);
+  const [portalAccountLookupError, setPortalAccountLookupError] = useState<string | null>(null);
+  const [currentPortalUsername, setCurrentPortalUsername] = useState<string>('');
+  const [usernameDraft, setUsernameDraft] = useState<string>('');
   const [usernameMessage, setUsernameMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
@@ -1039,6 +1041,29 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const [confirmLoginPassword, setConfirmLoginPassword] = useState('');
   const [confirmLoginError, setConfirmLoginError] = useState<string | null>(null);
   const [confirmLoginVerifying, setConfirmLoginVerifying] = useState(false);
+  const [credentialMutationPending, setCredentialMutationPending] = useState(false);
+
+  const confirmLoginInFlightRef = useRef(false);
+  const credentialMutationInFlightRef = useRef(false);
+  // Generation counter: bumped on every employee switch and every entry to / exit from the
+  // Account & Security tab. Async completions from an older generation are discarded and must
+  // never clear the single-flight guards owned by the current generation.
+  const accountLookupSeqRef = useRef(0);
+  const currentEmployeeIdRef = useRef(String(currentUser?.employeeId ?? '').trim());
+  const mountedRef = useRef(true);
+  const [portalAccountLoading, setPortalAccountLoading] = useState(false);
+  const accountTabActive =
+    location.pathname.includes('/account') &&
+    !['/ipcr-workspace', '/trainings', '/idp', '/archive', '/new-entrants'].some((segment) =>
+      location.pathname.includes(segment),
+    );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Per-field "show password" toggles for the four password inputs.
   const [showConfirmLoginPw, setShowConfirmLoginPw] = useState(false);
@@ -1046,13 +1071,81 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmNewPw, setShowConfirmNewPw] = useState(false);
 
-  const handleConfirmLogin = (event?: React.FormEvent) => {
+  useEffect(() => {
+    const employeeId = String(currentUser?.employeeId ?? '').trim();
+    currentEmployeeIdRef.current = employeeId;
+    const seq = ++accountLookupSeqRef.current;
+
+    confirmLoginInFlightRef.current = false;
+    credentialMutationInFlightRef.current = false;
+    setConfirmLoginVerifying(false);
+    setCredentialMutationPending(false);
+    setAccountTabUnlocked(false);
+    setResolvedPortalAccount(null);
+    setPortalAccountLookupError(null);
+    setCurrentPortalUsername('');
+    setUsernameDraft('');
+    setUsernameMessage(null);
+    setPasswordMessage(null);
+    setConfirmLoginUsername('');
+    setConfirmLoginPassword('');
+    setConfirmLoginError(null);
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setShowConfirmLoginPw(false);
+    setShowCurrentPw(false);
+    setShowNewPw(false);
+    setShowConfirmNewPw(false);
+    setPortalAccountLoading(false);
+
+    // Resolve remotely on every entry to the Account tab so a rename on another device, a
+    // transient read failure, or an unconfirmed save is re-checked instead of trusting old state.
+    if (!employeeId || !accountTabActive) return;
+
+    setPortalAccountLoading(true);
+    void (async () => {
+      const lookup = await getEmployeePortalAccountByEmployeeNumber(employeeId);
+      if (
+        !mountedRef.current ||
+        accountLookupSeqRef.current !== seq ||
+        currentEmployeeIdRef.current !== employeeId
+      ) {
+        return;
+      }
+
+      setPortalAccountLoading(false);
+      if (lookup.ok === true) {
+        setResolvedPortalAccount(lookup.account);
+        setCurrentPortalUsername(lookup.account.username);
+        setUsernameDraft(lookup.account.username);
+        setPortalAccountLookupError(null);
+      } else {
+        setResolvedPortalAccount(null);
+        setCurrentPortalUsername('');
+        setUsernameDraft('');
+        setPortalAccountLookupError(
+          lookup.kind === 'not_found'
+            ? null
+            : lookup.kind === 'ambiguous_account'
+              ? 'Multiple portal accounts matched your employee number. Contact HR for assistance.'
+              : 'Unable to load your portal account right now. Please try again.',
+        );
+      }
+    })();
+  }, [currentUser?.employeeId, accountTabActive]);
+
+  const handleConfirmLogin = async (event?: React.FormEvent) => {
     event?.preventDefault();
+    if (confirmLoginInFlightRef.current || confirmLoginVerifying) return;
     setConfirmLoginError(null);
 
-    if (!currentPortalUsername) {
+    if (!resolvedPortalAccount || !currentPortalUsername) {
       setConfirmLoginError(
-        'No portal account was found for your record. Contact HR to generate your credentials first.',
+        portalAccountLoading
+          ? 'Still loading your portal account. Please try again in a moment.'
+          : portalAccountLookupError ??
+              'No portal account was found for your record. Contact HR to generate your credentials first.',
       );
       return;
     }
@@ -1067,46 +1160,124 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       return;
     }
 
+    const expectedEmployeeId = String(currentUser?.employeeId ?? '').trim();
+    const expectedAccountId = resolvedPortalAccount.id;
+    const gen = accountLookupSeqRef.current;
+    confirmLoginInFlightRef.current = true;
     setConfirmLoginVerifying(true);
-    const verified = findEmployeePortalAccount(confirmLoginUsername.trim(), confirmLoginPassword);
-    setConfirmLoginVerifying(false);
+    try {
+      const authResult = await authenticateEmployeePortalAccount(
+        confirmLoginUsername.trim(),
+        confirmLoginPassword,
+      );
+      if (
+        !mountedRef.current ||
+        gen !== accountLookupSeqRef.current ||
+        currentEmployeeIdRef.current !== expectedEmployeeId
+      ) {
+        return;
+      }
 
-    if (!verified) {
-      setConfirmLoginError('Username or password is incorrect.');
-      return;
+      if (authResult.ok === false) {
+        if (authResult.kind === 'invalid_credentials' || authResult.kind === 'not_found') {
+          setConfirmLoginError('Username or password is incorrect.');
+        } else if (authResult.kind === 'ambiguous_account') {
+          setConfirmLoginError('Multiple portal accounts matched this username. Contact HR for assistance.');
+        } else {
+          setConfirmLoginError('Unable to verify your credentials right now. Please try again.');
+        }
+        return;
+      }
+
+      const verified = authResult.account;
+      const verifiedEmployeeId = String(verified.employee.employeeId ?? '').trim();
+      if (
+        !verifiedEmployeeId ||
+        !expectedEmployeeId ||
+        verifiedEmployeeId !== expectedEmployeeId ||
+        verified.id !== expectedAccountId
+      ) {
+        setConfirmLoginError("These credentials don't match the account you're logged in as.");
+        return;
+      }
+
+      setResolvedPortalAccount(verified);
+      setCurrentPortalUsername(verified.username);
+      setUsernameDraft(verified.username);
+      setAccountTabUnlocked(true);
+      setConfirmLoginUsername('');
+      setConfirmLoginPassword('');
+    } finally {
+      if (gen === accountLookupSeqRef.current) {
+        confirmLoginInFlightRef.current = false;
+        if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
+          setConfirmLoginVerifying(false);
+        }
+      }
     }
-
-    // The credentials must belong to the *currently logged-in* employee — not any
-    // other portal account that happens to authenticate.
-    const verifiedEmployeeId = String(verified.employee.employeeId ?? '').trim();
-    const sessionEmployeeId = String(currentUser?.employeeId ?? '').trim();
-    if (verifiedEmployeeId && sessionEmployeeId && verifiedEmployeeId !== sessionEmployeeId) {
-      setConfirmLoginError("These credentials don't match the account you're logged in as.");
-      return;
-    }
-
-    setAccountTabUnlocked(true);
-    setConfirmLoginUsername('');
-    setConfirmLoginPassword('');
   };
 
-
-  const handleSaveUsername = () => {
+  const handleSaveUsername = async () => {
+    if (
+      credentialMutationInFlightRef.current ||
+      credentialMutationPending ||
+      !resolvedPortalAccount
+    ) {
+      return;
+    }
     setUsernameMessage(null);
-    const result = changeEmployeePortalUsername(currentPortalUsername, usernameDraft);
-    if (result.ok === false) {
-      setUsernameMessage({ kind: 'error', text: result.error });
-      return;
+
+    const expectedEmployeeId = String(currentUser?.employeeId ?? '').trim();
+    const gen = accountLookupSeqRef.current;
+    const target = {
+      accountId: resolvedPortalAccount.id,
+      employeeNumber: expectedEmployeeId,
+      expectedRevision: resolvedPortalAccount.updatedAt,
+    };
+
+    credentialMutationInFlightRef.current = true;
+    setCredentialMutationPending(true);
+    try {
+      const result = await changeEmployeePortalUsername(target, usernameDraft);
+      if (
+        !mountedRef.current ||
+        gen !== accountLookupSeqRef.current ||
+        currentEmployeeIdRef.current !== expectedEmployeeId
+      ) {
+        return;
+      }
+
+      if (result.ok === false) {
+        setUsernameMessage({ kind: 'error', text: result.error });
+        return;
+      }
+
+      setResolvedPortalAccount(result.account);
+      setCurrentPortalUsername(result.account.username);
+      setUsernameDraft(result.account.username);
+      setUsernameMessage({
+        kind: 'success',
+        text: `Username updated to "${result.account.username}". Use it the next time you log in.`,
+      });
+      onPortalUsernameChanged?.(expectedEmployeeId, result.account.username);
+    } finally {
+      if (gen === accountLookupSeqRef.current) {
+        credentialMutationInFlightRef.current = false;
+        if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
+          setCredentialMutationPending(false);
+        }
+      }
     }
-    setCurrentPortalUsername(result.account.username);
-    setUsernameDraft(result.account.username);
-    setUsernameMessage({
-      kind: 'success',
-      text: `Username updated to "${result.account.username}". Use it the next time you log in.`,
-    });
   };
 
-  const handleSavePassword = () => {
+  const handleSavePassword = async () => {
+    if (
+      credentialMutationInFlightRef.current ||
+      credentialMutationPending ||
+      !resolvedPortalAccount
+    ) {
+      return;
+    }
     setPasswordMessage(null);
 
     if (newPasswordInput !== confirmPasswordInput) {
@@ -1114,23 +1285,52 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       return;
     }
 
-    const result = changeEmployeePortalPassword(
-      currentPortalUsername,
-      currentPasswordInput,
-      newPasswordInput,
-    );
-    if (result.ok === false) {
-      setPasswordMessage({ kind: 'error', text: result.error });
-      return;
-    }
+    const expectedEmployeeId = String(currentUser?.employeeId ?? '').trim();
+    const gen = accountLookupSeqRef.current;
+    const target = {
+      accountId: resolvedPortalAccount.id,
+      employeeNumber: expectedEmployeeId,
+      expectedRevision: resolvedPortalAccount.updatedAt,
+    };
 
-    setCurrentPasswordInput('');
-    setNewPasswordInput('');
-    setConfirmPasswordInput('');
-    setPasswordMessage({
-      kind: 'success',
-      text: 'Password updated. Use the new password the next time you log in.',
-    });
+    credentialMutationInFlightRef.current = true;
+    setCredentialMutationPending(true);
+    try {
+      const result = await changeEmployeePortalPassword(
+        target,
+        currentPasswordInput,
+        newPasswordInput,
+      );
+      if (
+        !mountedRef.current ||
+        gen !== accountLookupSeqRef.current ||
+        currentEmployeeIdRef.current !== expectedEmployeeId
+      ) {
+        return;
+      }
+
+      if (result.ok === false) {
+        setPasswordMessage({ kind: 'error', text: result.error });
+        return;
+      }
+
+      setResolvedPortalAccount(result.account);
+      setCurrentPortalUsername(result.account.username);
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+      setPasswordMessage({
+        kind: 'success',
+        text: 'Password updated. Use the new password the next time you log in.',
+      });
+    } finally {
+      if (gen === accountLookupSeqRef.current) {
+        credentialMutationInFlightRef.current = false;
+        if (mountedRef.current && currentEmployeeIdRef.current === expectedEmployeeId) {
+          setCredentialMutationPending(false);
+        }
+      }
+    }
   };
   // DB-hydration state — true while the initial Supabase fetch is in-flight.
   const [profileLoading, setProfileLoading] = useState(false);
@@ -1142,6 +1342,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   };
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [wizardTryNext, setWizardTryNext] = useState(false);
+  const [wizardSaving, setWizardSaving] = useState(false);
+  const wizardSavingRef = useRef(false);
   const [wContact, setWContact] = useState<ContactDraft>({ email: '', mobileNumber: '', homeAddress: '' });
   const [wEmergency, setWEmergency] = useState<EmergencyDraft>({ emergencyContactName: '', emergencyRelationship: '', emergencyContactNumber: '' });
   const [wGovt, setWGovt] = useState<GovernmentDraft>({ sssNumber: '', philhealthNumber: '', pagibigNumber: '', tinNumber: '' });
@@ -1320,27 +1522,48 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     navigate(tab.route);
   };
 
-  const persistProfilePatch = async (patch: Partial<Employee>) => {
-    const nowIso = new Date().toISOString();
-    // Optimistic local update.
-    const nextProfile = { ...profile, ...patch, updatedAt: nowIso };
-    setProfile(nextProfile);
+  /**
+   * Merge data the database has already confirmed. Local only: it must never
+   * trigger a second write, because PDS section saves write their own scalars.
+   */
+  const applySavedProfile = useCallback((patch: Partial<Employee>) => {
+    if (Object.keys(patch).length === 0) return;
+    setProfile((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const persistProfilePatch = async (patch: Partial<Employee>): Promise<boolean> => {
     setSaveError(null);
     setProfileSaveSuccess(null);
 
-    if (currentUser.supabaseId) {
-      // Write to Supabase.
-      const result = await patchPortalEmployee(currentUser.supabaseId, patch);
-      if (result.ok === false) {
-        setSaveError(result.error ?? 'Failed to save changes. Please try again.');
-        // Rollback optimistic update.
-        setProfile(profile);
-        return;
-      }
-      setProfileSaveSuccess('Changes saved successfully.');
-    } else {
-      // Fallback: demo account — persist to localStorage only.
-      updateEmployeePortalEmployee(profile.employeeId, patch);
+    if (!currentUser.supabaseId) {
+      setSaveError(
+        'Your employee profile is not linked to a database record yet. Contact HR to complete your employee record.',
+      );
+      return false;
+    }
+
+    const result = await patchPortalEmployee(currentUser.supabaseId, patch);
+    if (result.ok === false) {
+      setSaveError(result.error ?? 'Failed to save changes. Please try again.');
+      return false;
+    }
+
+    applySavedProfile(result.data);
+    setProfileSaveSuccess('Changes saved successfully.');
+    return true;
+  };
+
+  /** One wizard write at a time; the caller awaits the confirmed result. */
+  const saveWizardPatch = async (patch: Partial<Employee>): Promise<boolean> => {
+    if (wizardSavingRef.current) return false;
+    if (Object.keys(patch).length === 0) return true;
+    wizardSavingRef.current = true;
+    setWizardSaving(true);
+    try {
+      return await persistProfilePatch(patch);
+    } finally {
+      wizardSavingRef.current = false;
+      setWizardSaving(false);
     }
   };
 
@@ -1511,7 +1734,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             <PersonalDataSheetSection
               employeeId={currentUser.supabaseId ?? ''}
               profile={profile}
-              onSaved={(patch) => void persistProfilePatch(patch)}
+              onSaved={applySavedProfile}
             />
           </div>
         )}
@@ -1531,9 +1754,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 </div>
               </div>
 
-              {!currentPortalUsername && (
+              {!currentPortalUsername && portalAccountLoading && (
+                <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  Loading your portal account…
+                </p>
+              )}
+              {!currentPortalUsername && !portalAccountLoading && (
                 <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  No portal account was found for your record. Contact HR to generate your credentials first.
+                  {portalAccountLookupError ??
+                    'No portal account was found for your record. Contact HR to generate your credentials first.'}
                 </p>
               )}
 
@@ -1636,9 +1865,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 </p>
               </div>
 
-              {!currentPortalUsername && (
+              {!currentPortalUsername && portalAccountLoading && (
+                <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  Loading your portal account…
+                </p>
+              )}
+              {!currentPortalUsername && !portalAccountLoading && (
                 <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  No portal account was found for your record. Contact HR to generate your credentials first.
+                  {portalAccountLookupError ??
+                    'No portal account was found for your record. Contact HR to generate your credentials first.'}
                 </p>
               )}
 
@@ -1684,8 +1919,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
-                  onClick={handleSaveUsername}
-                  disabled={!currentPortalUsername || usernameDraft.trim() === currentPortalUsername}
+                  onClick={() => void handleSaveUsername()}
+                  disabled={
+                    !currentPortalUsername ||
+                    credentialMutationPending ||
+                    usernameDraft.trim() === currentPortalUsername
+                  }
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
                   Save Username
@@ -1793,9 +2032,10 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
-                  onClick={handleSavePassword}
+                  onClick={() => void handleSavePassword()}
                   disabled={
                     !currentPortalUsername ||
+                    credentialMutationPending ||
                     !currentPasswordInput ||
                     !newPasswordInput ||
                     !confirmPasswordInput
@@ -2456,37 +2696,52 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         const fieldWrap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 0 };
         const errMsg: React.CSSProperties = { fontSize: '0.72rem', color: 'var(--error-700)', marginTop: '0.2rem', fontWeight: 600 };
 
-        // Partial save helper for Step 3 (only saves filled fields)
-        const saveStep3Partial = () => {
+        // Step 3 saves only the fields the employee filled in; empty boxes are
+        // left untouched. The wizard awaits the checked result before closing.
+        const buildStep3Patch = (): Partial<Employee> => {
           const patch: Partial<Employee> = {};
           if (wGovt.sssNumber.trim()) patch.sssNumber = wGovt.sssNumber.trim();
           if (wGovt.philhealthNumber.trim()) patch.philhealthNumber = wGovt.philhealthNumber.trim();
           if (wGovt.pagibigNumber.trim()) patch.pagibigNumber = wGovt.pagibigNumber.trim();
           if (wGovt.tinNumber.trim()) patch.tinNumber = wGovt.tinNumber.trim();
-          if (Object.keys(patch).length > 0) void persistProfilePatch(patch);
+          return patch;
         };
 
-        const handleNext = () => {
+        const handleNext = async () => {
+          if (wizardSavingRef.current) return;
           setWizardTryNext(true);
           if (wizardStep === 1) {
             if (!wContact.email.trim() || !wContact.mobileNumber.trim() || !wContact.homeAddress.trim()) return;
-            void persistProfilePatch({ email: wContact.email.trim(), mobileNumber: wContact.mobileNumber.trim(), homeAddress: wContact.homeAddress.trim() });
+            const saved = await saveWizardPatch({ email: wContact.email.trim(), mobileNumber: wContact.mobileNumber.trim(), homeAddress: wContact.homeAddress.trim() });
+            if (!saved) return;
             setWizardStep(2); setWizardTryNext(false);
           } else if (wizardStep === 2) {
             if (!wEmergency.emergencyContactName.trim() || !wEmergency.emergencyRelationship.trim() || !wEmergency.emergencyContactNumber.trim()) return;
-            void persistProfilePatch({ emergencyContactName: wEmergency.emergencyContactName.trim(), emergencyRelationship: wEmergency.emergencyRelationship.trim(), emergencyContactNumber: wEmergency.emergencyContactNumber.trim() });
+            const saved = await saveWizardPatch({ emergencyContactName: wEmergency.emergencyContactName.trim(), emergencyRelationship: wEmergency.emergencyRelationship.trim(), emergencyContactNumber: wEmergency.emergencyContactNumber.trim() });
+            if (!saved) return;
             setWizardStep(3); setWizardTryNext(false);
           } else {
-            // Step 3 — soft: save whatever is filled, close regardless of empty fields
-            saveStep3Partial();
-            closeSetupWizard();
+            // Step 3 — soft: save whatever is filled, but only close on success.
+            const patch = buildStep3Patch();
+            if (Object.keys(patch).length === 0) {
+              closeSetupWizard();
+              return;
+            }
+            const saved = await saveWizardPatch(patch);
+            if (saved) closeSetupWizard();
           }
         };
 
         const handleSkip = () => {
-          // Explicit escape: save partial, close without showing validation red
-          saveStep3Partial();
-          closeSetupWizard();
+          // Explicit escape: save partial, close without showing validation red.
+          // A failure still closes and is reported by the page's error banner.
+          if (wizardSavingRef.current) return;
+          const patch = buildStep3Patch();
+          if (Object.keys(patch).length === 0) {
+            closeSetupWizard();
+            return;
+          }
+          void saveWizardPatch(patch).then(() => closeSetupWizard());
         };
 
         const StepColumn = ({ n }: { n: number }) => {
@@ -2670,6 +2925,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   )}
                 </div>
 
+                {saveError && (
+                  <p
+                    role="alert"
+                    style={{ margin: '0 1.5rem 1rem', padding: '0.6rem 0.85rem', borderRadius: 8, background: 'var(--error-100)', color: 'var(--error-700)', fontSize: '0.8rem', fontWeight: 600 }}
+                  >
+                    {saveError}
+                  </p>
+                )}
+
                 {/* Footer */}
                 <div style={{ padding: '1rem 1.5rem', borderTop: '1.5px solid var(--color-primary-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
                   <button
@@ -2692,8 +2956,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     <button
                       type="button"
                       onClick={handleNext}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', cursor: 'pointer', boxShadow: '0 4px 14px rgba(54,62,232,0.3)' }}
+                      disabled={wizardSaving}
+                      aria-busy={wizardSaving || undefined}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', cursor: wizardSaving ? 'not-allowed' : 'pointer', opacity: wizardSaving ? 0.7 : 1, boxShadow: '0 4px 14px rgba(54,62,232,0.3)' }}
                     >
+                      {wizardSaving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                       {wizardStep < 3 ? 'Save & Continue →' : 'Save Changes ✓'}
                     </button>
                   </div>

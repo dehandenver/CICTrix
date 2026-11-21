@@ -1038,37 +1038,21 @@ export const createEmployeeNumberAllocator = async (
 
   for (const v of extraReserved) addIfPresent(v);
 
-  // Pull from Supabase.
-  try {
-    const empRes = await (supabase as any).from('employees_with_department').select('employee_id');
-    for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
-  } catch (error) {
-    console.warn('createEmployeeNumberAllocator: employees fetch failed', error);
-  }
-  try {
-    const nhRes = await (supabase as any).from('newly_hired').select('employee_id');
-    for (const row of (nhRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
-  } catch (error) {
-    console.warn('createEmployeeNumberAllocator: newly_hired fetch failed', error);
-  }
+  // Pull reserved employee numbers from Supabase only; fail closed when any read fails.
+  const empRes = await (supabase as any).from('employees_with_department').select('employee_id');
+  if (empRes?.error) throw empRes.error;
+  for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
 
-  // Pull employee_id values from the Supabase employees table so number
-  // allocation does not collide with existing employees.
-  try {
-    const empRes = await (supabase as any).from('employees_with_department').select('employee_id');
-    for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
-  } catch (error) {
-    console.warn('createEmployeeNumberAllocator: employees fetch failed', error);
-  }
-  try {
-    const raw = localStorage.getItem('cictrix_employee_portal_accounts');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        for (const account of parsed) addIfPresent(account?.employee?.employeeId);
-      }
-    }
-  } catch { /* ignore */ }
+  const nhRes = await (supabase as any).from('newly_hired').select('employee_id');
+  if (nhRes?.error) throw nhRes.error;
+  for (const row of (nhRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
+
+  const portalRes = await (supabase as any)
+    .from('employee_portal_accounts')
+    .select('employee_id')
+    .is('deleted_at', null);
+  if (portalRes?.error) throw portalRes.error;
+  for (const row of (portalRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
 
   let sequence = 1;
   const allocate = (): string => {

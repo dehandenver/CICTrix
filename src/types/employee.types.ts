@@ -60,8 +60,8 @@ export interface Employee {
   firstName?: string;
   middleName?: string;
   nameExtension?: string; // JR., SR.
-  heightM?: number;
-  weightKg?: number;
+  heightM?: number | null;
+  weightKg?: number | null;
   bloodType?: string;
   umidNumber?: string;
   philsysNumber?: string;
@@ -170,6 +170,23 @@ export interface AddressParts {
   province?: string;
   zip?: string;
 }
+
+/** One row-level validation issue on a PDS repeating list. */
+export interface PdsFieldIssue {
+  rowIndex: number;
+  field: string;
+  message: string;
+}
+
+/** The seven repeating lists edited by the Personal Data Sheet section. */
+export type PdsListSection =
+  | 'children'
+  | 'education'
+  | 'eligibility'
+  | 'workExperience'
+  | 'voluntaryWork'
+  | 'training'
+  | 'references';
 
 /** 23. NAME of CHILDREN — a repeating list on the form. */
 export interface EmployeeChild {

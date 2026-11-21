@@ -55,12 +55,27 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
         setLoading(false);
       }
     } catch (err) {
+      const kind = (err as { kind?: unknown } | null)?.kind;
       const raw = err instanceof Error ? err.message : String(err ?? '');
-      if (/invalid username or password/i.test(raw)) {
+      if (
+        kind === 'invalid_credentials' ||
+        kind === 'not_found' ||
+        /invalid username or password/i.test(raw)
+      ) {
         console.error('Login error:', err);
         setFailure({
           message: "That username and password don't match an account.",
           nextStep: "Check them and try again. If you were just onboarded, use the temporary password from your welcome email.",
+        });
+      } else if (kind === 'ambiguous_account') {
+        setFailure({
+          message: "We couldn't sign you in because this username isn't uniquely linked.",
+          nextStep: 'Contact HR so they can verify your employee portal account.',
+        });
+      } else if (kind === 'lookup_unavailable') {
+        setFailure({
+          message: "We couldn't reach the employee sign-in service right now.",
+          nextStep: 'Check your connection and try again in a moment.',
         });
       } else {
         const described = describeActionFailure('sign you in', err);

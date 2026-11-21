@@ -1,6 +1,4 @@
-import re
 import uuid
-from datetime import date
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from typing import List, Optional
 import httpx
@@ -97,9 +95,9 @@ async def update_employee_status(
     return response.data[0]
 
 PROMOTION_RPC = "complete_promotional_appointment"
+EXTERNAL_HIRE_RPC = "complete_external_hire"
 
-# RPC failure -> HTTP status. The RPC raises a machine-readable HINT (see
-# supabase/migrations/20261102041556_complete_promotional_appointment.sql).
+# RPC failure -> HTTP status. Each RPC raises a machine-readable HINT.
 PROMOTION_STATUS_BY_HINT = {
     "not_authorized": 403,
     "application_not_found": 404,
@@ -122,11 +120,30 @@ PROMOTION_STATUS_BY_HINT = {
     "office_ambiguous": 422,
     "plantilla_ambiguous": 422,
 }
-PROMOTION_MISSING_RPC_CODES = {"PGRST202", "42883"}
-PROMOTION_NOT_AUTHORIZED_CODES = {"42501"}
+
+EXTERNAL_HIRE_STATUS_BY_HINT = {
+    "not_authorized": 403,
+    "application_not_found": 404,
+    "partial_completion": 409,
+    "concurrent_change": 409,
+    "slot_missing": 409,
+    "slot_filled_elsewhere": 409,
+    "slot_reserved_elsewhere": 409,
+    "not_reserved": 409,
+    "employee_number_conflict": 409,
+    "email_conflict": 409,
+    "is_promotion": 422,
+    "posting_missing": 422,
+    "office_inactive": 422,
+    "office_ambiguous": 422,
+    "plantilla_ambiguous": 422,
+}
+
+RPC_MISSING_CODES = {"PGRST202", "42883"}
+RPC_NOT_AUTHORIZED_CODES = {"42501"}
 # Statement timeout, deadlock, serialization failure, lock not available:
 # the transaction rolled back and a retry may succeed.
-PROMOTION_BUSY_CODES = {"57014", "40P01", "40001", "55P03"}
+RPC_BUSY_CODES = {"57014", "40P01", "40001", "55P03"}
 
 
 def is_promotion_application(app_type) -> bool:
@@ -134,14 +151,22 @@ def is_promotion_application(app_type) -> bool:
     return str(app_type or "").strip().lower() in ("promotion", "promotional")
 
 
-def _promotion_rpc_http_error(exc: Exception) -> HTTPException:
+def _rpc_http_error(
+    exc: Exception,
+    *,
+    status_by_hint: dict,
+    action_label: str,
+    migration_label: str,
+    busy_subject: str,
+    repeat_action_verb: str,
+) -> HTTPException:
     if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
         # No answer: the transaction may have committed. A replay is safe.
         return HTTPException(
             status_code=504,
             detail=(
-                "We couldn't confirm the result of this promotion. "
-                "Retrying is safe and will not appoint the employee twice."
+                f"We couldn't confirm the result of this {action_label}. "
+                f"Retrying is safe and will not {repeat_action_verb} twice."
             ),
         )
 
@@ -149,52 +174,61 @@ def _promotion_rpc_http_error(exc: Exception) -> HTTPException:
     hint = str(getattr(exc, "hint", "") or "")
     message = str(getattr(exc, "message", "") or "").strip()
 
-    if code in PROMOTION_MISSING_RPC_CODES:
+    if code in RPC_MISSING_CODES:
         return HTTPException(
             status_code=503,
             detail=(
-                "The promotion update has not been deployed to this database yet. "
+                f"The {migration_label} has not been deployed to this database yet. "
                 "Apply the latest database migration and try again."
             ),
         )
-    if hint == "not_authorized" or code in PROMOTION_NOT_AUTHORIZED_CODES:
+    if hint == "not_authorized" or code in RPC_NOT_AUTHORIZED_CODES:
         return HTTPException(
             status_code=403,
-            detail=message or "You are not authorized to complete promotional appointments.",
+            detail=message or f"You are not authorized to complete {action_label}s.",
         )
-    if code in PROMOTION_BUSY_CODES:
+    if code in RPC_BUSY_CODES:
         return HTTPException(
             status_code=503,
             detail=(
-                "Someone else was updating this employee or plantilla at the same time, "
+                f"Someone else was updating this {busy_subject} at the same time, "
                 "so nothing was saved. Try again in a moment. "
-                "Retrying is safe and will not appoint the employee twice."
+                f"Retrying is safe and will not {repeat_action_verb} twice."
             ),
         )
-    if hint in PROMOTION_STATUS_BY_HINT:
+    if hint in status_by_hint:
         return HTTPException(
-            status_code=PROMOTION_STATUS_BY_HINT[hint],
-            detail=message or "The promotion could not be completed.",
+            status_code=status_by_hint[hint],
+            detail=message or f"The {action_label} could not be completed.",
         )
     return HTTPException(
         status_code=500,
-        detail=message or "Failed to complete the promotion.",
+        detail=message or f"Failed to complete the {action_label}.",
     )
 
 
-def complete_promotion(client, applicant_id: str, current_user: TokenData) -> dict:
-    """Appoint an existing employee through the database transaction.
+def _complete_appointment_via_rpc(
+    client,
+    *,
+    rpc_name: str,
+    applicant_id: str,
+    current_user: TokenData,
+    status_by_hint: dict,
+    action_label: str,
+    migration_label: str,
+    busy_subject: str,
+    repeat_action_verb: str,
+) -> dict:
+    """Complete a promotional or external appointment through its Postgres RPC.
 
     The actor is the user this server already verified; nothing from the
     request body or query is used. A rejection is final here: it is never
-    retried through another privileged path, and no employee is inserted.
+    retried through another write path.
     """
-    # Only the service role may name an actor; the anon client would be
-    # refused by the database. Say so instead of silently using it.
     if getattr(db, "service_client", None) is None:
         raise HTTPException(
             status_code=503,
-            detail="The server is missing its service-role database credentials, so it cannot complete promotions.",
+            detail=f"The server is missing its service-role database credentials, so it cannot complete {action_label}s.",
         )
     try:
         actor_user_id = str(uuid.UUID(str(current_user.user_id)))
@@ -206,11 +240,18 @@ def complete_promotion(client, applicant_id: str, current_user: TokenData) -> di
 
     try:
         rpc_res = client.rpc(
-            PROMOTION_RPC,
+            rpc_name,
             {"p_applicant_id": applicant_id, "p_actor_user_id": actor_user_id},
         ).execute()
     except Exception as exc:
-        raise _promotion_rpc_http_error(exc)
+        raise _rpc_http_error(
+            exc,
+            status_by_hint=status_by_hint,
+            action_label=action_label,
+            migration_label=migration_label,
+            busy_subject=busy_subject,
+            repeat_action_verb=repeat_action_verb,
+        )
 
     result = rpc_res.data[0] if isinstance(rpc_res.data, list) and rpc_res.data else rpc_res.data
     employee_uuid = result.get("employee_uuid") if isinstance(result, dict) else None
@@ -218,8 +259,8 @@ def complete_promotion(client, applicant_id: str, current_user: TokenData) -> di
         raise HTTPException(
             status_code=504,
             detail=(
-                "We couldn't confirm the result of this promotion. "
-                "Retrying is safe and will not appoint the employee twice."
+                f"We couldn't confirm the result of this {action_label}. "
+                f"Retrying is safe and will not {repeat_action_verb} twice."
             ),
         )
 
@@ -228,99 +269,39 @@ def complete_promotion(client, applicant_id: str, current_user: TokenData) -> di
         raise HTTPException(
             status_code=500,
             detail=(
-                "The promotion is recorded, but the employee record could not be loaded. "
-                "Retry to load it; retrying will not appoint the employee again."
+                f"The {action_label} is recorded, but the employee record could not be loaded. "
+                f"Retry to load it; retrying will not {repeat_action_verb} again."
             ),
         )
     return view_res.data[0]
 
 
-# Same pattern the database uses to read the number from a plantilla label
-# (complete_promotional_appointment), e.g. "Plantilla 3" -> "3".
-PLANTILLA_LABEL_PATTERN = re.compile(r"^\s*[Pp]lantilla\s+([0-9]+)\s*$")
-NO_PLANTILLA_POSTING_DETAIL = "The job posting for this plantilla no longer exists."
-NO_OFFICE_DETAIL = "This application has no office. Set the job posting's office, then hire again."
+def complete_promotion(client, applicant_id: str, current_user: TokenData) -> dict:
+    return _complete_appointment_via_rpc(
+        client,
+        rpc_name=PROMOTION_RPC,
+        applicant_id=applicant_id,
+        current_user=current_user,
+        status_by_hint=PROMOTION_STATUS_BY_HINT,
+        action_label="promotion",
+        migration_label="promotion update",
+        busy_subject="employee or plantilla",
+        repeat_action_verb="appoint the employee",
+    )
 
 
-def _clean(value) -> Optional[str]:
-    """Trimmed text, or None when blank."""
-    text = str(value).strip() if value is not None else ""
-    return text or None
-
-
-def resolve_hire_office(client, app_data: dict, position_name: str) -> dict:
-    """Work out the office, division and plantilla number for an external hire.
-
-    Mirrors the Target assignment step of complete_promotional_appointment: the
-    office is the plantilla's job posting office, matched to exactly one active
-    department and written with that department's own name. Every refusal is a
-    422 raised here, before the caller writes anything.
-    """
-    division = None
-    plantilla_num = None
-    office_source = None
-    slot_id = app_data.get("plantilla_slot_id")
-
-    if slot_id:
-        slot_res = (
-            client.table("plantilla_slots")
-            .select("id, job_posting_id, label, division")
-            .eq("id", slot_id)
-            .execute()
-        )
-        slot = slot_res.data[0] if slot_res.data else None
-        posting = None
-        if slot and slot.get("job_posting_id"):
-            posting_res = (
-                client.table("job_postings")
-                .select("id, department, division")
-                .eq("id", slot["job_posting_id"])
-                .is_("deleted_at", "null")
-                .execute()
-            )
-            posting = posting_res.data[0] if posting_res.data else None
-        if not slot or not posting:
-            raise HTTPException(status_code=422, detail=NO_PLANTILLA_POSTING_DETAIL)
-
-        office_source = posting.get("department")
-        division = _clean(slot.get("division")) or _clean(posting.get("division"))
-        label_match = PLANTILLA_LABEL_PATTERN.match(str(slot.get("label") or ""))
-        plantilla_num = label_match.group(1) if label_match else None
-    else:
-        # Titles are not unique: only a single matching posting is trusted.
-        posting_res = (
-            client.table("job_postings")
-            .select("department, division")
-            .ilike("title", position_name)
-            .is_("deleted_at", "null")
-            .execute()
-        )
-        if len(posting_res.data or []) == 1 and _clean(posting_res.data[0].get("department")):
-            office_source = posting_res.data[0]["department"]
-            division = _clean(posting_res.data[0].get("division"))
-        else:
-            office_source = app_data.get("office")
-
-    office = _clean(office_source)
-    if office is None:
-        raise HTTPException(status_code=422, detail=NO_OFFICE_DETAIL)
-
-    dept_res = client.table("departments").select("id, name").eq("is_active", True).execute()
-    matches = [d for d in (dept_res.data or []) if (_clean(d.get("name")) or "").lower() == office.lower()]
-    if not matches:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f'Office "{office}" is not an active office. '
-                "Change the job posting's office to an active one, then hire again."
-            ),
-        )
-    if len(matches) > 1:
-        raise HTTPException(
-            status_code=422,
-            detail=f'Office "{office}" matches more than one active office. Resolve the duplicate first.',
-        )
-    return {"department": matches[0]["name"], "division": division, "plantilla_num": plantilla_num}
+def complete_external_appointment(client, applicant_id: str, current_user: TokenData) -> dict:
+    return _complete_appointment_via_rpc(
+        client,
+        rpc_name=EXTERNAL_HIRE_RPC,
+        applicant_id=applicant_id,
+        current_user=current_user,
+        status_by_hint=EXTERNAL_HIRE_STATUS_BY_HINT,
+        action_label="external hire",
+        migration_label="external hiring update",
+        busy_subject="record or plantilla",
+        repeat_action_verb="hire the applicant",
+    )
 
 
 @router.post("/from-applicant/{applicant_id}", response_model=EmployeeResponse, status_code=201)
@@ -329,102 +310,14 @@ async def hire_from_applicant(
     current_user: TokenData = Depends(get_authenticated_user),
 ):
     client = db.get_service_client()
-    
-    # 1. Read applicant
+
     app_res = client.table("applicants").select("*").eq("id", applicant_id).execute()
     if not app_res.data:
         raise HTTPException(status_code=404, detail="Applicant not found")
-    
+
     app_data = app_res.data[0]
     app_type = app_data.get("application_type", "job")
 
-    # Promotions never reach the external-hire code below, whatever else the
-    # record holds: the person is already an employee.
     if is_promotion_application(app_type):
         return complete_promotion(client, applicant_id, current_user)
-
-    today_str = date.today().isoformat()
-    position_name = app_data.get("position") or app_data.get("current_position") or "Staff"
-    
-    office = resolve_hire_office(client, app_data, position_name)
-
-    # New Hire: Insert/Upsert new employee
-    emp_id = app_data.get("employee_id")
-    if not emp_id:
-        # Deterministic employee_number generation based on applicant_id to ensure idempotency
-        emp_id = f"EMP-{str(applicant_id).replace('-', '')[:8].upper()}"
-    
-    email = app_data.get("email")
-    if not email:
-        first = app_data.get("first_name", "").lower().replace(" ", "")
-        last = app_data.get("last_name", "").lower().replace(" ", "")
-        email = f"{first}.{last}.{emp_id.lower()}@employee.local"
-
-    insert_data = {
-        "employee_number": emp_id,
-        "first_name": app_data.get("first_name", ""),
-        "middle_name": app_data.get("middle_name", ""),
-        "last_name": app_data.get("last_name", ""),
-        "email": email,
-        "phone": app_data.get("contact_number"),
-        "current_address_street": app_data.get("address"),
-        "sex": app_data.get("gender"),
-        "position": position_name,
-        "department": office["department"],
-        "division": office["division"],
-        "plantilla_num": office["plantilla_num"],
-        "employment_status": "Regular",
-        "date_hired": today_str,
-        "status": "Active",
-        "user_account_id": None
-    }
-    
-    valid_genders = ['Male', 'Female', 'Other', 'Prefer not to say']
-    if insert_data["sex"] not in valid_genders:
-        insert_data.pop("sex", None)
-
-    # Check email uniqueness and append disambiguator if necessary
-    email_val = insert_data.get("email")
-    if email_val:
-        email_unique = False
-        email_attempts = 0
-        while not email_unique and email_attempts < 10:
-            existing_email = client.table("employees").select("email").eq("email", email_val).execute()
-            if not existing_email.data:
-                email_unique = True
-            else:
-                email_attempts += 1
-                parts = insert_data["email"].split('@')
-                email_val = f"{parts[0]}.{email_attempts + 1}@{parts[1]}"
-        insert_data["email"] = email_val
-
-    # Check for employee_number clash first
-    existing = client.table("employees").select("id").eq("employee_number", insert_data["employee_number"]).execute()
-    if existing.data:
-        # Clash detected — generate a new unique ID
-        import secrets
-        while True:
-            new_id = f"EMP-NH{secrets.token_hex(4).upper()}"
-            check = client.table("employees").select("id").eq("employee_number", new_id).execute()
-            if not check.data:
-                insert_data["employee_number"] = new_id
-                break
-
-    # 2. Insert into employees
-    emp_res = client.table("employees").insert(insert_data).execute()
-    if not emp_res.data:
-        raise HTTPException(status_code=500, detail="Failed to insert employee record")
-        
-    new_emp_raw = emp_res.data[0]
-    
-    # 3. Update applicant
-    # Case matters: every consumer (Office Directory headcount, drill-down,
-    # frontend backfills) filters on the exact string 'Hired'.
-    client.table("applicants").update({"status": "Hired"}).eq("id", applicant_id).execute()
-    
-    # 4. Fetch the row through the compatibility view to return Schema B (EmployeeResponse) format
-    view_res = client.table("employees_with_department").select("*").eq("id", new_emp_raw["id"]).execute()
-    if not view_res.data:
-        raise HTTPException(status_code=500, detail="Failed to read created employee via view")
-    
-    return view_res.data[0]
+    return complete_external_appointment(client, applicant_id, current_user)

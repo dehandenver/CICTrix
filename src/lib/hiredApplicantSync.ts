@@ -214,15 +214,25 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
     // 2. Fetch existing employees to find who is missing
     const { data: existingEmployees, error: empErr } = await (supabase as any)
       .from('employees')
-      .select('id, employee_number');
+      .select('id, application_id, employee_number, email');
 
     if (empErr) {
       console.warn('[hiredApplicantSync] employees fetch failed:', empErr);
       return;
     }
 
-    const existingIdSet = new Set((existingEmployees ?? []).map((e: any) => String(e.id)));
-    const existingNumSet = new Set((existingEmployees ?? []).map((e: any) => String(e.employee_number)));
+    const existingIdSet = new Set((existingEmployees ?? []).map((e: any) => String(e.id ?? '').trim()).filter(Boolean));
+    const existingApplicationIdSet = new Set(
+      (existingEmployees ?? []).map((e: any) => String(e.application_id ?? '').trim()).filter(Boolean),
+    );
+    const existingNumSet = new Set(
+      (existingEmployees ?? []).map((e: any) => String(e.employee_number ?? '').trim()).filter(Boolean),
+    );
+    const existingEmailSet = new Set(
+      (existingEmployees ?? [])
+        .map((e: any) => String(e.email ?? '').trim().toLowerCase())
+        .filter(Boolean),
+    );
 
     // Multiple credential-bearing newly_hired rows for one applicant are an
     // ambiguous identity link. Skip them all rather than choosing a row.
@@ -267,16 +277,19 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
       );
     }
 
-    // Filter to hires that are missing in BOTH UUID and employee number
+    // Filter to hires that are missing across id, application_id, employee_number, and normalized email
     const missingHires = hires.filter((h) => {
       const applicantId = String(h.applicant_id ?? '').trim();
       const employeeId = String(h.employee_id ?? '').trim();
+      const normalizedEmail = String(h.email ?? '').trim().toLowerCase();
       return applicantId
         && employeeId
         && !duplicateApplicantIds.has(applicantId)
         && !conflictingApplicantIds.has(applicantId)
         && !existingIdSet.has(applicantId)
-        && !existingNumSet.has(employeeId);
+        && !existingApplicationIdSet.has(applicantId)
+        && !existingNumSet.has(employeeId)
+        && (!normalizedEmail || !existingEmailSet.has(normalizedEmail));
     });
 
     if (missingHires.length === 0) {
@@ -298,7 +311,7 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
         .filter(Boolean);
       const { data: applicantRows, error: appErr } = await (supabase as any)
         .from('applicants')
-        .select('id, first_name, middle_name, last_name, position, office, contact_number, application_type')
+        .select('id, first_name, middle_name, last_name, email, position, office, contact_number, application_type')
         .in('id', missingIds);
       if (appErr) {
         console.warn('[hiredApplicantSync] applicants lookup/classification failed:', appErr);
@@ -340,15 +353,17 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
       if (!firstName || !lastName) continue;
 
       // Construct a valid email if not present
-      let email = String(h.email ?? '').trim();
+      let email = String(h.email ?? '').trim() || String(applicant?.email ?? '').trim();
       if (!email) {
         const first = firstName.toLowerCase().replace(/\s+/g, '');
         const last = lastName.toLowerCase().replace(/\s+/g, '');
         email = `${first}.${last}.${h.employee_id.toLowerCase()}@employee.local`;
       }
+      if (existingEmailSet.has(email.toLowerCase())) continue;
 
       toInsert.push({
         id: h.applicant_id,
+        application_id: h.applicant_id,
         employee_number: h.employee_id,
         first_name: firstName,
         middle_name: middleName,

@@ -1,3 +1,21 @@
+export interface ApplicantWorkExperienceEntry {
+  from_date: string;
+  to_date: string;
+  is_present: boolean;
+  position_title: string;
+  company_name: string;
+  duties_responsibilities: string;
+  is_government_service: boolean;
+}
+
+export interface ApplicantWorkExperienceEntryErrors {
+  from_date?: string;
+  to_date?: string;
+  position_title?: string;
+  company_name?: string;
+  duties_responsibilities?: string;
+}
+
 export interface ApplicantFormData {
   first_name: string;
   middle_name: string;
@@ -30,6 +48,7 @@ export interface ApplicantFormData {
   relevant_experience_position: string;
   relevant_experience_company: string;
   relevant_experience_duties: string;
+  work_experience_entries?: ApplicantWorkExperienceEntry[];
   gov_id_type: string;
   gov_id_expiration: string;
 }
@@ -48,6 +67,8 @@ export interface ValidationErrors {
   employee_id?: string;
   current_position?: string;
   current_department?: string;
+  education_school?: string;
+  work_experience_entries?: string;
   work_experience_years?: string;
   relevant_experience_position?: string;
   relevant_experience_company?: string;

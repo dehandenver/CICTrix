@@ -40,7 +40,7 @@ export async function listAttendance(enrollmentIds: string[]): Promise<Attendanc
 
   if (error) {
     console.error('Error loading attendance:', error);
-    return map;
+    throw new Error(error.message || 'Could not load attendance records.');
   }
   for (const r of (data ?? []) as any[]) {
     // Rows predating the AM/PM split have no session; read them as morning so

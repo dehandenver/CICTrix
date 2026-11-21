@@ -10,7 +10,7 @@
  * recommendations) exports to a print/PDF view.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Award, FileDown, Upload, Users } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { CATEGORY_COLORS } from './trainingCategories';
@@ -61,61 +61,173 @@ const CategoryTag = ({ category }: { category: string | null }) => {
   );
 };
 
+type BoardStatus = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
+
 export const LndTrainingEvaluation = () => {
   const [trainings, setTrainings] = useState<EvalTraining[]>([]);
   const [selectedId, setSelectedId] = useState('');
+  const [boardStatus, setBoardStatus] = useState<BoardStatus>('idle');
   const [board, setBoard] = useState<EvalBoard | null>(null);
   const [loadingList, setLoadingList] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
   const [loadingBoard, setLoadingBoard] = useState(false);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [conflictError, setConflictError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [savingRows, setSavingRows] = useState<Record<string, boolean>>({});
+  const [savingNotes, setSavingNotes] = useState(false);
   const [reportNotes, setReportNotes] = useState('');
 
   // Per-row score input overlay so typing doesn't fight number formatting.
   const [edits, setEdits] = useState<Record<string, { pre: string; post: string }>>({});
+  const editsRef = useRef<Record<string, { pre: string; post: string }>>({});
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const listGenRef = useRef(0);
+  const boardGenRef = useRef(0);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const boardRef = useRef<EvalBoard | null>(board);
+  boardRef.current = board;
+  const savingRowsRef = useRef<Record<string, boolean>>({});
+
+  const setRowSaving = (enrollmentId: string, active: boolean) => {
+    if (active) {
+      savingRowsRef.current = { ...savingRowsRef.current, [enrollmentId]: true };
+    } else {
+      const next = { ...savingRowsRef.current };
+      delete next[enrollmentId];
+      savingRowsRef.current = next;
+    }
+    setSavingRows(savingRowsRef.current);
+  };
 
   const flash = (msg: string) => {
     setNotice(msg);
     window.setTimeout(() => setNotice((cur) => (cur === msg ? null : cur)), 4000);
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  const loadTrainings = useCallback(async () => {
+    const gen = ++listGenRef.current;
+    setLoadingList(true);
+    setListError(null);
+    try {
       const list = await listEvaluableTrainings();
-      if (cancelled) return;
+      if (gen !== listGenRef.current) return;
       setTrainings(list);
-      if (list.length > 0) setSelectedId(list[0].id);
-      setLoadingList(false);
-    })();
-    return () => { cancelled = true; };
+      setSelectedId((cur) => {
+        const next = cur && list.some((t) => t.id === cur) ? cur : (list[0]?.id ?? '');
+        selectedIdRef.current = next;
+        return next;
+      });
+    } catch (err) {
+      if (gen !== listGenRef.current) return;
+      setListError(err instanceof Error && err.message ? err.message : 'Could not load evaluable trainings.');
+    } finally {
+      if (gen === listGenRef.current) setLoadingList(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (!selectedId) { setBoard(null); return; }
-    let cancelled = false;
-    setLoadingBoard(true);
-    (async () => {
-      const b = await getEvaluationBoard(selectedId);
-      if (cancelled) return;
-      setBoard(b);
-      setReportNotes(b?.reportNotes ?? '');
-      setEdits(
-        Object.fromEntries(
-          (b?.rows ?? []).map((r) => [r.enrollmentId, {
-            pre: r.pre != null ? String(r.pre) : '',
-            post: r.post != null ? String(r.post) : '',
-          }])
-        )
-      );
-      setLoadingBoard(false);
-    })();
-    return () => { cancelled = true; };
-  }, [selectedId]);
+    void loadTrainings();
+    return () => {
+      listGenRef.current += 1;
+    };
+  }, [loadTrainings]);
 
-  const updateRow = (enrollmentId: string, patch: Partial<EvalRow>) =>
-    setBoard((prev) => (prev ? { ...prev, rows: prev.rows.map((r) => (r.enrollmentId === enrollmentId ? { ...r, ...patch } : r)) } : prev));
+  const loadBoard = useCallback(async (sessionId: string, mode: 'initial' | 'refresh') => {
+    const gen = ++boardGenRef.current;
+    setLoadingBoard(true);
+    if (mode === 'initial') {
+      setBoardStatus('loading');
+      setBoardError(null);
+      setRefreshError(null);
+      setConflictError(null);
+    }
+    try {
+      const b = await getEvaluationBoard(sessionId);
+      if (gen !== boardGenRef.current || selectedIdRef.current !== sessionId) return;
+      if (b === null) {
+        boardRef.current = null;
+        editsRef.current = {};
+        setBoard(null);
+        setEdits({});
+        setReportNotes('');
+        setBoardStatus('missing');
+        setBoardError(null);
+        setRefreshError(null);
+        setConflictError(null);
+        return;
+      }
+      const nextEdits = Object.fromEntries(
+        b.rows.map((r) => [r.enrollmentId, {
+          pre: r.pre != null ? String(r.pre) : '',
+          post: r.post != null ? String(r.post) : '',
+        }]),
+      );
+      boardRef.current = b;
+      editsRef.current = nextEdits;
+      savingRowsRef.current = {};
+      setSavingRows({});
+      setUploadingId(null);
+      setSavingNotes(false);
+      setBoard(b);
+      setReportNotes(b.reportNotes ?? '');
+      setEdits(nextEdits);
+      setBoardStatus('ready');
+      setBoardError(null);
+      setRefreshError(null);
+      setConflictError(null);
+    } catch (err) {
+      if (gen !== boardGenRef.current || selectedIdRef.current !== sessionId) return;
+      const msg = err instanceof Error && err.message ? err.message : 'Could not load evaluation board.';
+      if (mode === 'refresh' && boardRef.current) {
+        setRefreshError(msg);
+      } else {
+        boardRef.current = null;
+        setBoard(null);
+        setBoardStatus('error');
+        setBoardError(msg);
+      }
+    } finally {
+      if (gen === boardGenRef.current) setLoadingBoard(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+    boardGenRef.current += 1;
+    boardRef.current = null;
+    editsRef.current = {};
+    savingRowsRef.current = {};
+    setSavingRows({});
+    setUploadingId(null);
+    setSavingNotes(false);
+    setBoard(null);
+    setEdits({});
+    setReportNotes('');
+    setBoardError(null);
+    setRefreshError(null);
+    setConflictError(null);
+    if (!selectedId) {
+      setBoardStatus('idle');
+      setLoadingBoard(false);
+      return;
+    }
+    void loadBoard(selectedId, 'initial');
+    return () => {
+      boardGenRef.current += 1;
+    };
+  }, [selectedId, loadBoard]);
+
+  const updateRow = (enrollmentId: string, patch: Partial<EvalRow>) => {
+    const apply = (prev: EvalBoard | null) =>
+      prev ? { ...prev, rows: prev.rows.map((r) => (r.enrollmentId === enrollmentId ? { ...r, ...patch } : r)) } : prev;
+    boardRef.current = apply(boardRef.current);
+    setBoard(apply);
+  };
 
   const aggregate = useMemo(() => {
     const rows = board?.rows ?? [];
@@ -135,45 +247,157 @@ export const LndTrainingEvaluation = () => {
     return { ok: true, value: n };
   };
 
-  const commitScores = async (row: EvalRow) => {
-    const edit = edits[row.enrollmentId] ?? { pre: '', post: '' };
-    const pre = parseScore(edit.pre);
-    const post = parseScore(edit.post);
-    if (!pre.ok || !post.ok) { flash('Scores must be between 0 and 100.'); return; }
-    if (pre.value === row.pre && post.value === row.post) return; // no change
-    const res = await saveScores(row.enrollmentId, { pre: pre.value, post: post.value });
-    if (!res.ok) { flash(`Could not save scores: ${res.error}`); return; }
-    updateRow(row.enrollmentId, { pre: pre.value, post: post.value });
+  const mutationsDisabled = boardStatus !== 'ready' || Boolean(refreshError);
+
+  const setScoreDraft = (row: EvalRow, field: 'pre' | 'post', value: string) => {
+    setEdits((p) => {
+      const base = p[row.enrollmentId] ?? {
+        pre: row.pre != null ? String(row.pre) : '',
+        post: row.post != null ? String(row.post) : '',
+      };
+      const nextRow = { ...base, [field]: value };
+      const next = { ...p, [row.enrollmentId]: nextRow };
+      editsRef.current = next;
+      return next;
+    });
   };
 
-  const changeMode = async (row: EvalRow, mode: AssessmentMode) => {
-    const res = await setAssessmentMode(row.enrollmentId, mode);
-    if (!res.ok) { flash(`Could not change mode: ${res.error}`); return; }
-    updateRow(row.enrollmentId, { mode });
+  type RowMutationResult = {
+    ok: boolean;
+    error?: string;
+    conflict?: boolean;
+    partialFailure?: boolean;
+    updatedAt?: string;
   };
 
-  const changeReview = async (row: EvalRow, status: ReviewStatus) => {
-    const res = await setReviewStatus(row.enrollmentId, status);
-    if (!res.ok) { flash(`Could not update review: ${res.error}`); return; }
-    updateRow(row.enrollmentId, { reviewStatus: status });
+  /** Guard per-row mutations against stale boards, refreshes, and session switches. */
+  const runRowMutation = async <T extends RowMutationResult>(
+    row: EvalRow,
+    opts: {
+      isUpload?: boolean;
+      execute: (currentRow: EvalRow, sessionId: string) => Promise<T>;
+      onSuccess: (res: T) => { patch: Partial<EvalRow>; notice?: string };
+      errorMessage: (res: T) => string;
+      conflictFallback?: string;
+    },
+  ) => {
+    if (boardStatus !== 'ready' || refreshError || !boardRef.current) return;
+    if (savingRowsRef.current[row.enrollmentId]) return;
+
+    const gen = boardGenRef.current;
+    const sessionId = selectedIdRef.current;
+    const currentRow = boardRef.current.rows.find((x) => x.enrollmentId === row.enrollmentId) ?? row;
+
+    setRowSaving(row.enrollmentId, true);
+    if (opts.isUpload) setUploadingId(row.enrollmentId);
+    try {
+      const res = await opts.execute(currentRow, sessionId);
+      if (gen !== boardGenRef.current || sessionId !== selectedIdRef.current) return;
+      if (res.ok !== true) {
+        if (res.conflict) {
+          setConflictError(
+            res.error || opts.conflictFallback || 'This evaluation changed concurrently. Refresh to see the latest record.',
+          );
+        } else {
+          flash(opts.errorMessage(res));
+        }
+        return;
+      }
+      const { patch, notice: successNotice } = opts.onSuccess(res);
+      updateRow(row.enrollmentId, {
+        ...patch,
+        ...(res.updatedAt !== undefined ? { updatedAt: res.updatedAt } : {}),
+      });
+      if (successNotice) flash(successNotice);
+    } finally {
+      if (gen === boardGenRef.current && sessionId === selectedIdRef.current) {
+        setRowSaving(row.enrollmentId, false);
+        if (opts.isUpload) setUploadingId(null);
+      }
+    }
   };
 
-  const handleFile = async (row: EvalRow, file: File | undefined) => {
-    if (!file || !board) return;
-    setUploadingId(row.enrollmentId);
-    const res = await uploadOutput(board.training.id, row.enrollmentId, file);
-    setUploadingId(null);
-    if (!res.ok) { flash(`Upload failed: ${res.error}`); return; }
-    updateRow(row.enrollmentId, { mode: 'output', submissionUrl: res.url ?? null, submissionName: res.name ?? file.name });
-    flash(`Uploaded “${file.name}”.`);
+  const commitScores = async (row: EvalRow, field?: 'pre' | 'post') => {
+    if (boardStatus !== 'ready' || refreshError) return;
+    if (savingRowsRef.current[row.enrollmentId]) return;
+
+    const currentRow = boardRef.current?.rows.find((x) => x.enrollmentId === row.enrollmentId) ?? row;
+    const edit = editsRef.current[row.enrollmentId] ?? {
+      pre: currentRow.pre != null ? String(currentRow.pre) : '',
+      post: currentRow.post != null ? String(currentRow.post) : '',
+    };
+
+    const patch: Partial<{ pre: number | null; post: number | null }> = {};
+    if (!field || field === 'pre') {
+      const pre = parseScore(edit.pre);
+      if (!pre.ok) { flash('Scores must be between 0 and 100.'); return; }
+      if (pre.value !== currentRow.pre) patch.pre = pre.value;
+    }
+    if (!field || field === 'post') {
+      const post = parseScore(edit.post);
+      if (!post.ok) { flash('Scores must be between 0 and 100.'); return; }
+      if (post.value !== currentRow.post) patch.post = post.value;
+    }
+    if (Object.keys(patch).length === 0) return;
+
+    await runRowMutation(row, {
+      execute: (cur) => saveScores(row.enrollmentId, patch, cur.updatedAt),
+      onSuccess: () => ({ patch }),
+      errorMessage: (res) => `Could not save scores: ${res.error}`,
+    });
+  };
+
+  const changeMode = (row: EvalRow, mode: AssessmentMode) =>
+    runRowMutation(row, {
+      execute: (cur) => setAssessmentMode(row.enrollmentId, mode, cur.updatedAt),
+      onSuccess: () => ({ patch: { mode } }),
+      errorMessage: (res) => `Could not change mode: ${res.error}`,
+    });
+
+  const changeReview = (row: EvalRow, status: ReviewStatus) =>
+    runRowMutation(row, {
+      execute: (cur) => setReviewStatus(row.enrollmentId, status, cur.updatedAt),
+      onSuccess: () => ({ patch: { reviewStatus: status } }),
+      errorMessage: (res) => `Could not update review: ${res.error}`,
+    });
+
+  const handleFile = (row: EvalRow, file: File | undefined) => {
+    if (!file) return Promise.resolve();
+    return runRowMutation(row, {
+      isUpload: true,
+      execute: (cur, sessionId) => uploadOutput(sessionId, row.enrollmentId, file, cur.updatedAt),
+      onSuccess: (res) => ({
+        patch: {
+          mode: 'output',
+          submissionUrl: res.url ?? null,
+          submissionName: res.name ?? file.name,
+        },
+        notice: `Uploaded “${file.name}”.`,
+      }),
+      errorMessage: (res) => (res.partialFailure ? (res.error || 'Partial upload failure.') : `Upload failed: ${res.error}`),
+      conflictFallback: 'File uploaded, but updating the evaluation conflicted. Refresh before retrying.',
+    });
   };
 
   const commitReportNotes = async () => {
-    if (!board) return;
-    if (reportNotes === (board.reportNotes ?? '')) return;
-    const res = await saveReportNotes(board.training.id, reportNotes);
-    if (!res.ok) { flash(`Could not save recommendations: ${res.error}`); return; }
-    setBoard((prev) => (prev ? { ...prev, reportNotes } : prev));
+    if (!boardRef.current || boardStatus !== 'ready' || refreshError || savingNotes) return;
+    if (reportNotes === (boardRef.current.reportNotes ?? '')) return;
+    const gen = boardGenRef.current;
+    const sessionId = selectedIdRef.current;
+    if (!sessionId) return;
+    setSavingNotes(true);
+    try {
+      const res = await saveReportNotes(sessionId, reportNotes);
+      if (gen !== boardGenRef.current || sessionId !== selectedIdRef.current) return;
+      if (res.ok !== true) { flash(`Could not save recommendations: ${res.error}`); return; }
+      const updateNotes = (prev: EvalBoard | null) => (prev && prev.training.id === sessionId ? { ...prev, reportNotes } : prev);
+      boardRef.current = updateNotes(boardRef.current);
+      setBoard(updateNotes);
+    } finally {
+      if (gen === boardGenRef.current && sessionId === selectedIdRef.current) {
+        setSavingNotes(false);
+      }
+    }
   };
 
   const exportReport = () => {
@@ -236,7 +460,7 @@ export const LndTrainingEvaluation = () => {
   const inputClass = 'w-14 rounded-md border border-gray-300 px-1.5 py-1 text-center text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
 
   return (
-    <div className="space-y-6 p-8">
+    <div className="abyan-tokens space-y-6 p-8">
       {/* Header */}
       <section className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -246,14 +470,27 @@ export const LndTrainingEvaluation = () => {
           <h1 className="mt-1 text-3xl font-bold text-gray-900">Training Evaluation</h1>
           <p className="mt-1 text-sm text-gray-500">Pre-test / post-test results and output submissions — verify learning, not just attendance.</p>
         </div>
-        {board && board.rows.length > 0 && (
-          <button
-            type="button"
-            onClick={exportReport}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:border-blue-400 hover:text-blue-600 transition"
-          >
-            <FileDown className="h-4 w-4" /> Export training report
-          </button>
+        {boardStatus === 'ready' && board && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void loadBoard(board.training.id, 'refresh')}
+              disabled={loadingBoard}
+              className="btn btn-sm btn-secondary"
+            >
+              {loadingBoard ? 'Refreshing…' : 'Refresh'}
+            </button>
+            {board.rows.length > 0 && (
+              <button
+                type="button"
+                disabled={mutationsDisabled}
+                onClick={exportReport}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:border-blue-400 hover:text-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FileDown className="h-4 w-4" /> Export training report
+              </button>
+            )}
+          </div>
         )}
       </section>
 
@@ -261,6 +498,16 @@ export const LndTrainingEvaluation = () => {
       <section className="rounded-2xl border border-gray-200 bg-white p-4">
         {loadingList ? (
           <p className="text-sm text-gray-400">Loading trainings…</p>
+        ) : listError ? (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--error-300)] bg-[var(--error-100)] p-3 text-sm text-[var(--error-700)]"
+          >
+            <span>Could not load trainings: {listError}</span>
+            <button type="button" onClick={() => void loadTrainings()} className="btn btn-sm btn-secondary">
+              Retry
+            </button>
+          </div>
         ) : trainings.length === 0 ? (
           <EmptyState title="No trainings to evaluate" description="A training needs a finalized attendee roster before its learning can be evaluated." />
         ) : (
@@ -282,8 +529,69 @@ export const LndTrainingEvaluation = () => {
         )}
       </section>
 
-      {board && (
+      {boardStatus === 'loading' && !board && (
+        <section className="rounded-2xl border border-gray-200 bg-white p-5">
+          <p role="status" className="text-sm text-[var(--neutral-500)]">Loading evaluation board…</p>
+        </section>
+      )}
+
+      {boardStatus === 'error' && boardError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--error-300)] bg-[var(--error-100)] p-4 text-sm text-[var(--error-700)]"
+        >
+          <span>Could not load evaluation board: {boardError}</span>
+          <button
+            type="button"
+            onClick={() => selectedId && void loadBoard(selectedId, 'initial')}
+            className="btn btn-sm btn-secondary"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {boardStatus === 'missing' && (
+        <section className="rounded-2xl border border-gray-200 bg-white p-5">
+          <EmptyState title="Training not found" description="This training session is no longer available." />
+        </section>
+      )}
+
+      {boardStatus === 'ready' && board && (
         <>
+          {refreshError && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--warning-300)] bg-[var(--warning-100)] p-3 text-sm text-[var(--warning-700)]"
+            >
+              <span>Showing stale evaluation data — refresh failed ({refreshError}). Editing and export are disabled until refreshed.</span>
+              <button
+                type="button"
+                onClick={() => void loadBoard(board.training.id, 'refresh')}
+                disabled={loadingBoard}
+                className="btn btn-sm btn-secondary"
+              >
+                Retry refresh
+              </button>
+            </div>
+          )}
+
+          {conflictError && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--warning-300)] bg-[var(--warning-100)] p-3 text-sm text-[var(--warning-700)]"
+            >
+              <span>{conflictError}</span>
+              <button
+                type="button"
+                onClick={() => void loadBoard(board.training.id, 'refresh')}
+                disabled={loadingBoard}
+                className="btn btn-sm btn-secondary"
+              >
+                Refresh
+              </button>
+            </div>
+          )}
           {/* Aggregate cards */}
           <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <article className="rounded-2xl border border-gray-200 bg-white p-5">
@@ -331,6 +639,8 @@ export const LndTrainingEvaluation = () => {
                     const d = deltaOf(r);
                     const comp = completionOf(r);
                     const edit = edits[r.enrollmentId] ?? { pre: '', post: '' };
+                    const rowBusy = Boolean(savingRows[r.enrollmentId]);
+                    const rowDisabled = mutationsDisabled || rowBusy;
                     return (
                       <div key={r.enrollmentId} className="grid grid-cols-12 items-center px-3 py-3.5">
                         <div className="col-span-3 min-w-0 pr-2">
@@ -340,8 +650,9 @@ export const LndTrainingEvaluation = () => {
                         <div className="col-span-2 pr-2">
                           <select
                             value={r.mode}
+                            disabled={rowDisabled}
                             onChange={(e) => void changeMode(r, e.target.value as AssessmentMode)}
-                            className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:border-blue-500 focus:outline-none"
+                            className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:border-blue-500 focus:outline-none disabled:opacity-50"
                           >
                             <option value="test">Pre/Post test</option>
                             <option value="output">Output submission</option>
@@ -352,16 +663,20 @@ export const LndTrainingEvaluation = () => {
                             <div className="flex items-center gap-2">
                               <input
                                 type="number" min={0} max={100} placeholder="pre" className={inputClass}
+                                aria-label={`Pre-test score for ${r.name}`}
+                                disabled={rowDisabled}
                                 value={edit.pre}
-                                onChange={(e) => setEdits((p) => ({ ...p, [r.enrollmentId]: { ...edit, pre: e.target.value } }))}
-                                onBlur={() => void commitScores(r)}
+                                onChange={(e) => setScoreDraft(r, 'pre', e.target.value)}
+                                onBlur={() => void commitScores(r, 'pre')}
                               />
                               <span className="text-gray-300">→</span>
                               <input
                                 type="number" min={0} max={100} placeholder="post" className={inputClass}
+                                aria-label={`Post-test score for ${r.name}`}
+                                disabled={rowDisabled}
                                 value={edit.post}
-                                onChange={(e) => setEdits((p) => ({ ...p, [r.enrollmentId]: { ...edit, post: e.target.value } }))}
-                                onBlur={() => void commitScores(r)}
+                                onChange={(e) => setScoreDraft(r, 'post', e.target.value)}
+                                onBlur={() => void commitScores(r, 'post')}
                               />
                               <span className={`ml-1 text-sm font-bold ${deltaColor(d)}`}>{deltaLabel(d)}</span>
                             </div>
@@ -382,7 +697,7 @@ export const LndTrainingEvaluation = () => {
                               ) : (
                                 <button
                                   type="button"
-                                  disabled={uploadingId === r.enrollmentId}
+                                  disabled={rowDisabled || uploadingId === r.enrollmentId}
                                   onClick={() => fileInputs.current[r.enrollmentId]?.click()}
                                   className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:border-blue-400 hover:text-blue-600 disabled:opacity-60"
                                 >
@@ -392,12 +707,14 @@ export const LndTrainingEvaluation = () => {
                               <input
                                 ref={(el) => { fileInputs.current[r.enrollmentId] = el; }}
                                 type="file" className="hidden"
+                                disabled={rowDisabled}
                                 onChange={(e) => { void handleFile(r, e.target.files?.[0]); e.target.value = ''; }}
                               />
                               <select
                                 value={r.reviewStatus}
+                                disabled={rowDisabled}
                                 onChange={(e) => void changeReview(r, e.target.value as ReviewStatus)}
-                                className="rounded-md border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-blue-500 focus:outline-none"
+                                className="rounded-md border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-blue-500 focus:outline-none disabled:opacity-50"
                               >
                                 <option value="Pending">Pending</option>
                                 <option value="Reviewed">Reviewed</option>
@@ -424,11 +741,12 @@ export const LndTrainingEvaluation = () => {
             </div>
             <textarea
               value={reportNotes}
+              disabled={mutationsDisabled || savingNotes}
               onChange={(e) => setReportNotes(e.target.value)}
               onBlur={() => void commitReportNotes()}
               rows={4}
               placeholder="L&D's assessment of the training's effectiveness, follow-up actions, whether to run it again…"
-              className="w-full rounded-lg border border-gray-300 p-3 text-sm text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-lg border border-gray-300 p-3 text-sm text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
             />
             <p className="mt-1 text-xs text-gray-400">Included in the exported training report. Saved when you click away.</p>
           </section>

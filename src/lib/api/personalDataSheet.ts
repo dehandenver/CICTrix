@@ -1,19 +1,23 @@
 /**
- * Personal Data Sheet — the two repeating lists on CS Form 212 page 1.
+ * Personal Data Sheet repeating lists on CS Form 212.
  *
- * Item 23 (NAME of CHILDREN) and item 26 (EDUCATIONAL BACKGROUND) are lists,
- * so they live in their own tables rather than as columns on `employees`.
- * Everything else on page 1 is a scalar and goes through `employeePortal.ts`.
+ * Every list is read and saved through one pair of transactional RPCs:
+ * `read_pds_section` returns a canonical snapshot plus a revision, and
+ * `save_pds_section` reconciles the submitted rows against that revision
+ * inside a single database transaction. The service never deletes and
+ * re-inserts a list, so row IDs, creation metadata, and legacy columns such
+ * as work-experience duties survive an edit.
  *
- * Both lists use replace-all semantics: the form edits the whole list at once,
- * and rows carry no meaning outside their position in it, so reconciling
- * individual inserts/updates/deletes against what the user happens to have
- * typed would add a lot of matching logic for no behavioural difference.
+ * Children and references also own family/background scalar columns on
+ * `employees`; those travel in the same RPC call so a scalar failure rolls
+ * the list back and a list failure rolls the scalars back. Other PDS scalars
+ * still go through `employeePortal.ts`.
  */
 
 import { supabase as supabaseClient } from '../supabase';
 import {
   EDUCATION_LEVELS,
+  type Employee,
   type EmployeeChild,
   type EmployeeEducation,
   type EmployeeEligibility,
@@ -21,75 +25,842 @@ import {
   type EmployeeVoluntaryWork,
   type EmployeeLdIntervention,
   type EmployeeReference,
+  type PdsFieldIssue,
+  type PdsListSection,
 } from '../../types/employee.types';
+import {
+  mapPdsScalarColumnsToEmployee,
+  mapPdsScalarPatchToColumns,
+  type PdsScalarPairing,
+} from './employeePortal';
+
+// Re-exported so callers of the PDS service do not need a second import path
+// for the validator's shared types.
+export type { PdsFieldIssue, PdsListSection } from '../../types/employee.types';
 
 const supabase = supabaseClient as any;
 
-export type PdsResult<T> = { ok: true; data: T } | { ok: false; error: string };
+export type PdsFailureKind = 'validation' | 'conflict' | 'uncertain' | 'unavailable';
+
+/** Canonical section state returned by both PDS RPCs. */
+export type PdsSectionSnapshot<T> = {
+  rows: T[];
+  revision: string;
+  scalars?: Partial<Employee>;
+};
+
+export type PdsResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; kind?: PdsFailureKind; fieldIssues?: PdsFieldIssue[] };
+
+// ---------------------------------------------------------------------------
+// Row validation shared by every PDS list
+//
+// The editor seeds blank rows so the printed sheet's fixed layout is visible.
+// Those placeholders only carry their level/sort order, which are not input.
+// A row with real input is validated and either saved or rejected loudly; an
+// existing row (one with an id) is never dropped just because a field is
+// empty. The same function runs inside each save service, before any delete
+// or insert, so a partially filled row can never reach the database.
+// ---------------------------------------------------------------------------
+
+type PdsRowBySection = {
+  children: EmployeeChild;
+  education: EmployeeEducation;
+  eligibility: EmployeeEligibility;
+  workExperience: EmployeeWorkExperience;
+  voluntaryWork: EmployeeVoluntaryWork;
+  training: EmployeeLdIntervention;
+  references: EmployeeReference;
+};
+
+export function validatePdsRows<S extends PdsListSection>(
+  section: S,
+  rows: readonly PdsRowBySection[S][],
+): PdsFieldIssue[] {
+  switch (section) {
+    case 'children':
+      return validateChildrenRows(rows as readonly EmployeeChild[]);
+    case 'education':
+      return validateEducationRows(rows as readonly EmployeeEducation[]);
+    case 'eligibility':
+      return validateEligibilityRows(rows as readonly EmployeeEligibility[]);
+    case 'workExperience':
+      return validateWorkExperienceRows(rows as readonly EmployeeWorkExperience[]);
+    case 'voluntaryWork':
+      return validateVoluntaryWorkRows(rows as readonly EmployeeVoluntaryWork[]);
+    case 'training':
+      return validateLdInterventionRows(rows as readonly EmployeeLdIntervention[]);
+    case 'references':
+      return validateReferenceRows(rows as readonly EmployeeReference[]);
+  }
+}
+
+const MEANINGFUL_FIELDS: Record<PdsListSection, readonly string[]> = {
+  children: ['fullName', 'dateOfBirth'],
+  // level and sortOrder describe the placeholder row, not employee input.
+  education: ['school', 'degree', 'periodFrom', 'periodTo', 'highestLevelUnits', 'yearGraduated', 'scholarshipHonors'],
+  eligibility: ['eligibilityName', 'rating', 'examDate', 'examPlace', 'licenseNumber', 'licenseValidUntil'],
+  workExperience: ['dateFrom', 'dateTo', 'positionTitle', 'departmentAgencyOfficeCompany', 'statusOfAppointment', 'govtService'],
+  voluntaryWork: ['orgNameAddress', 'dateFrom', 'dateTo', 'numberOfHours', 'positionNatureOfWork'],
+  training: ['title', 'dateFrom', 'dateTo', 'numberOfHours', 'ldType', 'conductedBy'],
+  references: ['name', 'address', 'contactInfo'],
+};
+
+const hasInput = (value: unknown): boolean => {
+  if (value == null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  return true;
+};
+
+function hasMeaningfulInput(section: PdsListSection, row: object): boolean {
+  const record = row as Record<string, unknown>;
+  // An existing row is never treated as disposable input.
+  if (hasInput(record.id)) return true;
+  return MEANINGFUL_FIELDS[section].some((field) => hasInput(record[field]));
+}
+
+function validateRequiredText(
+  issues: PdsFieldIssue[],
+  rowIndex: number,
+  field: string,
+  label: string,
+  value: unknown,
+): void {
+  if (!hasInput(value)) {
+    issues.push({ rowIndex, field, message: `${label} is required.` });
+  }
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function calendarDateValue(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!ISO_DATE.test(text)) return null;
+  const [year, month, day] = text.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date.getTime();
+}
+
+function validateDateField(
+  issues: PdsFieldIssue[],
+  rowIndex: number,
+  field: string,
+  label: string,
+  value: unknown,
+): number | null {
+  if (!hasInput(value)) return null;
+  const time = calendarDateValue(value);
+  if (time == null) {
+    issues.push({
+      rowIndex,
+      field,
+      message: `${label} must be a valid calendar date (YYYY-MM-DD).`,
+    });
+  }
+  return time;
+}
+
+function validateNumberField(
+  issues: PdsFieldIssue[],
+  rowIndex: number,
+  field: string,
+  label: string,
+  value: unknown,
+  integerOnly = false,
+): void {
+  if (!hasInput(value)) return;
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number)) {
+    issues.push({ rowIndex, field, message: `${label} must be a finite number.` });
+    return;
+  }
+  if (integerOnly && !Number.isInteger(number)) {
+    issues.push({ rowIndex, field, message: `${label} must be a whole number.` });
+  }
+}
+
+function validateDateRange(
+  issues: PdsFieldIssue[],
+  rowIndex: number,
+  fromLabel: string,
+  fromTime: number | null,
+  toField: string,
+  toLabel: string,
+  toTime: number | null,
+): void {
+  if (fromTime != null && toTime != null && toTime < fromTime) {
+    issues.push({
+      rowIndex,
+      field: toField,
+      message: `${toLabel} cannot be earlier than ${fromLabel}.`,
+    });
+  }
+}
+
+function validateChildrenRows(rows: readonly EmployeeChild[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('children', row)) return;
+    validateRequiredText(issues, rowIndex, 'fullName', 'Full name', row.fullName);
+    validateDateField(issues, rowIndex, 'dateOfBirth', 'Date of birth', row.dateOfBirth);
+  });
+  return issues;
+}
+
+function validateEducationRows(rows: readonly EmployeeEducation[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('education', row)) return;
+    validateRequiredText(issues, rowIndex, 'school', 'Name of school', row.school);
+    validateNumberField(issues, rowIndex, 'periodFrom', 'Year attended from', row.periodFrom, true);
+    validateNumberField(issues, rowIndex, 'periodTo', 'Year attended to', row.periodTo, true);
+    validateNumberField(issues, rowIndex, 'highestLevelUnits', 'Units earned', row.highestLevelUnits, true);
+    validateNumberField(issues, rowIndex, 'yearGraduated', 'Year graduated', row.yearGraduated, true);
+    if (
+      typeof row.periodFrom === 'number' &&
+      typeof row.periodTo === 'number' &&
+      Number.isInteger(row.periodFrom) &&
+      Number.isInteger(row.periodTo)
+    ) {
+      validateDateRange(
+        issues,
+        rowIndex,
+        'Year attended from',
+        row.periodFrom,
+        'periodTo',
+        'Year attended to',
+        row.periodTo,
+      );
+    }
+  });
+  return issues;
+}
+
+function validateEligibilityRows(rows: readonly EmployeeEligibility[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('eligibility', row)) return;
+    validateRequiredText(issues, rowIndex, 'eligibilityName', 'Eligibility', row.eligibilityName);
+    validateNumberField(issues, rowIndex, 'rating', 'Rating', row.rating);
+    validateDateField(issues, rowIndex, 'examDate', 'Date of examination', row.examDate);
+    validateDateField(issues, rowIndex, 'licenseValidUntil', 'License validity date', row.licenseValidUntil);
+  });
+  return issues;
+}
+
+function validateWorkExperienceRows(rows: readonly EmployeeWorkExperience[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('workExperience', row)) return;
+    validateRequiredText(issues, rowIndex, 'dateFrom', 'Date From', row.dateFrom);
+    validateRequiredText(issues, rowIndex, 'positionTitle', 'Position title', row.positionTitle);
+    validateRequiredText(
+      issues,
+      rowIndex,
+      'departmentAgencyOfficeCompany',
+      'Department/Agency/Office/Company',
+      row.departmentAgencyOfficeCompany,
+    );
+    const fromTime = validateDateField(issues, rowIndex, 'dateFrom', 'Date From', row.dateFrom);
+    const toTime = validateDateField(issues, rowIndex, 'dateTo', 'Date To', row.dateTo);
+    validateDateRange(issues, rowIndex, 'Date From', fromTime, 'dateTo', 'Date To', toTime);
+  });
+  return issues;
+}
+
+function validateVoluntaryWorkRows(rows: readonly EmployeeVoluntaryWork[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('voluntaryWork', row)) return;
+    validateRequiredText(issues, rowIndex, 'orgNameAddress', 'Name & address of organization', row.orgNameAddress);
+    const fromTime = validateDateField(issues, rowIndex, 'dateFrom', 'Date From', row.dateFrom);
+    const toTime = validateDateField(issues, rowIndex, 'dateTo', 'Date To', row.dateTo);
+    validateDateRange(issues, rowIndex, 'Date From', fromTime, 'dateTo', 'Date To', toTime);
+    validateNumberField(issues, rowIndex, 'numberOfHours', 'Number of hours', row.numberOfHours);
+  });
+  return issues;
+}
+
+function validateLdInterventionRows(rows: readonly EmployeeLdIntervention[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('training', row)) return;
+    validateRequiredText(issues, rowIndex, 'title', 'Title of L&D intervention/training program', row.title);
+    const fromTime = validateDateField(issues, rowIndex, 'dateFrom', 'Date From', row.dateFrom);
+    const toTime = validateDateField(issues, rowIndex, 'dateTo', 'Date To', row.dateTo);
+    validateDateRange(issues, rowIndex, 'Date From', fromTime, 'dateTo', 'Date To', toTime);
+    validateNumberField(issues, rowIndex, 'numberOfHours', 'Number of hours', row.numberOfHours);
+  });
+  return issues;
+}
+
+function validateReferenceRows(rows: readonly EmployeeReference[]): PdsFieldIssue[] {
+  const issues: PdsFieldIssue[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (!hasMeaningfulInput('references', row)) return;
+    validateRequiredText(issues, rowIndex, 'name', 'Name', row.name);
+  });
+  return issues;
+}
+
+function meaningfulRows<S extends PdsListSection>(
+  section: S,
+  rows: readonly PdsRowBySection[S][],
+): PdsRowBySection[S][] {
+  return rows.filter((row) => hasMeaningfulInput(section, row));
+}
+
+function validationFailure(
+  issues: PdsFieldIssue[],
+): { ok: false; error: string; kind: 'validation'; fieldIssues: PdsFieldIssue[] } {
+  const detail = issues.map((issue) => `Row ${issue.rowIndex + 1}: ${issue.message}`).join(' ');
+  return {
+    ok: false,
+    error: `Fix the following entries before saving. ${detail}`,
+    kind: 'validation',
+    fieldIssues: issues,
+  };
+}
+
+const toNullableNumber = (value: number | null | undefined): number | null => {
+  if (value == null || (value as unknown) === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const toNullableInt = (value: number | null | undefined): number | null => {
+  const number = toNullableNumber(value);
+  return number == null ? null : Math.trunc(number);
+};
+
+// ---------------------------------------------------------------------------
+// Snapshot transport
+// ---------------------------------------------------------------------------
+
+function pairingForSection(section: PdsListSection): PdsScalarPairing | null {
+  if (section === 'children') return 'family';
+  if (section === 'references') return 'background';
+  return null;
+}
+
+function mapChildRow(row: any): EmployeeChild {
+  return {
+    id: row.id,
+    fullName: row.full_name ?? '',
+    dateOfBirth: row.date_of_birth ?? undefined,
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapEducationRow(row: any): EmployeeEducation {
+  return {
+    id: row.id,
+    level: row.level ?? '',
+    school: row.school_name ?? '',
+    degree: row.course ?? '',
+    periodFrom: row.year_attended_from ?? null,
+    periodTo: row.year_attended_to ?? null,
+    highestLevelUnits: row.units_earned ?? null,
+    yearGraduated: row.year_graduated ?? null,
+    scholarshipHonors: row.honors_awards ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapEligibilityRow(row: any): EmployeeEligibility {
+  return {
+    id: row.id,
+    eligibilityName: row.eligibility_type ?? '',
+    rating: row.rating ?? null,
+    examDate: row.date_of_exam ?? '',
+    examPlace: row.place_of_examination ?? '',
+    licenseNumber: row.license_number ?? '',
+    licenseValidUntil: row.validity_date ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapWorkExperienceRow(row: any): EmployeeWorkExperience {
+  return {
+    id: row.id,
+    dateFrom: row.from_date ?? '',
+    dateTo: row.to_date ?? '',
+    positionTitle: row.position_title ?? '',
+    departmentAgencyOfficeCompany: row.company_name ?? '',
+    statusOfAppointment: row.status_of_appointment ?? '',
+    govtService: row.is_government_service ?? null,
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapVoluntaryWorkRow(row: any): EmployeeVoluntaryWork {
+  return {
+    id: row.id,
+    orgNameAddress: row.org_name_address ?? '',
+    dateFrom: row.date_from ?? '',
+    dateTo: row.date_to ?? '',
+    numberOfHours: row.number_of_hours ?? null,
+    positionNatureOfWork: row.position_nature_of_work ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapLdInterventionRow(row: any): EmployeeLdIntervention {
+  return {
+    id: row.id,
+    title: row.title ?? '',
+    dateFrom: row.date_from ?? '',
+    dateTo: row.date_to ?? '',
+    numberOfHours: row.number_of_hours ?? null,
+    ldType: row.ld_type ?? '',
+    conductedBy: row.conducted_by ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapReferenceRow(row: any): EmployeeReference {
+  return {
+    id: row.id,
+    name: row.name ?? '',
+    address: row.address ?? '',
+    contactInfo: row.contact_info ?? '',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapSectionRows<S extends PdsListSection>(
+  section: S,
+  rows: any[],
+): PdsRowBySection[S][] {
+  switch (section) {
+    case 'children':
+      return rows.map(mapChildRow) as PdsRowBySection[S][];
+    case 'education':
+      return rows.map(mapEducationRow) as PdsRowBySection[S][];
+    case 'eligibility':
+      return rows.map(mapEligibilityRow) as PdsRowBySection[S][];
+    case 'workExperience':
+      return rows.map(mapWorkExperienceRow) as PdsRowBySection[S][];
+    case 'voluntaryWork':
+      return rows.map(mapVoluntaryWorkRow) as PdsRowBySection[S][];
+    case 'training':
+      return rows.map(mapLdInterventionRow) as PdsRowBySection[S][];
+    case 'references':
+      return rows.map(mapReferenceRow) as PdsRowBySection[S][];
+  }
+}
+
+/**
+ * Convert the editor's rows to the database column names the RPC expects.
+ * sort_order is deliberately omitted: the server assigns it from the submitted
+ * order, so the returned snapshot is the canonical order even if the editor
+ * was showing placeholders.
+ */
+function rowPayload<S extends PdsListSection>(
+  section: S,
+  rows: readonly PdsRowBySection[S][],
+): Record<string, unknown>[] {
+  return meaningfulRows(section, rows).map((row) => {
+    const r = row as any;
+    const withId: Record<string, unknown> = r.id ? { id: r.id } : {};
+    switch (section) {
+      case 'children':
+        return {
+          ...withId,
+          full_name: r.fullName.trim(),
+          date_of_birth: r.dateOfBirth || null,
+        };
+      case 'education':
+        return {
+          ...withId,
+          level: r.level || null,
+          school_name: r.school!.trim(),
+          course: r.degree?.trim() || null,
+          year_attended_from: toNullableInt(r.periodFrom),
+          year_attended_to: toNullableInt(r.periodTo),
+          units_earned: toNullableInt(r.highestLevelUnits),
+          year_graduated: toNullableInt(r.yearGraduated),
+          honors_awards: r.scholarshipHonors?.trim() || null,
+        };
+      case 'eligibility':
+        return {
+          ...withId,
+          eligibility_type: r.eligibilityName.trim(),
+          rating: toNullableNumber(r.rating),
+          date_of_exam: r.examDate || null,
+          place_of_examination: r.examPlace?.trim() || null,
+          license_number: r.licenseNumber?.trim() || null,
+          validity_date: r.licenseValidUntil || null,
+        };
+      case 'workExperience':
+        return {
+          ...withId,
+          from_date: r.dateFrom!,
+          to_date: r.dateTo || null,
+          position_title: r.positionTitle.trim(),
+          company_name: r.departmentAgencyOfficeCompany!.trim(),
+          status_of_appointment: r.statusOfAppointment?.trim() || null,
+          is_government_service: r.govtService ?? null,
+        };
+      case 'voluntaryWork':
+        return {
+          ...withId,
+          org_name_address: r.orgNameAddress.trim(),
+          date_from: r.dateFrom || null,
+          date_to: r.dateTo || null,
+          number_of_hours: toNullableNumber(r.numberOfHours),
+          position_nature_of_work: r.positionNatureOfWork?.trim() || null,
+        };
+      case 'training':
+        return {
+          ...withId,
+          title: r.title.trim(),
+          date_from: r.dateFrom || null,
+          date_to: r.dateTo || null,
+          number_of_hours: toNullableNumber(r.numberOfHours),
+          ld_type: r.ldType?.trim() || null,
+          conducted_by: r.conductedBy?.trim() || null,
+        };
+      case 'references':
+        return {
+          ...withId,
+          name: r.name.trim(),
+          address: r.address?.trim() || null,
+          contact_info: r.contactInfo?.trim() || null,
+        };
+    }
+  });
+}
+
+const UNCERTAIN_MESSAGE_PATTERN =
+  /failed to fetch|fetch failed|networkerror|network request failed|network error|load failed|timeout|timed out|aborted|econnreset|etimedout|socket hang up/i;
+
+const SERVER_VALIDATION_TAGS = new Set([
+  'pds_required_field',
+  'pds_invalid_value',
+  'pds_invalid_date_range',
+  'pds_invalid_row_id',
+  'pds_duplicate_row_id',
+  'pds_row_object_required',
+  'pds_rows_array_required',
+  'pds_scalar_object_required',
+  'pds_invalid_scalar_value',
+]);
+
+function isRevisionConflict(error: any): boolean {
+  const message = String(error?.message ?? '');
+  return error?.code === '40001' || message.includes('pds_revision_conflict');
+}
+
+function isServerValidationError(error: any): boolean {
+  if (error?.code !== '22023') return false;
+  const message = String(error?.message ?? '');
+  for (const tag of SERVER_VALIDATION_TAGS) {
+    if (message.includes(tag)) return true;
+  }
+  return false;
+}
+
+function isDefiniteDbOrRpcError(error: any): boolean {
+  const code = String(error?.code ?? '');
+  const status = Number(error?.status ?? NaN);
+  const message = String(error?.message ?? '').toLowerCase();
+
+  if (code.startsWith('PGRST') || /^[0-9A-Z]{5}$/.test(code)) return true;
+  if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
+    return true;
+  }
+  return (
+    message.includes('could not find the function') ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    message.includes('jwt expired') ||
+    message.includes('does not exist') ||
+    message.includes('unauthorized') ||
+    message.includes('forbidden')
+  );
+}
+
+function isTransportOrTimeoutError(error: any): boolean {
+  const name = String(error?.name ?? '');
+  const status = Number(error?.status ?? NaN);
+  const message = String(error?.message ?? '');
+
+  if (name === 'AbortError' || name === 'TimeoutError') return true;
+  if (status === 408 || status === 502 || status === 503 || status === 504 || status === 0) {
+    return true;
+  }
+  return UNCERTAIN_MESSAGE_PATTERN.test(message);
+}
+
+function readFailure(
+  error: any,
+  fallback: string,
+): { ok: false; error: string; kind: PdsFailureKind } {
+  return {
+    ok: false,
+    error: error?.message ?? fallback,
+    kind: 'unavailable',
+  };
+}
+
+function writeFailure(
+  error: any,
+  fallback: string,
+  thrown = false,
+): { ok: false; error: string; kind: PdsFailureKind } {
+  if (isRevisionConflict(error)) {
+    return {
+      ok: false,
+      error: 'This section changed since it was loaded. Reload it before saving again.',
+      kind: 'conflict',
+    };
+  }
+  if (isServerValidationError(error)) {
+    return {
+      ok: false,
+      error: error?.message ?? fallback,
+      kind: 'validation',
+    };
+  }
+  if (isDefiniteDbOrRpcError(error)) {
+    return {
+      ok: false,
+      error: error?.message ?? fallback,
+      kind: 'unavailable',
+    };
+  }
+  if (thrown || isTransportOrTimeoutError(error)) {
+    return {
+      ok: false,
+      error:
+        'The connection dropped before the save could be confirmed. Check the latest saved records before saving again.',
+      kind: 'uncertain',
+    };
+  }
+  return {
+    ok: false,
+    error: error?.message ?? fallback,
+    kind: 'unavailable',
+  };
+}
+
+function parseSnapshot<S extends PdsListSection>(
+  section: S,
+  payload: any,
+  fallback: string,
+): PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>> {
+  if (!payload || !Array.isArray(payload.rows) || typeof payload.revision !== 'string') {
+    return { ok: false, error: fallback, kind: 'unavailable' };
+  }
+
+  const pairing = pairingForSection(section);
+  const scalars =
+    pairing && payload.scalars && typeof payload.scalars === 'object'
+      ? mapPdsScalarColumnsToEmployee(pairing, payload.scalars as Record<string, unknown>)
+      : {};
+
+  return {
+    ok: true,
+    data: {
+      rows: mapSectionRows(section, payload.rows),
+      revision: payload.revision,
+      scalars,
+    },
+  };
+}
+
+const normalizeText = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
+const normalizeBool = (value: unknown): boolean | null =>
+  typeof value === 'boolean' ? value : null;
+
+function rowMatchesCanonical<S extends PdsListSection>(
+  section: S,
+  intended: PdsRowBySection[S],
+  actual: PdsRowBySection[S],
+): boolean {
+  const i = intended as any;
+  const a = actual as any;
+  if (i.id && a.id !== i.id) return false;
+
+  switch (section) {
+    case 'children':
+      return (
+        normalizeText(i.fullName) === normalizeText(a.fullName) &&
+        normalizeText(i.dateOfBirth) === normalizeText(a.dateOfBirth)
+      );
+    case 'education':
+      return (
+        normalizeText(i.level) === normalizeText(a.level) &&
+        normalizeText(i.school) === normalizeText(a.school) &&
+        normalizeText(i.degree) === normalizeText(a.degree) &&
+        toNullableInt(i.periodFrom) === toNullableInt(a.periodFrom) &&
+        toNullableInt(i.periodTo) === toNullableInt(a.periodTo) &&
+        toNullableInt(i.highestLevelUnits) === toNullableInt(a.highestLevelUnits) &&
+        toNullableInt(i.yearGraduated) === toNullableInt(a.yearGraduated) &&
+        normalizeText(i.scholarshipHonors) === normalizeText(a.scholarshipHonors)
+      );
+    case 'eligibility':
+      return (
+        normalizeText(i.eligibilityName) === normalizeText(a.eligibilityName) &&
+        toNullableNumber(i.rating) === toNullableNumber(a.rating) &&
+        normalizeText(i.examDate) === normalizeText(a.examDate) &&
+        normalizeText(i.examPlace) === normalizeText(a.examPlace) &&
+        normalizeText(i.licenseNumber) === normalizeText(a.licenseNumber) &&
+        normalizeText(i.licenseValidUntil) === normalizeText(a.licenseValidUntil)
+      );
+    case 'workExperience':
+      return (
+        normalizeText(i.dateFrom) === normalizeText(a.dateFrom) &&
+        normalizeText(i.dateTo) === normalizeText(a.dateTo) &&
+        normalizeText(i.positionTitle) === normalizeText(a.positionTitle) &&
+        normalizeText(i.departmentAgencyOfficeCompany) ===
+          normalizeText(a.departmentAgencyOfficeCompany) &&
+        normalizeText(i.statusOfAppointment) === normalizeText(a.statusOfAppointment) &&
+        normalizeBool(i.govtService) === normalizeBool(a.govtService)
+      );
+    case 'voluntaryWork':
+      return (
+        normalizeText(i.orgNameAddress) === normalizeText(a.orgNameAddress) &&
+        normalizeText(i.dateFrom) === normalizeText(a.dateFrom) &&
+        normalizeText(i.dateTo) === normalizeText(a.dateTo) &&
+        toNullableNumber(i.numberOfHours) === toNullableNumber(a.numberOfHours) &&
+        normalizeText(i.positionNatureOfWork) === normalizeText(a.positionNatureOfWork)
+      );
+    case 'training':
+      return (
+        normalizeText(i.title) === normalizeText(a.title) &&
+        normalizeText(i.dateFrom) === normalizeText(a.dateFrom) &&
+        normalizeText(i.dateTo) === normalizeText(a.dateTo) &&
+        toNullableNumber(i.numberOfHours) === toNullableNumber(a.numberOfHours) &&
+        normalizeText(i.ldType) === normalizeText(a.ldType) &&
+        normalizeText(i.conductedBy) === normalizeText(a.conductedBy)
+      );
+    case 'references':
+      return (
+        normalizeText(i.name) === normalizeText(a.name) &&
+        normalizeText(i.address) === normalizeText(a.address) &&
+        normalizeText(i.contactInfo) === normalizeText(a.contactInfo)
+      );
+  }
+}
+
+/**
+ * Compare an uncertain write's intended rows and paired scalars against a
+ * fresh canonical snapshot from `read_pds_section`.
+ */
+export function doesSnapshotMatchIntendedSave<S extends PdsListSection>(
+  section: S,
+  intendedRows: readonly PdsRowBySection[S][],
+  intendedScalars: Partial<Employee> | undefined,
+  snapshot: PdsSectionSnapshot<PdsRowBySection[S]>,
+): boolean {
+  const intended = meaningfulRows(section, intendedRows);
+  if (intended.length !== snapshot.rows.length) return false;
+  for (let idx = 0; idx < intended.length; idx += 1) {
+    if (!rowMatchesCanonical(section, intended[idx], snapshot.rows[idx])) return false;
+  }
+
+  if (intendedScalars && pairingForSection(section)) {
+    const actualScalars = snapshot.scalars ?? {};
+    for (const [key, value] of Object.entries(intendedScalars)) {
+      const actual = (actualScalars as Record<string, unknown>)[key];
+      if (typeof value === 'boolean' || value === null) {
+        if (normalizeBool(value) !== normalizeBool(actual)) return false;
+      } else if (typeof value === 'string') {
+        if (normalizeText(value) !== normalizeText(actual)) return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+async function readPdsSection<S extends PdsListSection>(
+  employeeId: string,
+  section: S,
+): Promise<PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>>> {
+  if (!employeeId) return { ok: false, error: 'No employee id.', kind: 'unavailable' };
+
+  try {
+    const { data, error } = await supabase.rpc('read_pds_section', {
+      p_employee_id: employeeId,
+      p_section: section,
+    });
+    if (error) return readFailure(error, `Failed to load ${section}.`);
+    return parseSnapshot(section, data, `Failed to load ${section}.`);
+  } catch (err: any) {
+    console.error(`[personalDataSheet] read ${section} error:`, err);
+    return readFailure(err, `Failed to load ${section}.`);
+  }
+}
+
+async function writePdsSection<S extends PdsListSection>(
+  employeeId: string,
+  section: S,
+  rows: readonly PdsRowBySection[S][],
+  expectedRevision: string,
+  scalarPatch: Partial<Employee> = {},
+): Promise<PdsResult<PdsSectionSnapshot<PdsRowBySection[S]>>> {
+  if (!employeeId) return { ok: false, error: 'No employee id.', kind: 'unavailable' };
+  if (!expectedRevision) {
+    return {
+      ok: false,
+      error: 'This section has not been loaded. Reload it before saving.',
+      kind: 'unavailable',
+    };
+  }
+
+  const issues = validatePdsRows(section, rows);
+  if (issues.length > 0) return validationFailure(issues);
+
+  const pairing = pairingForSection(section);
+  const columns = pairing ? mapPdsScalarPatchToColumns(pairing, scalarPatch) : {};
+
+  try {
+    const { data, error } = await supabase.rpc('save_pds_section', {
+      p_employee_id: employeeId,
+      p_section: section,
+      p_rows: rowPayload(section, rows),
+      p_expected_revision: expectedRevision,
+      p_scalar_patch: columns,
+    });
+    if (error) return writeFailure(error, `Failed to save ${section}.`);
+    return parseSnapshot(section, data, `Failed to save ${section}.`);
+  } catch (err: any) {
+    console.error(`[personalDataSheet] save ${section} error:`, err);
+    return writeFailure(err, `Failed to save ${section}.`, true);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 23. Children
 // ---------------------------------------------------------------------------
 
-export async function listChildren(employeeId: string): Promise<PdsResult<EmployeeChild[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_children')
-      .select('id, full_name, date_of_birth, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        fullName: r.full_name ?? '',
-        dateOfBirth: r.date_of_birth ?? undefined,
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listChildren error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load children.' };
-  }
+export function listChildren(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeChild>>> {
+  return readPdsSection(employeeId, 'children');
 }
 
-export async function saveChildren(
+export function saveChildren(
   employeeId: string,
   children: EmployeeChild[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  // A row with no name is an empty form line the employee never filled in,
-  // not a child — dropping it here keeps blank rows out of the printed sheet.
-  const rows = children
-    .filter((c) => c.fullName?.trim())
-    .map((c, i) => ({
-      employee_id: employeeId,
-      full_name: c.fullName.trim(),
-      date_of_birth: c.dateOfBirth || null,
-      sort_order: i,
-    }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_children')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (rows.length > 0) {
-      const { error: insError } = await supabase.from('employee_children').insert(rows);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveChildren error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save children.' };
-  }
+  expectedRevision: string,
+  scalarPatch: Partial<Employee> = {},
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeChild>>> {
+  return writePdsSection(employeeId, 'children', children, expectedRevision, scalarPatch);
 }
 
 // ---------------------------------------------------------------------------
@@ -103,108 +874,70 @@ export async function saveChildren(
 // EDUCATION_LEVELS's comment) rather than PDS-invented column names.
 // ---------------------------------------------------------------------------
 
-export async function listEducation(employeeId: string): Promise<PdsResult<EmployeeEducation[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_education')
-      .select('id, level, school_name, course, year_attended_from, year_attended_to, units_earned, year_graduated, honors_awards, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        level: r.level ?? '',
-        school: r.school_name ?? '',
-        degree: r.course ?? '',
-        periodFrom: r.year_attended_from ?? null,
-        periodTo: r.year_attended_to ?? null,
-        highestLevelUnits: r.units_earned ?? null,
-        yearGraduated: r.year_graduated ?? null,
-        scholarshipHonors: r.honors_awards ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listEducation error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load education.' };
-  }
+export function listEducation(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeEducation>>> {
+  return readPdsSection(employeeId, 'education');
 }
 
-export async function saveEducation(
+export function saveEducation(
   employeeId: string,
   rows: EmployeeEducation[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const asIntOrNull = (v: number | null | undefined) =>
-    Number.isFinite(Number(v)) && v != null ? Number(v) : null;
-
-  // Keep a level's row only when it has a school name — school_name is
-  // NOT NULL on the real table, so a row without one can't be inserted at
-  // all, not just "would print as a stray blank row" as the education-only
-  // fields further down would.
-  const payload = rows
-    .filter((r) => r.school?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      level: r.level || null,
-      school_name: r.school!.trim(),
-      course: r.degree?.trim() || null,
-      year_attended_from: asIntOrNull(r.periodFrom),
-      year_attended_to: asIntOrNull(r.periodTo),
-      units_earned: asIntOrNull(r.highestLevelUnits),
-      year_graduated: asIntOrNull(r.yearGraduated),
-      honors_awards: r.scholarshipHonors?.trim() || null,
-      sort_order: i,
-    }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_education')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_education').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveEducation error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save education.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeEducation>>> {
+  return writePdsSection(employeeId, 'education', rows, expectedRevision);
 }
 
 /**
- * The five form rows, pre-filled from whatever is stored.
+ * The six schema levels, in the order the form prints them. Doctorate is a
+ * stored value in `employee_education` even though the printed form folds it
+ * under Graduate Studies; it is never rewritten into that level here.
+ */
+const PDS_EDUCATION_SCHEMA_LEVELS = [...EDUCATION_LEVELS, 'Doctorate'] as const;
+
+/**
+ * The form rows, pre-filled from whatever is stored.
  *
- * The sheet always prints all five levels in a fixed order whether or not the
- * employee attended them, so the editor is seeded the same way instead of
- * starting empty and asking the employee to add rows.
+ * The sheet prints every level in a fixed order whether or not the employee
+ * attended it, so the editor is seeded the same way instead of starting empty
+ * and asking the employee to add rows. Every stored row is preserved,
+ * including repeated levels and Doctorate; a blank placeholder is added only
+ * for a level with no stored row.
  */
 export function buildEducationRows(stored: EmployeeEducation[]): EmployeeEducation[] {
-  return EDUCATION_LEVELS.map((level, i) => {
-    const match = stored.find((r) => r.level === level);
-    return (
-      match ?? {
-        level,
-        school: '',
-        degree: '',
-        periodFrom: null,
-        periodTo: null,
-        highestLevelUnits: null,
-        yearGraduated: null,
-        scholarshipHonors: '',
-        sortOrder: i,
-      }
-    );
-  });
+  const grouped = new Map<string, EmployeeEducation[]>();
+  for (const row of stored) {
+    const level = row.level ?? '';
+    const bucket = grouped.get(level);
+    if (bucket) bucket.push(row);
+    else grouped.set(level, [row]);
+  }
+
+  const rows: EmployeeEducation[] = [];
+  for (const level of PDS_EDUCATION_SCHEMA_LEVELS) {
+    const matches = grouped.get(level);
+    if (matches?.length) {
+      rows.push(...matches);
+      grouped.delete(level);
+      continue;
+    }
+    rows.push({
+      level,
+      school: '',
+      degree: '',
+      periodFrom: null,
+      periodTo: null,
+      highestLevelUnits: null,
+      yearGraduated: null,
+      scholarshipHonors: '',
+      sortOrder: rows.length,
+    });
+  }
+
+  // Preserve any stored level outside the schema list instead of dropping an
+  // existing qualification on the floor.
+  for (const matches of grouped.values()) rows.push(...matches);
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,71 +949,18 @@ export function buildEducationRows(stored: EmployeeEducation[]): EmployeeEducati
 // validity_date) rather than PDS-invented ones.
 // ---------------------------------------------------------------------------
 
-export async function listEligibility(employeeId: string): Promise<PdsResult<EmployeeEligibility[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_eligibility')
-      .select('id, eligibility_type, rating, date_of_exam, place_of_examination, license_number, validity_date, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        eligibilityName: r.eligibility_type ?? '',
-        rating: r.rating ?? null,
-        examDate: r.date_of_exam ?? '',
-        examPlace: r.place_of_examination ?? '',
-        licenseNumber: r.license_number ?? '',
-        licenseValidUntil: r.validity_date ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listEligibility error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load eligibility.' };
-  }
+export function listEligibility(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeEligibility>>> {
+  return readPdsSection(employeeId, 'eligibility');
 }
 
-export async function saveEligibility(
+export function saveEligibility(
   employeeId: string,
   rows: EmployeeEligibility[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const payload = rows
-    .filter((r) => r.eligibilityName?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      eligibility_type: r.eligibilityName.trim(),
-      rating: Number.isFinite(Number(r.rating)) && r.rating != null ? Number(r.rating) : null,
-      date_of_exam: r.examDate || null,
-      place_of_examination: r.examPlace?.trim() || null,
-      license_number: r.licenseNumber?.trim() || null,
-      validity_date: r.licenseValidUntil || null,
-      sort_order: i,
-    }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_eligibility')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_eligibility').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveEligibility error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save eligibility.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeEligibility>>> {
+  return writePdsSection(employeeId, 'eligibility', rows, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
@@ -288,282 +968,74 @@ export async function saveEligibility(
 //
 // employee_work_experience is also pre-existing (same admin read path).
 // position_title, company_name and from_date are NOT NULL on that table, so
-// a row missing any of the three is dropped rather than sent — a partially
-// filled row would otherwise fail the whole save with a DB constraint error.
+// a row missing any of the three is rejected before the database sees it.
 // ---------------------------------------------------------------------------
 
-export async function listWorkExperience(employeeId: string): Promise<PdsResult<EmployeeWorkExperience[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_work_experience')
-      .select('id, from_date, to_date, position_title, company_name, status_of_appointment, is_government_service, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        dateFrom: r.from_date ?? '',
-        dateTo: r.to_date ?? '',
-        positionTitle: r.position_title ?? '',
-        departmentAgencyOfficeCompany: r.company_name ?? '',
-        statusOfAppointment: r.status_of_appointment ?? '',
-        govtService: r.is_government_service ?? null,
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listWorkExperience error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load work experience.' };
-  }
+export function listWorkExperience(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeWorkExperience>>> {
+  return readPdsSection(employeeId, 'workExperience');
 }
 
-export async function saveWorkExperience(
+export function saveWorkExperience(
   employeeId: string,
   rows: EmployeeWorkExperience[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const payload = rows
-    .filter((r) => r.positionTitle?.trim() && r.departmentAgencyOfficeCompany?.trim() && r.dateFrom)
-    .map((r, i) => ({
-      employee_id: employeeId,
-      from_date: r.dateFrom,
-      to_date: r.dateTo || null,
-      position_title: r.positionTitle.trim(),
-      company_name: r.departmentAgencyOfficeCompany!.trim(),
-      status_of_appointment: r.statusOfAppointment?.trim() || null,
-      is_government_service: r.govtService ?? null,
-      sort_order: i,
-    }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_work_experience')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_work_experience').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveWorkExperience error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save work experience.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeWorkExperience>>> {
+  return writePdsSection(employeeId, 'workExperience', rows, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
 // 29. Voluntary Work
 // ---------------------------------------------------------------------------
 
-export async function listVoluntaryWork(employeeId: string): Promise<PdsResult<EmployeeVoluntaryWork[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_voluntary_work')
-      .select('id, org_name_address, date_from, date_to, number_of_hours, position_nature_of_work, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        orgNameAddress: r.org_name_address ?? '',
-        dateFrom: r.date_from ?? '',
-        dateTo: r.date_to ?? '',
-        numberOfHours: r.number_of_hours ?? null,
-        positionNatureOfWork: r.position_nature_of_work ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listVoluntaryWork error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load voluntary work.' };
-  }
+export function listVoluntaryWork(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeVoluntaryWork>>> {
+  return readPdsSection(employeeId, 'voluntaryWork');
 }
 
-export async function saveVoluntaryWork(
+export function saveVoluntaryWork(
   employeeId: string,
   rows: EmployeeVoluntaryWork[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const payload = rows
-    .filter((r) => r.orgNameAddress?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      org_name_address: r.orgNameAddress.trim(),
-      date_from: r.dateFrom || null,
-      date_to: r.dateTo || null,
-      number_of_hours: Number.isFinite(Number(r.numberOfHours)) && r.numberOfHours != null
-        ? Number(r.numberOfHours)
-        : null,
-      position_nature_of_work: r.positionNatureOfWork?.trim() || null,
-      sort_order: i,
-    }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_voluntary_work')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_voluntary_work').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveVoluntaryWork error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save voluntary work.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeVoluntaryWork>>> {
+  return writePdsSection(employeeId, 'voluntaryWork', rows, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
 // 30. Learning & Development Interventions
 // ---------------------------------------------------------------------------
 
-export async function listLdInterventions(employeeId: string): Promise<PdsResult<EmployeeLdIntervention[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_ld_interventions')
-      .select('id, title, date_from, date_to, number_of_hours, ld_type, conducted_by, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        title: r.title ?? '',
-        dateFrom: r.date_from ?? '',
-        dateTo: r.date_to ?? '',
-        numberOfHours: r.number_of_hours ?? null,
-        ldType: r.ld_type ?? '',
-        conductedBy: r.conducted_by ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listLdInterventions error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load L&D interventions.' };
-  }
+export function listLdInterventions(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeLdIntervention>>> {
+  return readPdsSection(employeeId, 'training');
 }
 
-export async function saveLdInterventions(
+export function saveLdInterventions(
   employeeId: string,
   rows: EmployeeLdIntervention[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const payload = rows
-    .filter((r) => r.title?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      title: r.title.trim(),
-      date_from: r.dateFrom || null,
-      date_to: r.dateTo || null,
-      number_of_hours: Number.isFinite(Number(r.numberOfHours)) && r.numberOfHours != null
-        ? Number(r.numberOfHours)
-        : null,
-      ld_type: r.ldType?.trim() || null,
-      conducted_by: r.conductedBy?.trim() || null,
-      sort_order: i,
-    }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_ld_interventions')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_ld_interventions').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveLdInterventions error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save L&D interventions.' };
-  }
+  expectedRevision: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeLdIntervention>>> {
+  return writePdsSection(employeeId, 'training', rows, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
 // 41. References
 // ---------------------------------------------------------------------------
 
-export async function listReferences(employeeId: string): Promise<PdsResult<EmployeeReference[]>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-  try {
-    const { data, error } = await supabase
-      .from('employee_references')
-      .select('id, name, address, contact_info, sort_order')
-      .eq('employee_id', employeeId)
-      .order('sort_order', { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      ok: true,
-      data: (data ?? []).map((r: any) => ({
-        id: r.id,
-        name: r.name ?? '',
-        address: r.address ?? '',
-        contactInfo: r.contact_info ?? '',
-        sortOrder: r.sort_order ?? 0,
-      })),
-    };
-  } catch (err: any) {
-    console.error('[personalDataSheet] listReferences error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to load references.' };
-  }
+export function listReferences(
+  employeeId: string,
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeReference>>> {
+  return readPdsSection(employeeId, 'references');
 }
 
-export async function saveReferences(
+export function saveReferences(
   employeeId: string,
   rows: EmployeeReference[],
-): Promise<PdsResult<null>> {
-  if (!employeeId) return { ok: false, error: 'No employee id.' };
-
-  const payload = rows
-    .filter((r) => r.name?.trim())
-    .map((r, i) => ({
-      employee_id: employeeId,
-      name: r.name.trim(),
-      address: r.address?.trim() || null,
-      contact_info: r.contactInfo?.trim() || null,
-      sort_order: i,
-    }));
-
-  try {
-    const { error: delError } = await supabase
-      .from('employee_references')
-      .delete()
-      .eq('employee_id', employeeId);
-    if (delError) throw delError;
-
-    if (payload.length > 0) {
-      const { error: insError } = await supabase.from('employee_references').insert(payload);
-      if (insError) throw insError;
-    }
-    return { ok: true, data: null };
-  } catch (err: any) {
-    console.error('[personalDataSheet] saveReferences error:', err);
-    return { ok: false, error: err?.message ?? 'Failed to save references.' };
-  }
+  expectedRevision: string,
+  scalarPatch: Partial<Employee> = {},
+): Promise<PdsResult<PdsSectionSnapshot<EmployeeReference>>> {
+  return writePdsSection(employeeId, 'references', rows, expectedRevision, scalarPatch);
 }

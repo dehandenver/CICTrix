@@ -4,9 +4,9 @@ import { normalizeApplicationType } from './api/applicantScores';
 import { completePromotionalAppointment, PromotionalAppointmentError } from './api/promotionalHiring';
 import type { PromotionalAppointmentResult } from './api/promotionalHiring';
 import { getApplicants, saveApplicants, saveNewlyHired } from './recruitmentData';
-import { assignApplicantToSlot, fetchApplicantSlotLinks, fetchSlotsByJobPosting } from './plantillaSlots';
+import { fetchApplicantSlotLinks, fetchSlotsByJobPosting } from './plantillaSlots';
 import { plantillaLabel, normalizeApplicantEmail } from './plantillaRules';
-import { createPassword, upsertEmployeePortalAccount } from './employeePortalData';
+import { ensureEmployeePortalAccount } from './employeePortalData';
 import { sendEmail } from './email';
 import { isTerminal, normalizeStatus } from './api/applicantStatus';
 import { formatDisplayDate } from './scheduleSelection';
@@ -272,12 +272,24 @@ export const fetchArchivedApplicants = async (): Promise<ArchivedApplicant[]> =>
 export interface CredentialResult {
   fullName: string;
   employeeId: string;
+  username: string;
   tempPassword: string;
   email: string;
   emailSent: boolean;
   position: string;
   department: string;
   plantilla: string;
+}
+
+export interface ExistingPortalAccountOutcome {
+  applicantId: string;
+  employeeNumber: string;
+  accountId: string;
+  username: string;
+  fullName?: string;
+  position?: string;
+  department?: string;
+  plantilla?: string;
 }
 
 /** A promotion the database completed. The employee keeps their account, so there is no password. */
@@ -293,9 +305,11 @@ export interface GenerateOutcome {
   credentials: CredentialResult[];
   /** Completed promotions, including replays of ones already completed. */
   promotions: PromotionOutcome[];
+  /** External hires whose remote portal account already existed and was preserved unchanged. */
+  existingAccounts: ExistingPortalAccountOutcome[];
   /** "<name>: <reason>" for each applicant that could not be fully processed. */
   failures: string[];
-  /** Promotions in `failures` whose result is unknown: they may have completed. */
+  /** Operations in `failures` whose result is unknown: they may have completed. */
   unconfirmed: number;
 }
 
@@ -358,9 +372,33 @@ const promotionFailureMessage = (fullName: string, err: unknown): string => {
  * information and sign-in stay as they were. A promotion failure is reported
  * per row; only a call that got no answer is checked once more.
  */
+const isExternalUncertain = (err: unknown): boolean =>
+  err instanceof ExternalHireError &&
+  (err.kind === 'uncertain' || err.kind === 'employee_read_failed');
+
+const DEFINITE_EXTERNAL_KINDS: readonly string[] = ['rejected', 'not_authorized', 'not_deployed'];
+
+const completeOrConfirmExternalHire = async (applicantId: string) => {
+  try {
+    return await hireApplicantWithOutcome(applicantId);
+  } catch (err) {
+    if (!isExternalUncertain(err)) throw err;
+    try {
+      return await hireApplicantWithOutcome(applicantId);
+    } catch (checkErr) {
+      if (checkErr instanceof ExternalHireError && DEFINITE_EXTERNAL_KINDS.includes(checkErr.kind)) {
+        throw checkErr;
+      }
+      console.error(`[hiringFlow] external hire check failed for ${applicantId}:`, checkErr);
+      throw err;
+    }
+  }
+};
+
 export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Promise<GenerateOutcome> => {
   const credentials: CredentialResult[] = [];
   const promotions: PromotionOutcome[] = [];
+  const existingAccounts: ExistingPortalAccountOutcome[] = [];
   const failures: string[] = [];
   let unconfirmed = 0;
   const newlyHiredRecords: NewlyHired[] = [];
@@ -395,7 +433,7 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
 
     let employeeId = '';
     try {
-      const { employee, promotion } = await hireApplicantWithOutcome(row.id);
+      const { employee, promotion } = await completeOrConfirmExternalHire(row.id);
       if (promotion) {
         // The cached type said external, but the saved application is a
         // promotion and the transaction already completed it. Stop here: the
@@ -406,6 +444,13 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
       employeeId = employee?.employee_id || '';
     } catch (err: any) {
       console.error(`[hiringFlow] hire failed for ${row.id}:`, err);
+      if (isExternalUncertain(err)) {
+        unconfirmed += 1;
+        failures.push(
+          `${row.fullName}: result not confirmed. ${err.message} Reload this page: if they are no longer listed, check Newly Hired or Accounts; if they are still listed, select them and generate again. Repeating it will not hire them twice.`,
+        );
+        continue;
+      }
       if (err instanceof ExternalHireError) {
         failures.push(`${row.fullName}: not hired. ${err.message}`);
         continue;
@@ -415,39 +460,11 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
       continue;
     }
 
-    // Filling the plantilla closes it and archives the other applicants on it.
-    // Reported but not fatal: the employee record already exists.
-    if (row.slotId) {
-      const placement = await assignApplicantToSlot(row.slotId, row.id);
-      if (!placement.ok) {
-        console.error(`[hiringFlow] plantilla fill failed for ${row.id}:`, placement.error);
-        failures.push(`${row.fullName}: hired, but the plantilla was not marked filled. Mark it filled from the job post.`);
-      }
-    } else {
-      failures.push(`${row.fullName}: hired, but the application is not linked to a plantilla, so none was filled`);
+    try {
+      saveApplicants(getApplicants().map((a) => (a.id === row.id ? { ...a, status: 'Hired' as any } : a)));
+    } catch (err) {
+      console.warn(`[hiringFlow] applicants cache update failed for ${row.id}:`, err);
     }
-
-    const tempPassword = createPassword();
-    const account = await upsertEmployeePortalAccount({
-      id: `portal-${employeeId}`,
-      username: employeeId,
-      password: tempPassword,
-      mustChangePassword: true,
-      employee: {
-        employeeId,
-        fullName: row.fullName,
-        email: row.email,
-        position: row.position,
-        department: row.department,
-        status: 'Active',
-        hireDate: hiredAt.split('T')[0],
-      } as any,
-    });
-    if (!account.ok) {
-      failures.push(`${row.fullName}: hired, but the sign-in account was not saved, so these credentials won't work yet. Reset their password from Accounts to create it.`);
-    }
-
-    saveApplicants(getApplicants().map((a) => (a.id === row.id ? { ...a, status: 'Hired' as any } : a)));
 
     // The hire itself carries DATE HIRED for the Office Directory and the
     // Newly Hired page; created_at on the application is when they applied.
@@ -481,6 +498,44 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
       employeeId,
     } as NewlyHired);
 
+    const provision = await ensureEmployeePortalAccount({
+      employee: {
+        employeeId,
+        fullName: row.fullName,
+        email: row.email,
+        position: row.position,
+        department: row.department,
+        status: 'Active',
+        hireDate: hiredAt.split('T')[0],
+      } as any,
+      requestedUsername: employeeId,
+    });
+
+    if (provision.ok === false) {
+      if (provision.kind === 'unconfirmed') {
+        unconfirmed += 1;
+      }
+      failures.push(
+        `${row.fullName}: hired (${employeeId}), but the portal sign-in account was ${provision.kind === 'unconfirmed' ? 'not confirmed' : 'not created'}. Check Accounts and reset their password there without repeating the hire.`,
+      );
+      continue;
+    }
+
+    if (provision.created === false) {
+      existingAccounts.push({
+        applicantId: row.id,
+        employeeNumber: provision.account.employee.employeeId || employeeId,
+        accountId: provision.account.id,
+        username: provision.account.username,
+        fullName: row.fullName,
+        position: row.position,
+        department: row.department,
+        plantilla: row.plantilla,
+      });
+      continue;
+    }
+
+    const issued = provision.credentials;
     let emailSent = false;
     const recipient = row.email.trim();
     if (recipient) {
@@ -494,7 +549,8 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
             `Position  : ${row.position || '—'}\n` +
             `Department: ${row.department || '—'}\n\n` +
             `Employee ID       : ${employeeId}\n` +
-            `Temporary password: ${tempPassword}\n\n` +
+            `Username          : ${issued.username}\n` +
+            `Temporary password: ${issued.password}\n\n` +
             `Please log in to the Employee Portal and change your password before accessing any module.\n` +
             `\nIf you did not expect this email, please contact HR immediately.\n`,
           employeeId,
@@ -510,7 +566,8 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
     credentials.push({
       fullName: row.fullName,
       employeeId,
-      tempPassword,
+      username: issued.username,
+      tempPassword: issued.password,
       email: recipient,
       emailSent,
       position: row.position,
@@ -520,15 +577,15 @@ export const generateEmployeeCredentials = async (rows: ReservedApplicant[]): Pr
   }
 
   if (newlyHiredRecords.length > 0) {
-    // Credentials are already issued; only the Newly Hired listing is behind.
+    // Hire and account outcomes are recorded above; only the Newly Hired listing is behind.
     const saved = await saveNewlyHired(newlyHiredRecords);
     if (!saved.ok) {
-      failures.push(`${saved.failed} newly hired record${saved.failed === 1 ? '' : 's'} didn't save, so the Newly Hired page may not list ${saved.failed === 1 ? 'it' : 'them'} yet. The credentials above still work.`);
+      failures.push(`${saved.failed} newly hired record${saved.failed === 1 ? '' : 's'} didn't save, so the Newly Hired page may not list ${saved.failed === 1 ? 'it' : 'them'} yet. The confirmed employee records still work.`);
     }
   }
 
   window.dispatchEvent(new Event('cictrix:applicants-updated'));
-  return { credentials, promotions, failures, unconfirmed };
+  return { credentials, promotions, existingAccounts, failures, unconfirmed };
 };
 
 // ─── Printout: cut-out cards (option A, docs/mockups/2026-10-21-hire-reservation-flow.html) ───

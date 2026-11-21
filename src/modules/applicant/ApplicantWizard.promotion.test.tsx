@@ -99,6 +99,7 @@ const accountRow = (overrides: Row = {}): Row => ({
   created_at: '2026-01-01T00:00:00.000Z',
   updated_at: '2026-01-01T00:00:00.000Z',
   deleted_at: null,
+  must_change_password: false,
   ...overrides,
 });
 
@@ -150,6 +151,17 @@ const profile = {
   relevantExperiencePosition: 'Administrative Aide',
   relevantExperienceCompany: 'City Government of Iloilo',
   relevantExperienceDuties: 'Records management',
+  workExperienceEntries: [
+    {
+      from_date: '2023-01-01',
+      to_date: '',
+      is_present: true,
+      position_title: 'Administrative Aide',
+      company_name: 'City Government of Iloilo',
+      duties_responsibilities: 'Records management',
+      is_government_service: true,
+    },
+  ],
 };
 
 const renderWizard = () =>
@@ -329,5 +341,65 @@ describe('ApplicantWizard promotional login', () => {
 
     expect(screen.queryByLabelText(/first name/i)).not.toBeInTheDocument();
     expect(profileMock).not.toHaveBeenCalled();
+  });
+
+  it('never writes password into sessionStorage drafts after promotional login and prefills via remote lookup', async () => {
+    renderWizard();
+    openPromotionLogin();
+    submitLogin('maria.santos', 'Correct#123');
+
+    await expectPromotionFormForMaria();
+
+    const rawDrafts = sessionStorage.getItem('cictrix_apply_drafts_v2') ?? '';
+    expect(rawDrafts).not.toContain('Correct#123');
+    expect(rawDrafts).not.toContain('"password"');
+
+    // Change employee_id in the form to trigger debounced performPrefill via getEmployeePortalAccountByEmployeeNumber
+    remote.rows = [
+      accountRow({
+        id: 'account-juan',
+        employee_id: 'EMP-2025-0999',
+        username: 'juan.remote',
+        full_name: 'Juan Dela Cruz',
+        email: 'juan.remote@example.gov.ph',
+      }),
+    ];
+    localStorage.setItem(
+      LOCAL_ACCOUNTS_KEY,
+      JSON.stringify([
+        {
+          ...localAccount('Stale#999'),
+          username: 'stale.local.username',
+          employee: { ...localAccount('Stale#999').employee, employeeId: 'EMP-2025-0999' },
+        },
+      ]),
+    );
+
+    fireEvent.change(screen.getByLabelText(/employee id/i), {
+      target: { value: 'EMP-2025-0999' },
+    });
+
+    await waitFor(
+      () => {
+        expect(screen.getByDisplayValue('juan.remote')).toBeInTheDocument();
+      },
+      { timeout: 2500 },
+    );
+    expect(screen.queryByDisplayValue('stale.local.username')).not.toBeInTheDocument();
+  });
+
+  it('prefills education_school and work_experience_entries from promotional profile into drafts', async () => {
+    renderWizard();
+    openPromotionLogin();
+    submitLogin('maria.santos', 'Correct#123');
+
+    await expectPromotionFormForMaria();
+
+    const rawDrafts = sessionStorage.getItem('cictrix_apply_drafts_v2');
+    expect(rawDrafts).toBeTruthy();
+    const parsed = JSON.parse(rawDrafts!);
+    const generalDraft = parsed.drafts.general;
+    expect(generalDraft.education_school).toBe('University of the Philippines');
+    expect(generalDraft.work_experience_entries).toEqual(profile.workExperienceEntries);
   });
 });
