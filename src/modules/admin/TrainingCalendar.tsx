@@ -12,23 +12,27 @@ import {
   Target,
   User,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
+import { ErrorBanner } from '../../components/ErrorBanner';
+import { ActionFeedback } from '../../components/action-feedback';
 import { CompetencyTagInput } from '../../components/CompetencyTagInput';
 import {
   listCompetencyTags,
-  getSessionCompetencies,
   upsertCompetencyTag,
   type CompetencyTag,
 } from '../../lib/api/trainingCompetencies';
 import {
   cancelCalendarEvent,
   createCalendarEvent,
+  getCalendarEventSnapshot,
   listCalendarEvents,
   updateCalendarEvent,
   type CalendarEvent,
   type CalendarEventInput,
+  type CalendarEventSnapshot,
   type CalendarEventStatus,
+  type TrainingSaveFailureKind,
 } from '../../lib/api/trainingCalendar';
 import { AttendanceGrid } from './AttendanceGrid';
 import { TRAINING_CATEGORIES, categoryColor, type TrainingCategory } from './trainingCategories';
@@ -201,13 +205,136 @@ function visualFor(color: string, status: LifecycleStatus, cancelled: boolean): 
 type EventFormProps = {
   /** Prefilled start date when created by clicking an empty calendar day. */
   initialDate?: Date;
+  /** The list row being edited. Only its id is trusted: the form is filled from a fresh snapshot. */
   event?: CalendarEvent;
   onClose: () => void;
   onSaved: () => void;
 };
 
+type SaveFailure = { title: string; message: string; nextStep?: string; reload?: boolean };
+
+const FAILURE_TITLES: Record<TrainingSaveFailureKind, string> = {
+  validation: 'Check the training details.',
+  conflict: 'Someone else saved this training first.',
+  locked: 'This training is locked.',
+  not_authorized: "You can't save trainings.",
+  uncertain: "We couldn't confirm the save.",
+  unavailable: "The training couldn't be saved.",
+};
+
+/** What the dialog says about a refused or unconfirmed save, and whether Reload is the way forward. */
+const describeSaveFailure = (
+  kind: TrainingSaveFailureKind | undefined,
+  error: string | undefined,
+  isEdit: boolean,
+): SaveFailure => {
+  const resolved: TrainingSaveFailureKind = kind ?? 'unavailable';
+  return {
+    title: FAILURE_TITLES[resolved],
+    message: error ?? 'The training could not be saved.',
+    nextStep:
+      resolved === 'conflict'
+        ? 'Reload the latest version to continue. Your edits stay on screen until you do.'
+        : undefined,
+    // A lost update response may have committed, so the way forward is to look.
+    reload: isEdit && (resolved === 'conflict' || resolved === 'uncertain'),
+  };
+};
+
+/**
+ * Edit mode loads one consistent snapshot (content, tags, revision) before the
+ * form appears, and refuses to open the form without one: a revision is never
+ * guessed, because a save without the right revision could overwrite someone
+ * else's change. Create mode needs no snapshot.
+ */
 const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps) => {
   const isEdit = !!event;
+  const eventId = event?.id;
+  const [snapshot, setSnapshot] = useState<CalendarEventSnapshot | null>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [loading, setLoading] = useState(isEdit);
+  // Bumped on every successful (re)load so the form re-initializes from it.
+  const [formKey, setFormKey] = useState(0);
+  const loadSeq = useRef(0);
+
+  const loadSnapshot = useCallback(async () => {
+    if (!eventId) return;
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const next = await getCalendarEventSnapshot(eventId);
+      if (seq !== loadSeq.current) return;
+      setSnapshot(next);
+      setFormKey((k) => k + 1);
+    } catch (err) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(err);
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    void loadSnapshot();
+    return () => {
+      // Ignore a snapshot that arrives after the dialog closed or switched training.
+      loadSeq.current += 1;
+    };
+  }, [loadSnapshot]);
+
+  if (isEdit && !snapshot) {
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        title="Edit Training"
+        footer={<button type="button" onClick={onClose} className="btn btn-md btn-secondary">Close</button>}
+      >
+        {loadError ? (
+          <ErrorBanner error={loadError} action="load this training" onRetry={() => void loadSnapshot()} />
+        ) : (
+          <p role="status" className="text-sm text-gray-500">Loading training…</p>
+        )}
+      </Modal>
+    );
+  }
+
+  return (
+    <EventFormBody
+      key={formKey}
+      initialDate={initialDate}
+      snapshot={snapshot ?? undefined}
+      reloading={loading}
+      reloadError={snapshot ? loadError : null}
+      onReload={() => void loadSnapshot()}
+      onClose={onClose}
+      onSaved={onSaved}
+    />
+  );
+};
+
+type EventFormBodyProps = {
+  initialDate?: Date;
+  snapshot?: CalendarEventSnapshot;
+  reloading: boolean;
+  reloadError: unknown;
+  onReload: () => void;
+  onClose: () => void;
+  onSaved: () => void;
+};
+
+const EventFormBody = ({
+  initialDate,
+  snapshot,
+  reloading,
+  reloadError,
+  onReload,
+  onClose,
+  onSaved,
+}: EventFormBodyProps) => {
+  const event = snapshot?.event;
+  const isEdit = !!snapshot;
 
   const defaultStart = () => {
     if (event) return toLocalInput(event.startDate);
@@ -234,36 +361,51 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
   const [materials, setMaterials] = useState(event?.materials ?? '');
   const [prerequisites, setPrerequisites] = useState(event?.prerequisites ?? '');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Competency tags
+  const [failure, setFailure] = useState<SaveFailure | null>(null);
+  const submittingRef = useRef(false);
+  const mountedRef = useRef(true);
+  // One identity for every create attempt from this dialog open: retrying after a
+  // lost response sends the same id, so the database returns the first attempt's
+  // session instead of creating a duplicate.
+  const requestIdRef = useRef<string>('');
+  if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
+  // Competency tags: the selection comes from the snapshot, the master list from its own read.
   const [allTags, setAllTags] = useState<CompetencyTag[]>([]);
-  const [selectedTags, setSelectedTags] = useState<CompetencyTag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<CompetencyTag[]>(snapshot?.competencyTags ?? []);
   const [tagsLoaded, setTagsLoaded] = useState(false);
 
-  // Load master tag list + existing session tags on open.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Load the master tag list on open.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [master, existing] = await Promise.all([
-        listCompetencyTags(),
-        event?.id ? getSessionCompetencies(event.id) : Promise.resolve([]),
-      ]);
+      const master = await listCompetencyTags();
       if (cancelled) return;
       setAllTags(master);
-      setSelectedTags(existing);
       setTagsLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, [event?.id]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || reloading) return;
     if (endDate && new Date(endDate) < new Date(startDate)) {
-      setError('End date cannot be before the start date.');
+      setFailure({
+        title: 'Check the dates.',
+        message: 'End date cannot be before the start date.',
+      });
       return;
     }
+    submittingRef.current = true;
     setSaving(true);
-    setError(null);
+    setFailure(null);
 
     const input: CalendarEventInput = {
       title: title.trim(),
@@ -278,21 +420,26 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
       prerequisites,
       status,
       capacity: Number(capacity) || 0,
-      // Pass the selected tag IDs so the API syncs the join table.
+      // The tag ids travel in the same transaction as the content.
       competencyIds: selectedTags.map((t) => t.id),
     };
 
-    const result = isEdit
-      ? await updateCalendarEvent(event.id, input)
-      : await createCalendarEvent(input);
+    try {
+      const result = snapshot
+        ? await updateCalendarEvent(snapshot.event.id, input, snapshot.revision)
+        : await createCalendarEvent(input, requestIdRef.current);
 
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.error ?? 'Could not save the training.');
-      return;
+      if (!mountedRef.current) return;
+      if (result.ok !== true) {
+        setFailure(describeSaveFailure(result.kind, result.error, isEdit));
+        return;
+      }
+      onSaved();
+      onClose();
+    } finally {
+      submittingRef.current = false;
+      if (mountedRef.current) setSaving(false);
     }
-    onSaved();
-    onClose();
   };
 
   const inputClass =
@@ -303,15 +450,15 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
     <Modal
       open
       onClose={onClose}
-      dismissible={!saving}
+      dismissible={!saving && !reloading}
       title={isEdit ? 'Edit Training' : 'New Training'}
       footer={(
         <>
-          <button type="button" onClick={onClose} disabled={saving} className="btn btn-md btn-secondary">Cancel</button>
+          <button type="button" onClick={onClose} disabled={saving || reloading} className="btn btn-md btn-secondary">Cancel</button>
           <button
             type="submit"
             form="training-form"
-            disabled={saving}
+            disabled={saving || reloading}
             aria-busy={saving || undefined}
             className={`btn btn-md btn-primary${saving ? ' is-loading' : ''}`}
           >
@@ -321,6 +468,9 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
       )}
     >
         <form id="training-form" onSubmit={handleSubmit} className="space-y-5">
+          {Boolean(reloadError) && (
+            <ErrorBanner error={reloadError} action="reload this training" onRetry={onReload} />
+          )}
           <div>
             <label className={labelClass}>Title / Topic</label>
             <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Ethical Conduct in Public Service" className={inputClass} />
@@ -433,8 +583,16 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
             </div>
           </div>
 
-          {error && (
-            <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</p>
+          {failure && (
+            <ActionFeedback
+              tone="error"
+              title={failure.title}
+              message={failure.message}
+              nextStep={failure.nextStep}
+              onRetry={failure.reload ? onReload : undefined}
+              retryLabel={failure.reload ? 'Reload latest' : undefined}
+              onDismiss={() => setFailure(null)}
+            />
           )}
 
         </form>
