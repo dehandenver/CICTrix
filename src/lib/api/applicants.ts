@@ -10,6 +10,7 @@ import { supabase as supabaseClient } from '../../lib/supabase';
 import { normalizeReference } from '../applicantTracker';
 import { fetchApplicantSlotLinksChecked, fetchSlotsByJobPostingChecked } from '../plantillaSlots';
 import { plantillaLabel } from '../plantillaRules';
+import type { ApplicantWorkExperienceEntry } from '../../types/applicant.types';
 import { groupByReference, type ReferenceApplication } from '../referenceApplications';
 
 const supabase = supabaseClient as any;
@@ -26,6 +27,7 @@ export interface ApplicantDetailsPatch {
   education_degree: string | null;
   education_school: string | null;
   years_of_experience: number | null;
+  work_experience_entries?: ApplicantWorkExperienceEntry[];
 }
 
 export async function updateApplicantDetails(

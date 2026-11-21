@@ -44,6 +44,11 @@ import {
   type DocumentEvent,
 } from '../../lib/api/applicantDocumentEvents';
 import {
+  computeWorkExperienceTotalMonths,
+  filterMeaningfulWorkExperienceEntries,
+  formatWorkExperienceTotal,
+} from '../../utils/workExperience';
+import {
   DISQUALIFICATION_REASON_OPTIONS,
   FAILURE_TO_ATTEND,
   MISSED_ACTIVITY_LABELS,
@@ -1731,11 +1736,45 @@ function ApplicantDetailsPageView() {
                             })()}
                           </span>
                         </div>
-                        <div className="flex items-start justify-between py-2.5">
+                        <div className="flex items-start justify-between gap-4 py-2.5">
                           <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Work Experience</span>
-                          <span className="text-sm text-slate-800 text-right">
+                          <div className="text-sm text-slate-800 text-right min-w-0 flex-1">
                             {(() => {
                               const row = applicant as any;
+                              const entries = Array.isArray(row?.work_experience_entries)
+                                ? filterMeaningfulWorkExperienceEntries(row.work_experience_entries)
+                                : [];
+                              if (entries.length > 0) {
+                                const totalMonths = computeWorkExperienceTotalMonths(entries);
+                                return (
+                                  <div className="space-y-2 text-left">
+                                    <div className="text-right font-semibold text-slate-900">
+                                      Total: {formatWorkExperienceTotal(totalMonths)}
+                                    </div>
+                                    <ul className="space-y-2">
+                                      {entries.map((entry, idx) => (
+                                        <li
+                                          key={`${entry.from_date}-${entry.position_title}-${idx}`}
+                                          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                                        >
+                                          <div className="text-sm font-semibold text-slate-900">
+                                            {entry.position_title || 'Untitled position'} · {entry.company_name || 'No company'}
+                                          </div>
+                                          <div className="text-xs text-slate-500">
+                                            {entry.from_date || '?'} – {entry.is_present ? 'Present' : entry.to_date || '?'}
+                                            {entry.is_government_service ? ' · Government service' : ''}
+                                          </div>
+                                          {entry.duties_responsibilities && (
+                                            <p className="mt-1 text-xs text-slate-600">
+                                              {entry.duties_responsibilities}
+                                            </p>
+                                          )}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                );
+                              }
                               const totalYearsRaw = row?.work_experience_years ?? row?.years_of_experience ?? primaryExperience?.years ?? null;
                               const monthsRaw = row?.work_experience_months;
                               const totalYears = totalYearsRaw == null ? null : Number(totalYearsRaw);
@@ -1748,7 +1787,7 @@ function ApplicantDetailsPageView() {
                               if (months > 0) segments.push(`${months} month${months === 1 ? '' : 's'}`);
                               return segments.length > 0 ? segments.join(' ') : '0 months';
                             })()}
-                          </span>
+                          </div>
                         </div>
                         <div className="flex items-start justify-between py-2.5">
                           <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Application Date</span>

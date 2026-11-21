@@ -10,7 +10,7 @@ spec: docs/mockups/2026-11-22-apply-work-experience-collapsible.html
 
 When an external applicant submits `/apply` with their work history (one or more entries with real start/end dates), educational background (attainment, degree/course, school), and PWD answer, that data is stored in Postgres on `applicants` and carried over atomically by `complete_external_hire` into the new hire's canonical PDS records (`employees`, `employee_work_experience`, and `employee_education`). Opening the newly hired employee's PDS immediately reflects their submitted work history, education, and PWD status, and Succession Planning, Gap Analysis, and promotional `/apply` prefill read the real dates and education rows without manual re-entry or synthetic dates.
 
-Preserves the nine-section PDS navigation in `docs/mockups/2026-10-06-pds-step-list.html` and the hiring flow in `docs/mockups/2026-10-21-hire-reservation-flow.html`. The updated `/apply` page 3 and page 4 layout will be confirmed via `ui-preview` and saved to `docs/mockups/`.
+Preserves the nine-section PDS navigation in `docs/mockups/2026-10-06-pds-step-list.html` and the hiring flow in `docs/mockups/2026-10-21-hire-reservation-flow.html`. The settled `/apply` Page 3 (School / Institution) and Page 4 **Option B (Compact Collapsible List)** layout are saved at `docs/mockups/2026-11-22-apply-work-experience-collapsible.html`.
 
 ## Approach
 

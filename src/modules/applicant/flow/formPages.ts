@@ -25,11 +25,17 @@ export const FORM_PAGES: FormPage[] = [
   },
   {
     title: 'Education and government ID',
-    fields: ['gov_id_type', 'gov_id_expiration'],
+    fields: ['education_school', 'gov_id_type', 'gov_id_expiration'],
   },
   {
     title: 'Relevant work experience',
-    fields: ['work_experience_years', 'relevant_experience_position', 'relevant_experience_company', 'relevant_experience_duties'],
+    fields: [
+      'work_experience_entries',
+      'work_experience_years',
+      'relevant_experience_position',
+      'relevant_experience_company',
+      'relevant_experience_duties',
+    ],
   },
   {
     title: 'Documents',

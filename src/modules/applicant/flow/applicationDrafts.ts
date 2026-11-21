@@ -16,6 +16,7 @@ import type { ApplicantFormData } from '../../../types/applicant.types';
 import type { JobPosting, PlantillaSlot } from '../../../types/recruitment.types';
 import type { PortalAccountIdentity } from '../../../lib/employeePortalData';
 import { plantillaLabel } from '../../../lib/plantillaRules';
+import { isWorkExperienceEntryBlank } from '../../../utils/workExperience';
 
 export const DRAFTS_KEY = 'cictrix_apply_drafts_v2';
 /** The pre-redesign single-form cache; cleared so it can't resurrect old state. */
@@ -173,6 +174,8 @@ export const draftHasData = (data: ApplicantFormData | undefined): boolean =>
         data.address ||
         data.gender ||
         data.education_attainment ||
+        Boolean(data.education_school?.trim()) ||
+        Boolean(data.work_experience_entries?.some((e) => !isWorkExperienceEntryBlank(e))) ||
         data.work_experience_years ||
         data.work_experience_months ||
         data.relevant_experience_position ||
