@@ -421,6 +421,111 @@ BEGIN
   RAISE NOTICE 'ok: grants and uq_employees_application_id';
 END $$;
 
+-- ── 9. Applicant-to-PDS carryover (work experience, education, PWD) ──────────
+DO $$
+DECLARE
+  fx          jsonb := pg_temp.ext_fixture('carryover1');
+  fx_legacy   jsonb := pg_temp.ext_fixture('carryover_legacy');
+  res         jsonb;
+  replay      jsonb;
+  res_leg     jsonb;
+  emp_id      uuid;
+  emp_leg_id  uuid;
+  work_rows   jsonb;
+  edu_row     employee_education%ROWTYPE;
+BEGIN
+  UPDATE applicants
+     SET education_level         = 'College Graduate',
+         education_degree        = 'BS Information Technology',
+         education_school        = 'West Visayas State University',
+         is_pwd                  = true,
+         work_experience_entries = jsonb_build_array(
+           jsonb_build_object(
+             'from_date', '2024-03-01',
+             'to_date', '2026-01-01',
+             'is_present', true,
+             'position_title', 'Administrative Aide IV',
+             'company_name', 'City Government of Iloilo',
+             'duties_responsibilities', 'Maintains 201 files and HRIS logs',
+             'is_government_service', true
+           ),
+           jsonb_build_object(
+             'from_date', '2022-04-01',
+             'to_date', '2024-02-28',
+             'is_present', false,
+             'position_title', 'Records Clerk',
+             'company_name', 'Panay Tech Corp',
+             'duties_responsibilities', 'Encoded incoming documents',
+             'is_government_service', false
+           )
+         )
+   WHERE id = (fx->>'app')::uuid;
+
+  res := pg_temp.call_as('authenticated', (fx->>'actor')::uuid, (fx->>'app')::uuid);
+  emp_id := (res->>'employee_uuid')::uuid;
+
+  IF (SELECT highest_educational_attainment FROM employees WHERE id = emp_id) IS DISTINCT FROM 'College Graduate'
+     OR (SELECT person_with_disability FROM employees WHERE id = emp_id) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'TEST FAILED: employee education attainment or PWD flag did not carry over';
+  END IF;
+
+  IF (SELECT count(*) FROM employee_education WHERE employee_id = emp_id) <> 1 THEN
+    RAISE EXCEPTION 'TEST FAILED: expected 1 seeded employee_education row';
+  END IF;
+  SELECT * INTO edu_row FROM employee_education WHERE employee_id = emp_id;
+  IF edu_row.level IS DISTINCT FROM 'College'
+     OR edu_row.school_name IS DISTINCT FROM 'West Visayas State University'
+     OR edu_row.course IS DISTINCT FROM 'BS Information Technology' THEN
+    RAISE EXCEPTION 'TEST FAILED: seeded employee_education mismatch %', row_to_json(edu_row);
+  END IF;
+
+  SELECT jsonb_agg(to_jsonb(w) ORDER BY w.sort_order)
+    INTO work_rows
+    FROM employee_work_experience w
+   WHERE w.employee_id = emp_id;
+
+  IF jsonb_array_length(coalesce(work_rows, '[]'::jsonb)) <> 2 THEN
+    RAISE EXCEPTION 'TEST FAILED: expected 2 seeded employee_work_experience rows, got %', work_rows;
+  END IF;
+  IF (work_rows->0->>'position_title') <> 'Administrative Aide IV'
+     OR (work_rows->0->>'is_present')::boolean IS NOT true
+     OR (work_rows->0->>'to_date') IS NOT NULL
+     OR (work_rows->0->>'is_government_service')::boolean IS NOT true
+     OR (work_rows->0->>'duties_responsibilities') <> 'Maintains 201 files and HRIS logs'
+     OR (work_rows->1->>'position_title') <> 'Records Clerk'
+     OR (work_rows->1->>'to_date') <> '2024-02-28'
+     OR (work_rows->1->>'is_present')::boolean IS NOT false THEN
+    RAISE EXCEPTION 'TEST FAILED: seeded work_experience mismatch %', work_rows;
+  END IF;
+
+  -- Replay must not duplicate seeded education or work-experience rows.
+  replay := pg_temp.call_as('authenticated', (fx->>'actor')::uuid, (fx->>'app')::uuid);
+  IF (replay->>'already_completed')::boolean IS DISTINCT FROM true
+     OR (SELECT count(*) FROM employee_work_experience WHERE employee_id = emp_id) <> 2
+     OR (SELECT count(*) FROM employee_education WHERE employee_id = emp_id) <> 1 THEN
+    RAISE EXCEPTION 'TEST FAILED: replay duplicated carried-over PDS rows';
+  END IF;
+
+  -- Legacy / blank school + empty work_experience_entries hire succeeds without fake rows.
+  UPDATE applicants
+     SET education_level = 'College Graduate',
+         education_school = NULL,
+         is_pwd = false,
+         work_experience_entries = '[]'::jsonb
+   WHERE id = (fx_legacy->>'app')::uuid;
+
+  res_leg := pg_temp.call_as('authenticated', (fx_legacy->>'actor')::uuid, (fx_legacy->>'app')::uuid);
+  emp_leg_id := (res_leg->>'employee_uuid')::uuid;
+  IF (SELECT highest_educational_attainment FROM employees WHERE id = emp_leg_id) IS DISTINCT FROM 'College Graduate'
+     OR (SELECT person_with_disability FROM employees WHERE id = emp_leg_id) IS DISTINCT FROM false
+     OR (SELECT count(*) FROM employee_work_experience WHERE employee_id = emp_leg_id) <> 0
+     OR (SELECT count(*) FROM employee_education WHERE employee_id = emp_leg_id) <> 0 THEN
+    RAISE EXCEPTION 'TEST FAILED: legacy hire carryover created unexpected rows';
+  END IF;
+
+  RAISE NOTICE 'ok: applicant-to-PDS carryover and replay safety';
+END $$;
+
 DO $$ BEGIN RAISE NOTICE 'ALL EXTERNAL HIRE TESTS PASSED'; END $$;
 
 ROLLBACK;
