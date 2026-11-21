@@ -151,6 +151,17 @@ const profile = {
   relevantExperiencePosition: 'Administrative Aide',
   relevantExperienceCompany: 'City Government of Iloilo',
   relevantExperienceDuties: 'Records management',
+  workExperienceEntries: [
+    {
+      from_date: '2023-01-01',
+      to_date: '',
+      is_present: true,
+      position_title: 'Administrative Aide',
+      company_name: 'City Government of Iloilo',
+      duties_responsibilities: 'Records management',
+      is_government_service: true,
+    },
+  ],
 };
 
 const renderWizard = () =>
@@ -375,5 +386,20 @@ describe('ApplicantWizard promotional login', () => {
       { timeout: 2500 },
     );
     expect(screen.queryByDisplayValue('stale.local.username')).not.toBeInTheDocument();
+  });
+
+  it('prefills education_school and work_experience_entries from promotional profile into drafts', async () => {
+    renderWizard();
+    openPromotionLogin();
+    submitLogin('maria.santos', 'Correct#123');
+
+    await expectPromotionFormForMaria();
+
+    const rawDrafts = sessionStorage.getItem('cictrix_apply_drafts_v2');
+    expect(rawDrafts).toBeTruthy();
+    const parsed = JSON.parse(rawDrafts!);
+    const generalDraft = parsed.drafts.general;
+    expect(generalDraft.education_school).toBe('University of the Philippines');
+    expect(generalDraft.work_experience_entries).toEqual(profile.workExperienceEntries);
   });
 });

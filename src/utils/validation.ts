@@ -1,4 +1,5 @@
 import type { ApplicantFormData, ValidationErrors } from '../types/applicant.types';
+import { isWorkExperienceEntryBlank, validateWorkExperienceEntries } from './workExperience';
 
 export const validateApplicantForm = (
   data: ApplicantFormData,
@@ -67,28 +68,48 @@ export const validateApplicantForm = (
     errors.office = 'Office is required';
   }
 
-  // Relevant Work Experience validation
-  const hasExperienceYears = data.work_experience_years && data.work_experience_years.trim();
-  const hasExperienceMonths = data.work_experience_months && data.work_experience_months.trim();
-  const hasExperienceFilled =
-    hasExperienceYears ||
-    hasExperienceMonths ||
-    (data.relevant_experience_position && data.relevant_experience_position.trim()) ||
-    (data.relevant_experience_company && data.relevant_experience_company.trim()) ||
-    (data.relevant_experience_duties && data.relevant_experience_duties.trim());
+  // Education validation: require school/institution whenever attainment is selected
+  if (
+    data.education_attainment &&
+    data.education_attainment.trim() &&
+    (!data.education_school || !data.education_school.trim())
+  ) {
+    errors.education_school = 'School or institution is required';
+  }
 
-  if (hasExperienceFilled) {
-    if (!hasExperienceYears && !hasExperienceMonths) {
-      errors.work_experience_years = 'Years/months of experience is required';
+  // Relevant Work Experience validation
+  const hasStructuredEntries =
+    Array.isArray(data.work_experience_entries) &&
+    data.work_experience_entries.some((entry) => !isWorkExperienceEntryBlank(entry));
+
+  if (hasStructuredEntries) {
+    const entryErrors = validateWorkExperienceEntries(data.work_experience_entries);
+    if (Object.keys(entryErrors).length > 0) {
+      errors.work_experience_entries = 'Please complete or fix the highlighted work experience entries';
     }
-    if (!data.relevant_experience_position || !data.relevant_experience_position.trim()) {
-      errors.relevant_experience_position = 'Position held is required';
-    }
-    if (!data.relevant_experience_company || !data.relevant_experience_company.trim()) {
-      errors.relevant_experience_company = 'Company/organization is required';
-    }
-    if (!data.relevant_experience_duties || !data.relevant_experience_duties.trim()) {
-      errors.relevant_experience_duties = 'Description of duties is required';
+  } else if (!data.work_experience_entries || data.work_experience_entries.length === 0) {
+    const hasExperienceYears = data.work_experience_years && data.work_experience_years.trim();
+    const hasExperienceMonths = data.work_experience_months && data.work_experience_months.trim();
+    const hasExperienceFilled =
+      hasExperienceYears ||
+      hasExperienceMonths ||
+      (data.relevant_experience_position && data.relevant_experience_position.trim()) ||
+      (data.relevant_experience_company && data.relevant_experience_company.trim()) ||
+      (data.relevant_experience_duties && data.relevant_experience_duties.trim());
+
+    if (hasExperienceFilled) {
+      if (!hasExperienceYears && !hasExperienceMonths) {
+        errors.work_experience_years = 'Years/months of experience is required';
+      }
+      if (!data.relevant_experience_position || !data.relevant_experience_position.trim()) {
+        errors.relevant_experience_position = 'Position held is required';
+      }
+      if (!data.relevant_experience_company || !data.relevant_experience_company.trim()) {
+        errors.relevant_experience_company = 'Company/organization is required';
+      }
+      if (!data.relevant_experience_duties || !data.relevant_experience_duties.trim()) {
+        errors.relevant_experience_duties = 'Description of duties is required';
+      }
     }
   }
 

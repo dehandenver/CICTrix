@@ -24,8 +24,9 @@ vi.mock('../../lib/supabase', async () => {
 });
 vi.mock('../../lib/crypto', () => ({ encryptApplicantFile: async (file: File) => file }));
 vi.mock('../../lib/recruitmentData', () => ({
+  ensureRecruitmentSeedData: vi.fn(),
   getAuthoritativeJobPostings: () => [],
-  loadJobPostings: () => [],
+  loadJobPostings: async () => [],
   syncApplicantSubmissionToRecruitment: vi.fn(),
 }));
 vi.mock('../../lib/plantillaSlots', () => ({ linkApplicationToSlots: () => Promise.resolve({ ok: true }) }));
@@ -80,14 +81,15 @@ const formData = (overrides: Partial<ApplicantFormData> = {}): ApplicantFormData
   current_department: '',
   current_division: '',
   employee_username: '',
-  education_attainment: 'Bachelor',
-  education_degree: '',
-  education_school: '',
+  education_attainment: 'College Graduate',
+  education_degree: 'Bachelor of Science in Public Administration',
+  education_school: 'West Visayas State University',
   work_experience_years: '',
   work_experience_months: '',
   relevant_experience_position: '',
   relevant_experience_company: '',
   relevant_experience_duties: '',
+  work_experience_entries: [],
   gov_id_type: 'UMID',
   gov_id_expiration: '',
   ...overrides,
@@ -107,6 +109,24 @@ const seedReviewDraft = (slotNumbers: number[], overrides: Partial<ApplicantForm
     authenticatedEmployeeAccount: null,
     lockedPosition: true,
     formPage: 1,
+  };
+  sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(draft));
+};
+
+/** Opens the wizard on a specific Step 2 fill page. */
+const seedFillDraft = (formPage: number, overrides: Partial<ApplicantFormData> = {}) => {
+  const choices = [choice(27)];
+  const draft: ApplyDrafts = {
+    version: 2,
+    entryMode: 'wizard',
+    step: 'fill',
+    posting: { id: 'posting-1', title: POSITION, department: 'City Human Resource Office' },
+    choices,
+    drafts: { [choices[0].key]: formData({ item_number: choices[0].itemNumber, ...overrides }) },
+    activeKey: choices[0].key,
+    authenticatedEmployeeAccount: null,
+    lockedPosition: true,
+    formPage,
   };
   sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(draft));
 };
@@ -244,5 +264,203 @@ describe('ApplicantWizard confirmation and labels', () => {
     const row = container.querySelector('.af-ref') as HTMLElement;
     expect(row.querySelector('.af-headline')).toHaveTextContent(POSITION);
     expect(row.querySelector('.af-body-s')).toHaveTextContent(PLANTILLA_CAPTION);
+  });
+
+  it('shows education_school and structured work_experience_entries on Review and submits auto-computed years_of_experience', async () => {
+    const entries = [
+      {
+        from_date: '2023-02-01',
+        to_date: '2024-08-01',
+        is_present: false,
+        position_title: 'Administrative Aide IV',
+        company_name: 'City Government of Iloilo',
+        duties_responsibilities: 'Maintains 201 personnel records and prepares HRIS notices.',
+        is_government_service: true,
+      },
+      {
+        from_date: '2021-01-01',
+        to_date: '2023-01-01',
+        is_present: false,
+        position_title: 'Records Clerk',
+        company_name: 'Iloilo Provincial Capitol',
+        duties_responsibilities: 'Encoded incoming correspondence and maintained filing index.',
+        is_government_service: true,
+      },
+    ];
+    seedReviewDraft([27], {
+      education_attainment: 'College Graduate',
+      education_degree: 'Bachelor of Science in Public Administration',
+      education_school: 'West Visayas State University',
+      work_experience_entries: entries,
+    });
+    insertApplicant.mockResolvedValue(saved('1'));
+    renderWizard();
+
+    expect(
+      screen.getByText('College Graduate · Bachelor of Science in Public Administration · West Visayas State University'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Total: 3 yrs 6 mos')).toBeInTheDocument();
+    expect(
+      screen.getByText('Administrative Aide IV · City Government of Iloilo (2023-02-01 – 2024-08-01)'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Records Clerk · Iloilo Provincial Capitol (2021-01-01 – 2023-01-01)'),
+    ).toBeInTheDocument();
+
+    declare();
+    clickReviewButton('Submit Application');
+    confirm('Submit');
+
+    await screen.findByRole('heading', { name: 'Application submitted' });
+    expect(insertApplicant).toHaveBeenCalledTimes(1);
+    const payload = insertApplicant.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.education_school).toBe('West Visayas State University');
+    expect(payload.years_of_experience).toBe(3.5);
+    expect(payload.work_experience_entries).toEqual(entries);
+  });
+
+  it('retries submission without work_experience_entries when the database column does not exist yet', async () => {
+    seedReviewDraft([27], {
+      education_school: 'West Visayas State University',
+      work_experience_entries: [
+        {
+          from_date: '2022-01-01',
+          to_date: '2024-01-01',
+          is_present: false,
+          position_title: 'Records Clerk',
+          company_name: 'City Hall',
+          duties_responsibilities: 'Filing and correspondence',
+          is_government_service: true,
+        },
+      ],
+    });
+    const capturedPayloads: Array<Record<string, unknown>> = [];
+    insertApplicant.mockImplementation(async (payload: Record<string, unknown>) => {
+      capturedPayloads.push({ ...payload });
+      if (capturedPayloads.length === 1) {
+        return {
+          data: null,
+          error: {
+            code: 'PGRST204',
+            message: "Could not find the 'work_experience_entries' column of 'applicants' in the schema cache",
+          },
+        };
+      }
+      return saved('1');
+    });
+    renderWizard();
+
+    declare();
+    clickReviewButton('Submit Application');
+    confirm('Submit');
+
+    await screen.findByRole('heading', { name: 'Application submitted' });
+    expect(capturedPayloads).toHaveLength(2);
+    expect(capturedPayloads[0]).toHaveProperty('work_experience_entries');
+    expect(capturedPayloads[1]).not.toHaveProperty('work_experience_entries');
+    expect(capturedPayloads[1].education_school).toBe('West Visayas State University');
+    expect(capturedPayloads[1].years_of_experience).toBe(2);
+  });
+
+  it('renders required School / Institution on Page 3 when educational attainment is selected', () => {
+    seedFillDraft(3, {
+      education_attainment: 'College Graduate',
+      education_school: '',
+    });
+    renderWizard();
+
+    const schoolInput = screen.getByLabelText(/school \/ institution/i);
+    expect(schoolInput).toBeRequired();
+    fireEvent.change(schoolInput, { target: { value: 'Central Philippine University' } });
+    expect(schoolInput).toHaveValue('Central Philippine University');
+  });
+
+  it('supports Option B add, collapse, edit, present-toggle, and remove interactions on Page 4', () => {
+    seedFillDraft(4, { work_experience_entries: [] });
+    renderWizard();
+
+    expect(screen.getByText(/optional for fresh graduates\./i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /add work experience/i }));
+
+    expect(screen.getByText('Entry 1 · Most recent')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add another work experience/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/date from/i), { target: { value: '2022-01-01' } });
+    fireEvent.change(screen.getByLabelText(/date to/i), { target: { value: '2024-01-01' } });
+    fireEvent.click(screen.getByLabelText(/government service/i));
+    fireEvent.change(screen.getByLabelText(/position held/i), { target: { value: 'Administrative Aide IV' } });
+    fireEvent.change(screen.getByLabelText(/company \/ organization/i), { target: { value: 'City Government of Iloilo' } });
+    fireEvent.change(screen.getByLabelText(/description of duties/i), { target: { value: 'Maintains personnel records.' } });
+
+    expect(screen.getByTestId('work-experience-total')).toHaveTextContent('Total: 2 yrs');
+
+    // Collapse via Done
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    expect(screen.getByText('Administrative Aide IV · City Government of Iloilo')).toBeInTheDocument();
+    expect(screen.getByText('2022-01-01 – 2024-01-01 · Government service')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/position held/i)).not.toBeInTheDocument();
+
+    // Re-expand via Edit and check Currently employed here clears and disables Date To
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    expect(screen.getByLabelText(/position held/i)).toHaveValue('Administrative Aide IV');
+    fireEvent.click(screen.getByLabelText(/currently employed here/i));
+    const dateToInput = screen.getByLabelText(/date to/i);
+    expect(dateToInput).toBeDisabled();
+    expect(dateToInput).toHaveValue('');
+
+    // Remove entry returns empty state
+    fireEvent.click(screen.getByRole('button', { name: /^remove$/i }));
+    expect(screen.getByText(/optional for fresh graduates\./i)).toBeInTheDocument();
+    expect(screen.queryByTestId('work-experience-total')).not.toBeInTheDocument();
+  });
+
+  it('keeps an incomplete Page 4 entry expanded and shows field errors when Done is clicked', () => {
+    seedFillDraft(4, { work_experience_entries: [] });
+    renderWizard();
+
+    fireEvent.click(screen.getByRole('button', { name: /add work experience/i }));
+    fireEvent.change(screen.getByLabelText(/position held/i), { target: { value: 'Records Clerk' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    expect(screen.getByText('Start date is required')).toBeInTheDocument();
+    expect(screen.getByText('End date is required unless currently employed')).toBeInTheDocument();
+    expect(screen.getByText('Company/organization is required')).toBeInTheDocument();
+    expect(screen.getByText('Description of duties is required')).toBeInTheDocument();
+    expect(screen.getByLabelText(/position held/i)).toBeInTheDocument();
+  });
+
+  it('auto-expands the first invalid Page 4 entry and blocks Next when validation fails', () => {
+    seedFillDraft(4, {
+      work_experience_entries: [
+        {
+          from_date: '2023-01-01',
+          to_date: '2024-01-01',
+          is_present: false,
+          position_title: 'Administrative Aide IV',
+          company_name: 'City Government of Iloilo',
+          duties_responsibilities: 'Maintains records.',
+          is_government_service: true,
+        },
+        {
+          from_date: '2024-01-01',
+          to_date: '2022-01-01',
+          is_present: false,
+          position_title: 'Records Clerk',
+          company_name: 'Provincial Capitol',
+          duties_responsibilities: 'Filing.',
+          is_government_service: false,
+        },
+      ],
+    });
+    renderWizard();
+
+    // Initially both entries render collapsed
+    expect(screen.queryByLabelText(/date to/i)).not.toBeInTheDocument();
+
+    // Clicking Next runs Page 4 validation and expands Entry 2 with its date error
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
+    expect(screen.getByText('End date cannot be earlier than start date')).toBeInTheDocument();
+    expect(screen.getByText('Entry 2')).toBeInTheDocument();
+    expect(screen.getByText('Page 4 of 5')).toBeInTheDocument();
   });
 });

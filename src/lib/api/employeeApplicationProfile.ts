@@ -19,6 +19,8 @@
 // ============================================================================
 
 import { supabase } from '../supabase';
+import type { ApplicantWorkExperienceEntry } from '../../types/applicant.types';
+import { sanitizeWorkExperienceEntries } from '../../utils/workExperience';
 
 export interface EmployeeApplicationProfile {
   /** employees.id (uuid) */
@@ -46,6 +48,7 @@ export interface EmployeeApplicationProfile {
   relevantExperiencePosition: string;
   relevantExperienceCompany: string;
   relevantExperienceDuties: string;
+  workExperienceEntries: ApplicantWorkExperienceEntry[];
 }
 
 // employee_education.level uses the HR vocabulary; the application form uses
@@ -96,6 +99,41 @@ const joinAddress = (row: any): string => {
   // Fall back to the single home_address column when the parts are all empty.
   return parts || String(row?.home_address ?? '').trim();
 };
+
+/** Normalize a date value (YYYY-MM-DD or ISO timestamp) to YYYY-MM-DD, or empty string. */
+const toIsoDateOnly = (value: unknown): string => {
+  const text = String(value ?? '').trim();
+  return text ? text.slice(0, 10) : '';
+};
+
+const toSortOrder = (value: unknown): number => {
+  if (value === null || value === undefined || value === '') return Number.POSITIVE_INFINITY;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : Number.POSITIVE_INFINITY;
+};
+
+const mapEmployeeWorkExperienceRows = (rows: any[]): ApplicantWorkExperienceEntry[] =>
+  [...rows]
+    .sort((a, b) => {
+      const aOrder = toSortOrder(a?.sort_order);
+      const bOrder = toSortOrder(b?.sort_order);
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      const aFrom = toIsoDateOnly(a?.from_date);
+      const bFrom = toIsoDateOnly(b?.from_date);
+      return bFrom.localeCompare(aFrom);
+    })
+    .map((row) => {
+      const isPresent = Boolean(row?.is_present);
+      return {
+        from_date: toIsoDateOnly(row?.from_date),
+        to_date: isPresent ? '' : toIsoDateOnly(row?.to_date),
+        is_present: isPresent,
+        position_title: String(row?.position_title ?? '').trim(),
+        company_name: String(row?.company_name ?? '').trim(),
+        duties_responsibilities: String(row?.duties_responsibilities ?? '').trim(),
+        is_government_service: Boolean(row?.is_government_service),
+      };
+    });
 
 /** Whole months between two dates, floored at 0. */
 const monthsBetween = (from: string, to: string | null, isPresent: boolean): number => {
@@ -198,14 +236,15 @@ async function fetchProfileFromNewlyHired(
     currentDivision: String(data.division ?? '').trim(),
 
     educationAttainment: String(applicant?.education_level ?? '').trim(),
-    educationDegree: '',
-    educationSchool: '',
+    educationDegree: String(applicant?.education_degree ?? '').trim(),
+    educationSchool: String(applicant?.education_school ?? '').trim(),
 
     workExperienceYears: tenureYears > 0 ? String(tenureYears) : '',
     workExperienceMonths: tenureMonths > 0 ? String(tenureMonths) : '',
     relevantExperiencePosition: '',
     relevantExperienceCompany: '',
     relevantExperienceDuties: '',
+    workExperienceEntries: sanitizeWorkExperienceEntries(applicant?.work_experience_entries),
   };
 }
 
@@ -332,14 +371,18 @@ export async function fetchEmployeeApplicationProfile(
     educationSchool = String(applicantRow?.education_school ?? '').trim();
   }
 
-  // ── Work experience: total tenure + the most recent post ──
+  // ── Work experience: total tenure + the most recent post + structured entries ──
   let totalMonths = 0;
   let relevantExperiencePosition = '';
   let relevantExperienceCompany = '';
   let relevantExperienceDuties = '';
+  let workExperienceEntries: ApplicantWorkExperienceEntry[] = [];
 
   if (experienceResult.status === 'fulfilled' && Array.isArray(experienceResult.value?.data)) {
     const rows = experienceResult.value.data as any[];
+    if (rows.length > 0) {
+      workExperienceEntries = mapEmployeeWorkExperienceRows(rows);
+    }
 
     totalMonths = rows.reduce(
       (sum, row) =>
@@ -367,6 +410,10 @@ export async function fetchEmployeeApplicationProfile(
       relevantExperienceCompany = String(mostRecent.company_name ?? '').trim();
       relevantExperienceDuties = String(mostRecent.duties_responsibilities ?? '').trim();
     }
+  }
+
+  if (workExperienceEntries.length === 0) {
+    workExperienceEntries = sanitizeWorkExperienceEntries(applicantRow?.work_experience_entries);
   }
 
   // Applicant fallback: no work-experience rows, but they declared total years
@@ -436,5 +483,6 @@ export async function fetchEmployeeApplicationProfile(
     relevantExperiencePosition,
     relevantExperienceCompany,
     relevantExperienceDuties,
+    workExperienceEntries,
   };
 }

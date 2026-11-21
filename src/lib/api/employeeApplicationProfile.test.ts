@@ -85,22 +85,26 @@ describe('fetchEmployeeApplicationProfile', () => {
           data: [
             {
               id: 'work-1',
+              sort_order: 2,
               from_date: '2016-01-01',
               to_date: '2018-01-01',
               is_present: false,
               position_title: 'Administrative Aide',
               company_name: 'Province of Iloilo',
               duties_responsibilities: 'Maintained personnel 201 files',
+              is_government_service: true,
               separation_reason: 'Transfer',
             },
             {
               id: 'work-2',
+              sort_order: 1,
               from_date: '2022-01-01',
-              to_date: null,
+              to_date: '2025-12-31',
               is_present: true,
               position_title: 'Administrative Officer IV',
               company_name: 'City Hall HRMO',
               duties_responsibilities: 'Leads succession and recruitment records',
+              is_government_service: true,
               separation_reason: null,
             },
           ],
@@ -125,6 +129,26 @@ describe('fetchEmployeeApplicationProfile', () => {
     expect(profile?.relevantExperiencePosition).toBe('Administrative Officer IV');
     expect(profile?.relevantExperienceCompany).toBe('City Hall HRMO');
     expect(profile?.relevantExperienceDuties).toBe('Leads succession and recruitment records');
+    expect(profile?.workExperienceEntries).toEqual([
+      {
+        from_date: '2022-01-01',
+        to_date: '',
+        is_present: true,
+        position_title: 'Administrative Officer IV',
+        company_name: 'City Hall HRMO',
+        duties_responsibilities: 'Leads succession and recruitment records',
+        is_government_service: true,
+      },
+      {
+        from_date: '2016-01-01',
+        to_date: '2018-01-01',
+        is_present: false,
+        position_title: 'Administrative Aide',
+        company_name: 'Province of Iloilo',
+        duties_responsibilities: 'Maintained personnel 201 files',
+        is_government_service: true,
+      },
+    ]);
   });
 
   it('retains preserved PDS rows and work metadata after an unrelated PDS edit', async () => {
@@ -185,6 +209,11 @@ describe('fetchEmployeeApplicationProfile', () => {
     expect(profile?.educationDegree).toBe('MPA');
     expect(profile?.relevantExperiencePosition).toBe('HR Specialist');
     expect(profile?.relevantExperienceDuties).toBe('Audits plantilla records');
+    // Without sort_order, rows are sorted by from_date descending
+    expect(profile?.workExperienceEntries.map((entry) => entry.position_title)).toEqual([
+      'HR Specialist',
+      'HR Clerk',
+    ]);
   });
 
   it('falls back to legacy employee, applicant, and newly_hired scalars when detail rows are absent', async () => {
@@ -216,6 +245,17 @@ describe('fetchEmployeeApplicationProfile', () => {
               education_school: 'UI',
               years_of_experience: 2.5,
               current_division: 'Accounting Division',
+              work_experience_entries: [
+                {
+                  from_date: '2021-01-01',
+                  to_date: '2023-07-01',
+                  is_present: false,
+                  position_title: 'Bookkeeper',
+                  company_name: 'ABC Accounting',
+                  duties_responsibilities: 'Prepared ledgers',
+                  is_government_service: false,
+                },
+              ],
             },
           ],
           error: null,
@@ -238,6 +278,17 @@ describe('fetchEmployeeApplicationProfile', () => {
       relevantExperiencePosition: 'Clerk I',
       relevantExperienceCompany: 'Budget Office',
       currentDivision: 'Accounting Division',
+      workExperienceEntries: [
+        {
+          from_date: '2021-01-01',
+          to_date: '2023-07-01',
+          is_present: false,
+          position_title: 'Bookkeeper',
+          company_name: 'ABC Accounting',
+          duties_responsibilities: 'Prepared ledgers',
+          is_government_service: false,
+        },
+      ],
     });
 
     // Case 2: not yet in employees -> falls back to newly_hired + applicants.
@@ -272,7 +323,20 @@ describe('fetchEmployeeApplicationProfile', () => {
             contact_number: '09193334444',
             email: 'carlo@lgu.test',
             education_level: 'College Graduate',
+            education_degree: 'BS Civil Engineering',
+            education_school: 'Central Philippine University',
             years_of_experience: 1.5,
+            work_experience_entries: [
+              {
+                from_date: '2024-01-01',
+                to_date: '2025-07-01',
+                is_present: false,
+                position_title: 'Site Engineer',
+                company_name: 'Panay Builders',
+                duties_responsibilities: 'Supervised roadworks',
+                is_government_service: false,
+              },
+            ],
           },
           error: null,
         });
@@ -290,8 +354,21 @@ describe('fetchEmployeeApplicationProfile', () => {
       currentPosition: 'Engineer I',
       currentDepartment: 'Engineering',
       educationAttainment: 'College Graduate',
+      educationDegree: 'BS Civil Engineering',
+      educationSchool: 'Central Philippine University',
       workExperienceYears: '1',
       workExperienceMonths: '6',
+      workExperienceEntries: [
+        {
+          from_date: '2024-01-01',
+          to_date: '2025-07-01',
+          is_present: false,
+          position_title: 'Site Engineer',
+          company_name: 'Panay Builders',
+          duties_responsibilities: 'Supervised roadworks',
+          is_government_service: false,
+        },
+      ],
     });
   });
 });

@@ -1,17 +1,25 @@
-import React, { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Briefcase, BriefcaseBusiness, ClipboardList, GraduationCap, Mail, UserRound } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Briefcase, BriefcaseBusiness, Check, ClipboardList, GraduationCap, Mail, Pencil, Plus, Trash2, UserRound } from 'lucide-react';
 import { Input, Select } from '../../components';
 import { FormSection } from './flow/FlowUi';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { useDepartmentOptions } from '../../hooks/useDepartmentOptions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
-import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
+import type { ApplicantFormData, ApplicantWorkExperienceEntry, ValidationErrors } from '../../types/applicant.types';
 import { COURSE_GROUPS, OTHER_COURSE, isCanonicalCourse } from '../../lib/courses';
+import {
+  computeWorkExperienceTotalMonths,
+  createEmptyWorkExperienceEntry,
+  deriveLegacyWorkExperienceFields,
+  formatWorkExperienceTotal,
+  isWorkExperienceEntryBlank,
+  validateWorkExperienceEntries,
+} from '../../utils/workExperience';
 
 interface ApplicantAssessmentFormProps {
   formData: ApplicantFormData;
   errors: ValidationErrors;
-  onChange: (field: keyof ApplicantFormData, value: string | boolean) => void;
+  onChange: (field: keyof ApplicantFormData, value: any) => void;
   applicationType?: 'job' | 'promotion';
   /** True when the user is verified as a current employee (active session or employee_id). */
   isEmployee?: boolean;
@@ -205,6 +213,99 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   useEffect(() => {
     if (degreeIsOther) setCourseIsOther(true);
   }, [degreeIsOther]);
+
+  // ── Page 4: Option B compact collapsible Work Experience list ─────────────
+  const entries = useMemo<ApplicantWorkExperienceEntry[]>(
+    () => (Array.isArray(formData.work_experience_entries) ? formData.work_experience_entries : []),
+    [formData.work_experience_entries],
+  );
+  const totalMonths = useMemo(() => computeWorkExperienceTotalMonths(entries), [entries]);
+  const entryErrors = useMemo(() => validateWorkExperienceEntries(entries), [entries]);
+  const hasFormWorkExpError = Boolean(errors.work_experience_entries);
+
+  const [activeEntryIndex, setActiveEntryIndex] = useState<number | null>(() =>
+    entries.length === 1 && isWorkExperienceEntryBlank(entries[0]) ? 0 : null,
+  );
+  const [attemptedEntries, setAttemptedEntries] = useState<Record<number, boolean>>({});
+
+  const firstInvalidEntryIndex = useMemo(() => {
+    const indices = Object.keys(entryErrors)
+      .map(Number)
+      .sort((a, b) => a - b);
+    return indices.length > 0 ? indices[0] : undefined;
+  }, [entryErrors]);
+
+  useEffect(() => {
+    if (hasFormWorkExpError && firstInvalidEntryIndex !== undefined) {
+      setActiveEntryIndex(firstInvalidEntryIndex);
+    }
+  }, [hasFormWorkExpError, firstInvalidEntryIndex]);
+
+  const updateWorkExperienceEntries = (nextEntries: ApplicantWorkExperienceEntry[]) => {
+    onChange('work_experience_entries', nextEntries);
+    const derived = deriveLegacyWorkExperienceFields(nextEntries);
+    onChange('work_experience_years', derived.work_experience_years);
+    onChange('work_experience_months', derived.work_experience_months);
+    onChange('relevant_experience_position', derived.relevant_experience_position);
+    onChange('relevant_experience_company', derived.relevant_experience_company);
+    onChange('relevant_experience_duties', derived.relevant_experience_duties);
+  };
+
+  const handleAddWorkExperience = () => {
+    const nextEntries = [...entries, createEmptyWorkExperienceEntry()];
+    updateWorkExperienceEntries(nextEntries);
+    setActiveEntryIndex(nextEntries.length - 1);
+  };
+
+  const handleUpdateWorkExperienceEntry = (
+    index: number,
+    patch: Partial<ApplicantWorkExperienceEntry>,
+  ) => {
+    const nextEntries = entries.map((item, idx) => {
+      if (idx !== index) return item;
+      const merged: ApplicantWorkExperienceEntry = { ...item, ...patch };
+      if (merged.is_present) {
+        merged.to_date = '';
+      }
+      return merged;
+    });
+    updateWorkExperienceEntries(nextEntries);
+  };
+
+  const handleRemoveWorkExperienceEntry = (index: number) => {
+    const nextEntries = entries.filter((_, idx) => idx !== index);
+    updateWorkExperienceEntries(nextEntries);
+    setActiveEntryIndex((prev) => {
+      if (prev === null) return null;
+      if (prev === index) return null;
+      return prev > index ? prev - 1 : prev;
+    });
+    setAttemptedEntries((prev) => {
+      const next: Record<number, boolean> = {};
+      Object.entries(prev).forEach(([key, val]) => {
+        const idx = Number(key);
+        if (idx < index) next[idx] = val;
+        else if (idx > index) next[idx - 1] = val;
+      });
+      return next;
+    });
+  };
+
+  const handleDoneWorkExperienceEntry = (index: number) => {
+    const entry = entries[index];
+    if (!entry || isWorkExperienceEntryBlank(entry)) return;
+    if (entryErrors[index]) {
+      setAttemptedEntries((prev) => ({ ...prev, [index]: true }));
+      return;
+    }
+    setAttemptedEntries((prev) => {
+      if (!prev[index]) return prev;
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+    setActiveEntryIndex(null);
+  };
 
   return (
     <>
@@ -479,6 +580,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
                   // it instead of the list.
                   setCourseIsOther(false);
                 }
+                if (!next && formData.education_school) {
+                  onChange('education_school', '');
+                }
               }}
               className="af-control"
             >
@@ -541,78 +645,308 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
               )}
             </div>
           )}
+
+          {Boolean(formData.education_attainment) && (
+            <div className="af-field af-field-full">
+              <Input
+                label="School / Institution"
+                placeholder="e.g. West Visayas State University"
+                value={formData.education_school || ''}
+                onChange={(e) => onChange('education_school', e.target.value)}
+                error={errors.education_school}
+                required
+              />
+            </div>
+          )}
         </div>
       </FormSection>
 
       {afterEducation}
       </>)}
 
-      {/* Work Experience — wide: five fields plus a free-text description */}
+      {/* Work Experience — Option B Compact Collapsible List (docs/mockups/2026-11-21-applicant-pds-carryover.html) */}
       {onPage(4) && (
-      <FormSection
-        icon={icon(BriefcaseBusiness)}
-        title="Relevant work experience"
-        headingId={`${idPrefix}-experience`}
-        wide
-      >
+      <section className="af-card af-span-2" aria-labelledby={`${idPrefix}-experience`}>
+        <div className="af-card-head" style={{ flexWrap: 'wrap' }}>
+          <span className="af-chip" aria-hidden="true">{icon(BriefcaseBusiness)}</span>
+          <div className="af-card-head-text">
+            <h3 className="af-title-s" id={`${idPrefix}-experience`}>Relevant work experience</h3>
+            <p className="af-caption">Optional for fresh graduates · Syncs to your PDS if hired</p>
+          </div>
+          {entries.length > 0 && (
+            <span className="badge badge-info" data-testid="work-experience-total">
+              Total: {formatWorkExperienceTotal(totalMonths)}
+            </span>
+          )}
+        </div>
+
         <p className="af-notice" style={{ marginBottom: 20 }}>
           <strong>HR policy notice:</strong> Only enter work experience relevant to the position you are applying for,
           if required by HR policies.
         </p>
-        <div className="af-fields">
-          <Input
-            label="Years of Relevant Experience"
-            type="number"
-            min={0}
-            placeholder="e.g. 5"
-            value={formData.work_experience_years}
-            onChange={(e) => onChange('work_experience_years', e.target.value)}
-            error={errors.work_experience_years}
-          />
-          <Input
-            label="Additional Months"
-            type="number"
-            min={0}
-            max={11}
-            placeholder="e.g. 6"
-            value={formData.work_experience_months}
-            onChange={(e) => onChange('work_experience_months', e.target.value)}
-          />
-          <Input
-            label="Position Held"
-            placeholder="e.g. Senior Administrative Assistant"
-            value={formData.relevant_experience_position || ''}
-            onChange={(e) => onChange('relevant_experience_position', e.target.value)}
-            error={errors.relevant_experience_position}
-          />
-          <Input
-            label="Company / Organization"
-            placeholder="e.g. Department of Public Works and Highways"
-            value={formData.relevant_experience_company || ''}
-            onChange={(e) => onChange('relevant_experience_company', e.target.value)}
-            error={errors.relevant_experience_company}
-          />
-          <div className="af-field af-field-full">
-            <label htmlFor={`${idPrefix}-duties`} className="af-label">
-              Description of Duties (Related to the job applied for)
-            </label>
-            <textarea
-              id={`${idPrefix}-duties`}
-              placeholder="Describe your relevant duties and achievements..."
-              value={formData.relevant_experience_duties || ''}
-              onChange={(e) => onChange('relevant_experience_duties', e.target.value)}
-              className="af-control"
-              aria-invalid={errors.relevant_experience_duties ? true : undefined}
-              aria-describedby={errors.relevant_experience_duties ? `${idPrefix}-duties-msg` : undefined}
-            />
-            {errors.relevant_experience_duties && (
-              <span id={`${idPrefix}-duties-msg`} className="af-error" role="alert">
-                {errors.relevant_experience_duties}
-              </span>
-            )}
+
+        {typeof errors.work_experience_entries === 'string' && errors.work_experience_entries && (
+          <p className="af-error" role="alert" style={{ marginBottom: 16 }}>
+            {errors.work_experience_entries}
+          </p>
+        )}
+
+        {entries.length === 0 ? (
+          <p className="af-notice af-notice-neutral" style={{ marginBottom: 16 }}>
+            Optional for fresh graduates. Add any relevant work experience below if applicable.
+          </p>
+        ) : (
+          <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+            {entries.map((entry, i) => {
+              const showErrors = hasFormWorkExpError || Boolean(attemptedEntries[i]);
+              const currentErrors = showErrors ? entryErrors[i] : undefined;
+              const hasVisibleError = Boolean(currentErrors && Object.keys(currentErrors).length > 0);
+              const isBlank = isWorkExperienceEntryBlank(entry);
+              const isCollapsed = i !== activeEntryIndex && !isBlank && !hasVisibleError;
+
+              if (isCollapsed) {
+                const titleText = `${entry.position_title || 'Untitled position'} · ${entry.company_name || 'No company'}`;
+                const subtitleText = `${entry.from_date || '?'} – ${entry.is_present ? 'Present' : entry.to_date || '?'}${entry.is_government_service ? ' · Government service' : ''}`;
+                return (
+                  <article
+                    key={i}
+                    aria-label={`Work experience entry ${i + 1}`}
+                    style={{
+                      border: '1px solid var(--neutral-200)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '12px 16px',
+                      background: 'var(--bg-disabled)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: '1 1 220px' }}>
+                      <div style={{ color: 'var(--color-primary-900)', fontWeight: 600, fontSize: 14, lineHeight: '20px' }}>
+                        {titleText}
+                      </div>
+                      <div className="af-body-s" style={{ marginTop: 2 }}>
+                        {subtitleText}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => setActiveEntryIndex(i)}
+                      >
+                        <Pencil size={14} strokeWidth={1.75} aria-hidden="true" />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-destructive-outline"
+                        onClick={() => handleRemoveWorkExperienceEntry(i)}
+                      >
+                        <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                );
+              }
+
+              return (
+                <article
+                  key={i}
+                  aria-label={`Work experience entry ${i + 1}`}
+                  style={{
+                    border: `1.5px solid ${hasVisibleError ? 'var(--error-500)' : 'var(--color-primary)'}`,
+                    borderRadius: 'var(--radius-lg)',
+                    padding: 16,
+                    background: 'var(--bg-surface)',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      marginBottom: 14,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: 'var(--color-primary)',
+                        fontWeight: 600,
+                        fontSize: 12,
+                        letterSpacing: '0.4px',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Entry {i + 1}{i === 0 ? ' · Most recent' : ''}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        disabled={isBlank}
+                        onClick={() => handleDoneWorkExperienceEntry(i)}
+                      >
+                        <Check size={14} strokeWidth={1.75} aria-hidden="true" />
+                        Done
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-destructive-outline"
+                        onClick={() => handleRemoveWorkExperienceEntry(i)}
+                      >
+                        <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="af-fields">
+                    <Input
+                      id={`${idPrefix}-we-${i}-from`}
+                      label="Date From"
+                      type="date"
+                      value={entry.from_date}
+                      onChange={(e) => handleUpdateWorkExperienceEntry(i, { from_date: e.target.value })}
+                      error={currentErrors?.from_date}
+                      required
+                    />
+                    <Input
+                      id={`${idPrefix}-we-${i}-to`}
+                      label="Date To"
+                      type="date"
+                      value={entry.is_present ? '' : entry.to_date}
+                      onChange={(e) => handleUpdateWorkExperienceEntry(i, { to_date: e.target.value })}
+                      error={currentErrors?.to_date}
+                      disabled={entry.is_present}
+                      required={!entry.is_present}
+                      helperText={entry.is_present ? 'Present' : undefined}
+                    />
+
+                    <div
+                      className="af-field-full"
+                      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 24px' }}
+                    >
+                      <label
+                        htmlFor={`${idPrefix}-we-${i}-present`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          minHeight: 36,
+                          cursor: 'pointer',
+                          color: 'var(--neutral-800)',
+                          fontSize: 14,
+                          fontWeight: 500,
+                        }}
+                      >
+                        <input
+                          id={`${idPrefix}-we-${i}-present`}
+                          type="checkbox"
+                          checked={entry.is_present}
+                          onChange={(e) =>
+                            handleUpdateWorkExperienceEntry(i, {
+                              is_present: e.target.checked,
+                              ...(e.target.checked ? { to_date: '' } : {}),
+                            })
+                          }
+                        />
+                        Currently employed here
+                      </label>
+                      <label
+                        htmlFor={`${idPrefix}-we-${i}-gov`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          minHeight: 36,
+                          cursor: 'pointer',
+                          color: 'var(--neutral-800)',
+                          fontSize: 14,
+                          fontWeight: 500,
+                        }}
+                      >
+                        <input
+                          id={`${idPrefix}-we-${i}-gov`}
+                          type="checkbox"
+                          checked={entry.is_government_service}
+                          onChange={(e) =>
+                            handleUpdateWorkExperienceEntry(i, {
+                              is_government_service: e.target.checked,
+                            })
+                          }
+                        />
+                        Government service
+                      </label>
+                    </div>
+
+                    <Input
+                      id={`${idPrefix}-we-${i}-position`}
+                      label="Position Held"
+                      placeholder="e.g. Administrative Aide IV"
+                      value={entry.position_title}
+                      onChange={(e) => handleUpdateWorkExperienceEntry(i, { position_title: e.target.value })}
+                      error={currentErrors?.position_title}
+                      required
+                    />
+                    <Input
+                      id={`${idPrefix}-we-${i}-company`}
+                      label="Company / Organization"
+                      placeholder="e.g. City Government of Iloilo"
+                      value={entry.company_name}
+                      onChange={(e) => handleUpdateWorkExperienceEntry(i, { company_name: e.target.value })}
+                      error={currentErrors?.company_name}
+                      required
+                    />
+
+                    <div className="af-field af-field-full">
+                      <label htmlFor={`${idPrefix}-we-${i}-duties`} className="af-label">
+                        Description of Duties (Related to the job applied for){' '}
+                        <span className="af-required" aria-hidden="true">*</span>
+                      </label>
+                      <textarea
+                        id={`${idPrefix}-we-${i}-duties`}
+                        placeholder="Describe your relevant duties and achievements..."
+                        value={entry.duties_responsibilities}
+                        onChange={(e) =>
+                          handleUpdateWorkExperienceEntry(i, { duties_responsibilities: e.target.value })
+                        }
+                        className="af-control"
+                        required
+                        aria-invalid={currentErrors?.duties_responsibilities ? true : undefined}
+                        aria-describedby={
+                          currentErrors?.duties_responsibilities
+                            ? `${idPrefix}-we-${i}-duties-msg`
+                            : undefined
+                        }
+                      />
+                      {currentErrors?.duties_responsibilities && (
+                        <span id={`${idPrefix}-we-${i}-duties-msg`} className="af-error" role="alert">
+                          {currentErrors.duties_responsibilities}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
-        </div>
-      </FormSection>
+        )}
+
+        <button
+          type="button"
+          className="btn btn-md btn-secondary"
+          onClick={handleAddWorkExperience}
+        >
+          <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
+          {entries.length === 0 ? 'Add work experience' : 'Add another work experience'}
+        </button>
+      </section>
       )}
     </>
   );
