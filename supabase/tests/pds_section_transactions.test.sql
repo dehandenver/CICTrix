@@ -765,6 +765,31 @@ BEGIN
     'legacy direct writer changed full row', array['40001']
   );
 
+  -- 10b. Filling to_date on a seeded is_present row clears is_present = false while preserving duties.
+  v_employee := pg_temp.make_employee('clear-present');
+  INSERT INTO public.employee_work_experience
+    (employee_id, from_date, to_date, is_present, position_title, company_name,
+     duties_responsibilities, is_government_service, sort_order)
+  VALUES
+    (v_employee, '2024-03-01', NULL, true, 'Administrative Aide IV', 'City Hall',
+     'Seeded duties from applicant', true, 0);
+
+  v_read := public.read_pds_section(v_employee, 'workExperience');
+  v_rows := jsonb_build_array(
+    jsonb_set(
+      pg_temp.pds_input_row('workExperience', v_read -> 'rows' -> 0),
+      '{to_date}', '"2025-12-31"'::jsonb, false
+    )
+  );
+  v_res := public.save_pds_section(
+    v_employee, 'workExperience', v_rows, v_read ->> 'revision', '{}'::jsonb
+  );
+  IF (v_res -> 'rows' -> 0 ->> 'is_present')::boolean IS DISTINCT FROM false
+     OR (v_res -> 'rows' -> 0 ->> 'to_date') <> '2025-12-31'
+     OR (v_res -> 'rows' -> 0 ->> 'duties_responsibilities') <> 'Seeded duties from applicant' THEN
+    RAISE EXCEPTION 'TEST FAILED: save_pds_section did not clear is_present or preserve duties: %', v_res -> 'rows' -> 0;
+  END IF;
+
   -- 11. Family and background scalars commit atomically with their list.
   v_employee := pg_temp.make_employee('family');
   PERFORM pg_temp.seed_section(v_employee, 'children');
