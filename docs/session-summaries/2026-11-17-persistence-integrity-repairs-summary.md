@@ -1,8 +1,8 @@
 ---
 title: Persistence Integrity Repairs & Release Unit 2 Final Verification Summary
 date: 2026-11-21
-status: In Progress
-summary: Completed Release Unit 1 (Orders 1-8) and Release Unit 2 (Orders 9a-9c) on fix/persistence-credential-integration, plus read-only production preflight on fyzdfgxaaowjzbjpwrii and live two-origin rendered browser acceptance against a disposable Docker Supabase stack (GoTrue+Kong+PostgREST+Postgres). Automated suites (199 files/1,903 tests), tsc, lint, build, migrations (134 files), Python (30/30), SQL/concurrency, and live browser checks passed; push/PR/merge/deployment and single-account reconciliation remain approval-gated.
+status: Done
+summary: Completed Release Unit 1 (Orders 1-8) and Release Unit 2 (Orders 9a-9c) on fix/persistence-credential-integration and shipped PRs #108, #109, #110, and #111 to dehandenver/CICTrix main (3df8142); migrations applied on fyzdfgxaaowjzbjpwrii and Vercel Production succeeded (7961322526, 7964403019).
 plan: 2026-11-17-persistence-integrity-repairs.md
 ---
 
@@ -85,3 +85,10 @@ Work executed sequentially on `fix/persistence-credential-integration` from base
   - `employee_portal_accounts.password` remains plaintext and compared in JavaScript.
   - Existing permissive RLS policies / public table grants (`employees`, `employee_portal_accounts`, `training_*`) remain open to arbitrary/legacy raw REST writers outside supported application clients.
   - Browser-side routing (`/employee/set-password`) is workflow persistence, not a server-enforced authorization barrier, and existing browser sessions are not invalidated after an HR reset or self-password change.
+
+## Production Rollout Closure (2026-11-22)
+
+- **PR #108 (`3772553`) & PR #109 (`38caa26`):** Applied all 3 additive migrations (`20261120160156`, `20261120195500`, `20261121001057`) cleanly to `fyzdfgxaaowjzbjpwrii` (`134` total migrations; `Supabase Preview` and `Migration guard` passed after stripping the UTF-8 BOM from `20261120160156`).
+- **PR #110 (`8e2e43f`):** Merged Release Unit 1 to `dehandenver/CICTrix` `main`; Vercel Production (`7961322526`) succeeded.
+- **PR #111 (`3df8142`):** Merged Release Unit 2 to `dehandenver/CICTrix` `main`; Vercel Production (`7964403019`) succeeded.
+- Private single-account reconciliation of `portal-EMP-CC334757` remains a separate operational runbook under `docs/handoff/employee-credential-reconciliation.md`.

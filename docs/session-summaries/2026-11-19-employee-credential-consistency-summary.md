@@ -1,8 +1,8 @@
 ---
 title: Employee Credential Consistency & Release Unit 1 Verification Summary
 date: 2026-11-21
-status: In Progress
-summary: Completed Release Unit 1 (Orders 1-8 across Persistence Tasks 4-7, Credential Tasks 1-5, and PDS/Hiring checkpoint) plus read-only production preflight on fyzdfgxaaowjzbjpwrii and live two-origin rendered browser acceptance against a disposable Docker Supabase Auth+Kong+PostgREST stack; Release Unit 2 also completed (recorded in 2026-11-17 summary). Push/PR/merge/deployment and single-account reconciliation remain approval-gated.
+status: Done
+summary: Completed Release Unit 1 (Orders 1-8 across Persistence Tasks 4-7, Credential Tasks 1-5, and PDS/Hiring checkpoint) and shipped PRs #108, #109, and #110 to dehandenver/CICTrix main (8e2e43f); Vercel Production (7961322526) succeeded. Private single-account reconciliation of portal-EMP-CC334757 remains an optional operational runbook.
 plan: 2026-11-19-employee-credential-consistency.md
 ---
 
@@ -58,3 +58,8 @@ Work executed sequentially on branch `fix/persistence-credential-integration` fr
   - Existing permissive RLS policies / public table grants (`employees`, `employee_portal_accounts`, etc.) remain open to arbitrary/legacy raw REST writers outside supported application clients; timestamp optimistic concurrency protects only against supported monotonic writers.
   - Browser-side routing (`/employee/set-password`) is workflow persistence, not a server-enforced authorization barrier, and existing browser sessions are not invalidated or revoked after an HR reset or self-password change.
 - **Companion Release Unit 2 status:** Release Unit 2 (Persistence Tasks 8–9 and final Task 10) is complete and verified; see [2026-11-17-persistence-integrity-repairs-summary.md](2026-11-17-persistence-integrity-repairs-summary.md).
+
+## Production Rollout Closure (2026-11-22)
+
+- **Merged PRs (`dehandenver/CICTrix` `main`):** `#108` (`3772553`), `#109` (`38caa26`), and `#110` (`8e2e43f`, Vercel Production `7961322526` `success`).
+- Post-deploy read on `fyzdfgxaaowjzbjpwrii` confirmed `employee_portal_accounts_active_employee_number_uidx`, `employee_portal_accounts_active_username_uidx`, `must_change_password`, `employee_password_resets_request_id_uidx`, and `reset_employee_portal_password` (`SECURITY INVOKER`) live with `portal-EMP-CC334757` untouched (`updated_at = 2026-10-29 05:57:53.2+00`).

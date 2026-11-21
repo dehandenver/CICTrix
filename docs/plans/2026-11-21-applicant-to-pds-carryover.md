@@ -1,7 +1,7 @@
 ---
 title: Carry applicant work history, education, and PWD into new-hire PDS
 date: 2026-11-21
-status: In Progress
+status: Done
 summary: Persist repeatable work-experience entries with real dates, school name, and PWD status on /apply, and seed them atomically into employees, employee_work_experience, and employee_education during complete_external_hire.
 spec: docs/mockups/2026-11-22-apply-work-experience-collapsible.html
 ---
@@ -59,3 +59,9 @@ Preserves the nine-section PDS navigation in `docs/mockups/2026-10-06-pds-step-l
 - Disposable Postgres run of `supabase/tests/external_hire_transaction.test.sql` and `supabase/tests/pds_section_transactions.test.sql`
 - Python tests (`backend/test_external_hiring.py`, `backend/test_promotional_hiring.py`)
 - `DESIGN_IDENTITY.md` §16 checklist on touched UI components
+
+## Status check 2026-11-22
+
+- **Merged PRs (`dehandenver/CICTrix` `main`):** `#112` (`2e8b15c`, migration `20261121163818_applicant_pds_carryover.sql`) and `#113` (`30e4539`, frontend `/apply` Option B UI, validation, prefill, Interviewer Qualifications card, smoke/unit coverage).
+- **Live DB (`fyzdfgxaaowjzbjpwrii`):** Migration `20261121163818` applied cleanly (`135` total migrations), with `applicants.work_experience_entries`, array check constraint, `complete_external_hire`, and `save_pds_section` verified live via `supabase_mcp`.
+- **Vercel Production:** Deployed `30e4539` cleanly (`7968751350`, `success`, `https://abyan-hris-iloilo-70det9188-dehandenvers-projects.vercel.app`).

@@ -1,7 +1,7 @@
 ---
 title: Repair PDS, external hiring, and training persistence integrity
 date: 2026-11-17
-status: In Progress
+status: Done
 summary: Preserve records and make hiring/training writes truthful and replay-safe, with coordinated employee credential lifecycle ownership and joint PDS/hiring release gates.
 spec: C:/Users/ajcbu/.opencode/plan/2026-11-17-persistence-integrity-repairs.md
 ---
@@ -259,3 +259,10 @@ Orders 9a–9c completed Release Unit 2 training repairs (Tasks 8–9), cross-bo
   - Order 9c (Task 10 Final smoke suite): `eeb57cb` (`test(training): add release unit 2 training integrity smoke suite`)
 - **Verified checks post-`eeb57cb`:** `npx tsc --noEmit` (exit 0); full `npx vitest run --dir src` (**199 files / 1,903 tests passed**, including `src/test/trainingIntegrity.smoke.test.tsx` 3/3); `npm run lint` (0 errors, 0 warnings); `npm run build` (exit 0, `3156` modules in `17.03s`); `npm run check:migrations` (`supabase/migrations OK (134 files)`); Python backend unittest (`30/30` OK); `git diff --check 0dd8dd4..HEAD` (exit 0); `training_calendar_transaction.test.sql` (`ALL TRAINING CALENDAR TRANSACTION TESTS PASSED` on `external_hire_test` in `cictrix-integrity-e1aa71a5`); ephemeral `public.ecr.aws/supabase/postgrest:v16.5` (`cictrix-pgrst-verify-ru2`) HTTP acceptance proving `save_training_calendar_event` actor enforcement (`401`/`403`/`200`), `p_request_id` create replay, `read_training_calendar_event`, atomic invalid-tag rollback (`409`/`23503`), retained join ID/weight, stale `40001`, locked `23514`/`training_locked`, and `training_evaluations` raw microsecond `updated_at` CAS (`1` updated row on exact match, `0` rows on stale repeat), with all synthetic DB rows and ephemeral container cleaned up.
 - **Blocked & approval-gated remaining items:** Plan `status` remains `In Progress`. Live rendered browser checks (mobile/tablet/desktop, keyboard-only navigation, `DESIGN_IDENTITY.md` §16 visual audit, and live two-profile Auth+Kong+PostgREST stack acceptance) remain **Blocked** locally. Branch push, PR/merge, Vercel/Supabase deployment, and `portal-EMP-CC334757` reconciliation remain separately approval-gated. See [docs/session-summaries/2026-11-17-persistence-integrity-repairs-summary.md](../session-summaries/2026-11-17-persistence-integrity-repairs-summary.md).
+
+## Status check 2026-11-22
+
+- **Merged PRs (`dehandenver/CICTrix` `main`):** `#108` (`3772553`), `#109` (`38caa26`), `#110` (`8e2e43f`, Vercel Production `7961322526`), and `#111` (`3df8142`, Vercel Production `7964403019`).
+- **Live DB (`fyzdfgxaaowjzbjpwrii`):** All 3 migrations (`20261120160156`, `20261120195500`, `20261121001057`) applied cleanly (`134` migrations post-PR #109); all `SECURITY INVOKER` RPCs and indexes verified live via `supabase_mcp`.
+- **Two-origin live browser acceptance:** Passed Release Unit 1 and Release Unit 2 scenarios against disposable Docker Supabase (`cictrix-browser-verify`).
+- **Separate operational runbook:** Private single-account reconciliation of `portal-EMP-CC334757` remains an independent operational procedure in `docs/handoff/employee-credential-reconciliation.md` rather than unshipped code work.

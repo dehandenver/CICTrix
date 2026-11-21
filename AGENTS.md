@@ -113,7 +113,8 @@ When a plan is confirmed, before any code:
 1. Save it at `docs/plans/YYYY-MM-DD-<topic>.md` using `docs/plans/_template.md`. Frontmatter: `title`, `date`, `status`, `summary`, optional `spec`. Sections: Goal, Approach, Steps, Risks, Checks to run. One plan, one file. Never edit code from an unsaved plan.
 2. Keep `status` current: Draft → Approved → In Progress → Blocked → Done.
 3. On completion write `docs/session-summaries/YYYY-MM-DD-<topic>-summary.md`: what shipped vs. planned, deviations, checks run. Update it if the plan changes later without being asked.
-4. After any plan or summary change, regenerate the dashboard: `powershell -NoProfile -ExecutionPolicy Bypass -File docs/plans/build-plans-index.ps1`. Never hand-write `index.html`.
+4. **Automatically close plans on PR merge:** Once the PRs for a task or plan are confirmed merged, automatically update the plan (`docs/plans/YYYY-MM-DD-<topic>.md`) and its session summary (`docs/session-summaries/YYYY-MM-DD-<topic>-summary.md`) to `status: Done` with the merged PR numbers and merge commit SHAs, regenerate `docs/plans/index.html`, and ship the docs update without waiting to be asked.
+5. After any plan or summary change, regenerate the dashboard: `powershell -NoProfile -ExecutionPolicy Bypass -File docs/plans/build-plans-index.ps1`. Never hand-write `index.html`.
 
 Folders are created lazily. ADRs go in `docs/adr/NNNN-slug.md`, only for decisions that are hard to reverse, surprising without context, and the result of a real trade-off.
 
@@ -124,7 +125,36 @@ Folders are created lazily. ADRs go in `docs/adr/NNNN-slug.md`, only for decisio
 - Never work on `main`/`master`; branch first.
 - Confirm before any push. Never force-push or rewrite shared history without a go-ahead. Never skip hooks or signing (`--no-verify`).
 - No AI signature. No `Co-Authored-By` trailer for the agent, no "Generated with ..." line, in commits or PRs. If a tool injects one by default, remove it.
-- PRs include: what changed and why, the linked issue, migration notes for schema changes, and the checks run with results.
+
+### Pull requests
+
+Every PR description must use this exact structure:
+
+```markdown
+## What changed and why
+
+<Concise narrative paragraph stating what changed, how it was verified against main/DB, and why.>
+
+| <Group / Result> | <Items / Scope> |
+|---|---|
+| **<Category>** | <Items> |
+
+- <Concrete bullet points of the key changes.>
+
+<One-line scope note, e.g. "Docs only. No code or migration changes." or migration summary.>
+
+**Linked issue:** <issue link or "none.">
+
+## Things for reviewers to know
+
+- **<Callout label>:** <Candid reviewer notes: trade-offs, out-of-scope items, manual checks replaced by automated ones, dropped steps, or schema/runtime caveats.>
+
+## Checks run (on `<short-sha>`)
+
+- `<command>`: <concise, honest result — including any local environment caveat and the corresponding CI/Vercel result>.
+```
+
+Omit the table only when a single-item change has nothing parallel to compare; keep all three `##` headings, `**Linked issue:**`, and the candid reviewer/check format on every PR.
 
 ## Skills
 

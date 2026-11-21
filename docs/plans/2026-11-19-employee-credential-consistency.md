@@ -1,7 +1,7 @@
 ---
 title: Make employee portal credentials consistent across browsers
 date: 2026-11-19
-status: In Progress
+status: Done
 summary: Coordinated Draft. Repair remote credential persistence, login, and explicit resets after Persistence Task 7 makes provisioning and metadata consumers cache-independent; require joint acceptance before release.
 ---
 
@@ -280,3 +280,8 @@ Manual acceptance includes the isolated browser/HTTP matrix in Task 5, Persisten
 - Scope: no admin Settings integration, new authentication architecture, live schema operation, real-account reset, or code implementation is authorized by this Draft. Supporting migration authoring belongs to Persistence Task 7 during approved execution.
 - Coordination: the stable target includes the loaded revision; the cache-consumer ownership/order conflict is resolved in the persistence addendum. Actual implementation/DB/browser verification and production approvals remain open, not inferred.
 - Logic-audit amendments (2026-11-20): resolved gaps `F1`–`F6` across both plans (`complete_external_hire` strict reserve-then-hire & Ranking Report redirect, `p_request_id` reset confirmation without password readback, opaque raw-string revisions & monotonic timestamps, missed `recruitmentData.ts`/`updateEmployeePortalEmployee`/unfiltered metadata list consumers, Task 7A-before-Credential-1 sequencing & unrouted `EmployeeDetailPage.tsx` note, and explicit `result.ok === true`/`false` narrowing under `"strict": false`).
+
+## Status check 2026-11-22
+
+- **Merged PRs (`dehandenver/CICTrix` `main`):** `#108` (`3772553`), `#109` (`38caa26`), and `#110` (`8e2e43f`, Vercel Production `7961322526`).
+- **Verified live:** Two-origin Chromium browser acceptance (`:5179` / `:5180`) + real PostgREST/GoTrue stack (`cictrix-browser-verify`) confirmed remote-only login, `/employee/set-password`, cross-origin password sync, stale-revision conflict rejection, dropped-response recovery on `reset_employee_portal_password`, and username rename/promotional prefill; `portal-EMP-CC334757` remains intact for separate private reconciliation via `docs/handoff/employee-credential-reconciliation.md`.
