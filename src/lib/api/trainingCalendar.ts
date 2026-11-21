@@ -1,7 +1,10 @@
 import { supabase as supabaseClient } from '../supabase';
 import type { TrainingCategory } from '../../modules/admin/trainingCategories';
 import { COMPETENCIES } from '../../constants/positions';
-import { setSessionCompetencies } from './trainingCompetencies';
+// Type-only: trainingCompetencies imports this module at runtime (it routes
+// tag-only saves through saveCalendarEventTransaction), so a runtime import
+// back would be a cycle.
+import type { CompetencyTag } from './trainingCompetencies';
 
 const supabase = supabaseClient as any;
 
@@ -288,20 +291,40 @@ export type CalendarEventInput = {
   status: CalendarEventStatus;
   capacity?: number;
   /**
-   * IDs from training_competency_tags to associate with this session.
-   * When provided, setSessionCompetencies is called after the session upsert
-   * to atomically replace the session's tag set.
+   * IDs from training_competency_tags for this session, saved in the same
+   * transaction as the content. `undefined` leaves the session's tags untouched
+   * (an Office Account status update), an empty array clears them.
    */
   competencyIds?: string[];
 };
 
-const toRow = (input: CalendarEventInput) => ({
-  title: input.title,
+/** Why a save did not complete. `uncertain` means the write may have committed. */
+export type TrainingSaveFailureKind =
+  | 'validation'
+  | 'conflict'
+  | 'locked'
+  | 'not_authorized'
+  | 'uncertain'
+  | 'unavailable';
+
+/** The mutation result extended with the saved session's identity and revision. */
+export type CalendarSaveResult = MutationResult & {
+  id?: string;
+  revision?: string;
+  kind?: TrainingSaveFailureKind;
+};
+
+const SAVE_RPC = 'save_training_calendar_event';
+const READ_RPC = 'read_training_calendar_event';
+
+/** Whitelisted session content for save_training_calendar_event. */
+const toEventPayload = (input: CalendarEventInput) => ({
+  title: input.title.trim(),
   category: input.category,
   scheduled_date: input.startDate,
   end_date: input.endDate,
-  instructor_name: input.speaker || null,
-  location: input.location || null,
+  instructor_name: input.speaker?.trim() || null,
+  location: input.location?.trim() || null,
   // Drop blank bullets so an empty textarea line never becomes an objective.
   objectives: input.objectives.map((o) => o.trim()).filter(Boolean),
   description: input.description?.trim() || null,
@@ -311,49 +334,268 @@ const toRow = (input: CalendarEventInput) => ({
   capacity: input.capacity ?? 0,
 });
 
+const TRANSPORT_MESSAGE = /fetch|network|timeout|timed out|abort|connection|econn|etimedout|socket/i;
+
+const FAILURE_COPY: Record<
+  TrainingSaveFailureKind,
+  { create: string; update: string }
+> = {
+  validation: {
+    create: 'Some training details are not valid, so nothing was saved. Check the fields and try again.',
+    update: 'Some training details are not valid, so nothing was saved. Check the fields and try again.',
+  },
+  conflict: {
+    create: 'This training changed while you were editing, so nothing was saved. Reload the latest version.',
+    update: 'This training changed while you were editing, so nothing was saved. Reload the latest version.',
+  },
+  locked: {
+    create: 'This training is locked, so nothing was saved.',
+    update:
+      "This training is locked: content and competencies can't change within 3 days of the start, so nothing was saved. Its status can still be changed.",
+  },
+  not_authorized: {
+    create: 'Only active L&D or Admin users can save trainings, so nothing was saved. Sign in again or contact an administrator.',
+    update: 'Only active L&D or Admin users can save trainings, so nothing was saved. Sign in again or contact an administrator.',
+  },
+  uncertain: {
+    create:
+      "We couldn't confirm the training was created. Press Create Training again: it checks the earlier attempt first and will not create a duplicate.",
+    update:
+      "We couldn't confirm your changes were saved. Reload the latest version to check what was saved before saving again.",
+  },
+  unavailable: {
+    create: 'The training service is unavailable, so nothing was saved. Your entries are kept: try again in a moment.',
+    update: 'The training service is unavailable, so nothing was saved. Your entries are kept: try again in a moment.',
+  },
+};
+
+const VALIDATION_HINTS = new Set(['invalid_competency', 'invalid_event', 'missing_revision', 'missing_request_id']);
+const SESSION_ERROR_CODES = new Set(['PGRST301', 'PGRST302', 'PGRST303']);
+const MISSING_FUNCTION_CODES = new Set(['PGRST202', '42883']);
+
+const failure = (
+  kind: TrainingSaveFailureKind,
+  isCreate: boolean,
+  dbMessage?: string,
+): CalendarSaveResult => ({
+  ok: false,
+  kind,
+  // A validation message raised by our own RPC is written for the user; every
+  // other kind uses fixed copy so no database detail reaches the screen.
+  error:
+    kind === 'validation' && dbMessage
+      ? `${dbMessage.replace(/\.?$/, '.')} Nothing was saved.`
+      : FAILURE_COPY[kind][isCreate ? 'create' : 'update'],
+});
+
+/** Turns an RPC error (or a thrown transport failure) into a typed, honest result. */
+const classifySaveFailure = (err: unknown, isCreate: boolean): CalendarSaveResult => {
+  const e = (err ?? {}) as { code?: unknown; hint?: unknown; message?: unknown };
+  const code = String(e.code ?? '').trim();
+  const hint = String(e.hint ?? '').trim();
+  const message = String(e.message ?? '');
+
+  if (hint === 'revision_conflict' || code === '40001') return failure('conflict', isCreate);
+  if (hint === 'session_not_found' || code === 'P0002') return failure('conflict', isCreate);
+  if (hint === 'training_locked' || (code === '23514' && /lock/i.test(message))) {
+    return failure('locked', isCreate);
+  }
+  if (code === '42501' || hint === 'not_authorized' || SESSION_ERROR_CODES.has(code)) {
+    return failure('not_authorized', isCreate);
+  }
+  if (VALIDATION_HINTS.has(hint) || code === '23503' || code === '23514' || code.startsWith('22')) {
+    return failure('validation', isCreate, VALIDATION_HINTS.has(hint) ? message : undefined);
+  }
+  if (MISSING_FUNCTION_CODES.has(code)) return failure('unavailable', isCreate);
+  // No SQLSTATE and a transport-shaped message: the request may have reached the
+  // database and committed before the response was lost.
+  if (!code && TRANSPORT_MESSAGE.test(message)) return failure('uncertain', isCreate);
+  return failure('unavailable', isCreate);
+};
+
+type SaveArgs = {
+  sessionId: string | null;
+  event: ReturnType<typeof toEventPayload> | null;
+  /** null leaves tags untouched; an empty array clears them. */
+  competencyIds: string[] | null;
+  expectedRevision: string | null;
+  requestId: string | null;
+};
+
+/**
+ * The only write path for a calendar event's content and competency tags: one
+ * call to save_training_calendar_event, which validates and writes both in a
+ * single transaction. There is deliberately no split-write fallback, so a missing
+ * function is reported as unavailable instead of falling back to table writes.
+ */
+export async function saveCalendarEventTransaction(args: SaveArgs): Promise<CalendarSaveResult> {
+  const isCreate = args.sessionId === null;
+  try {
+    const { data, error } = await supabase.rpc(SAVE_RPC, {
+      p_session_id: args.sessionId,
+      p_event: args.event,
+      p_competency_ids: args.competencyIds,
+      p_expected_revision: args.expectedRevision,
+      p_request_id: args.requestId,
+    });
+    if (error) {
+      console.warn('[trainingCalendar] save failed:', { code: error.code ?? null, hint: error.hint ?? null });
+      return classifySaveFailure(error, isCreate);
+    }
+
+    const id = typeof data?.id === 'string' ? data.id.trim() : '';
+    const revision = typeof data?.revision === 'string' ? data.revision.trim() : '';
+    if (!id || !revision || (!isCreate && id !== args.sessionId)) {
+      // The database answered without the saved identity: do not claim success.
+      return failure('uncertain', isCreate);
+    }
+    return { ok: true, id, revision };
+  } catch (err) {
+    console.warn('[trainingCalendar] save request failed:', (err as { message?: unknown })?.message ?? 'unknown');
+    return classifySaveFailure(err, isCreate);
+  }
+}
+
 /**
  * Create a training directly on the calendar. Used for events that don't need
  * enrollment (e.g. a mandatory all-staff session), so program_id stays null.
+ *
+ * `requestId` is the stable identity of this create attempt: retrying after a
+ * lost response with the SAME id returns the original session instead of making
+ * a second one. Generate it once per dialog open and keep it across retries.
  */
 export async function createCalendarEvent(
-  input: CalendarEventInput
-): Promise<MutationResult & { id?: string }> {
-  const { data, error } = await supabase
-    .from('training_sessions')
-    .insert([{ ...toRow(input), program_id: null }])
-    .select('id')
-    .single();
-
-  if (error) return { ok: false, error: error.message };
-
-  // Sync competency tags if any were provided.
-  if (input.competencyIds?.length) {
-    await setSessionCompetencies(data.id, input.competencyIds);
+  input: CalendarEventInput,
+  requestId: string,
+): Promise<CalendarSaveResult> {
+  if (!requestId || !requestId.trim()) {
+    return {
+      ok: false,
+      kind: 'validation',
+      error: 'This training could not be created because the request has no identity. Reopen the form and try again.',
+    };
   }
-
-  return { ok: true, id: data.id };
+  return saveCalendarEventTransaction({
+    sessionId: null,
+    event: toEventPayload(input),
+    competencyIds: input.competencyIds ?? null,
+    expectedRevision: null,
+    requestId,
+  });
 }
 
+/**
+ * Save an edit of the loaded training. `expectedRevision` is the revision from
+ * getCalendarEventSnapshot; a stale one is refused as a conflict.
+ */
 export async function updateCalendarEvent(
   id: string,
-  input: CalendarEventInput
-): Promise<MutationResult> {
-  // Stamp updated_at so the Office Account view can flag "Updated by L&D". Only
-  // this genuine-edit path bumps it — roster/attendance churn does not.
-  const { error } = await supabase
-    .from('training_sessions')
-    .update({ ...toRow(input), updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) return { ok: false, error: error.message };
+  input: CalendarEventInput,
+  expectedRevision: string,
+): Promise<CalendarSaveResult> {
+  if (!expectedRevision || !expectedRevision.trim()) {
+    return {
+      ok: false,
+      kind: 'validation',
+      error: 'This training has not been loaded, so it cannot be saved. Reload it and try again.',
+    };
+  }
+  return saveCalendarEventTransaction({
+    sessionId: id,
+    event: toEventPayload(input),
+    competencyIds: input.competencyIds ?? null,
+    expectedRevision,
+    requestId: null,
+  });
+}
 
-  // Sync competency tags. competencyIds===undefined means the caller didn't
-  // touch the field (e.g. an Office Account status update); skip in that case.
-  if (input.competencyIds !== undefined) {
-    const tagResult = await setSessionCompetencies(id, input.competencyIds);
-    if (!tagResult.ok) return { ok: false, error: tagResult.error };
+export type CalendarEventSnapshot = {
+  /** The roster is not part of the editable snapshot, so `attendees` is empty. */
+  event: CalendarEvent;
+  competencyIds: string[];
+  competencyTags: CompetencyTag[];
+  revision: string;
+};
+
+/** A snapshot could not be read. Carries the database error's code/status for friendly messaging. */
+export class CalendarSnapshotError extends Error {
+  readonly code?: string;
+  readonly status?: number;
+  constructor(message: string, source?: unknown) {
+    super(message);
+    this.name = 'CalendarSnapshotError';
+    const s = (source ?? {}) as { code?: unknown; status?: unknown };
+    if (s.code) this.code = String(s.code);
+    if (s.status) this.status = Number(s.status);
+  }
+}
+
+/**
+ * One consistent read of a training for the edit dialog: its content, its
+ * competency tags, and the revision a later save must present. Throws when the
+ * snapshot cannot be read: a revision is never guessed.
+ */
+export async function getCalendarEventSnapshot(id: string): Promise<CalendarEventSnapshot> {
+  let response: { data?: any; error?: any };
+  try {
+    response = await supabase.rpc(READ_RPC, { p_session_id: id });
+  } catch (err) {
+    throw new CalendarSnapshotError(
+      String((err as { message?: unknown })?.message ?? 'The training could not be loaded.'),
+      err,
+    );
+  }
+  if (response?.error) {
+    throw new CalendarSnapshotError(
+      String(response.error.message ?? 'The training could not be loaded.'),
+      response.error,
+    );
   }
 
-  return { ok: true };
+  const data = response?.data;
+  const ev = data?.event;
+  const revision = typeof data?.revision === 'string' ? data.revision.trim() : '';
+  if (!data || typeof ev !== 'object' || ev === null || !ev.id) {
+    throw new CalendarSnapshotError('The training could not be loaded: the snapshot was incomplete.');
+  }
+  if (!revision) {
+    throw new CalendarSnapshotError('The training could not be loaded: the snapshot had no revision.');
+  }
+
+  const tags: CompetencyTag[] = (Array.isArray(data.competencies) ? data.competencies : []).map((t: any) => ({
+    id: String(t.id),
+    name: String(t.name ?? ''),
+    nameKey: String(t.name_key ?? ''),
+    category: t.category ?? null,
+  }));
+  const objectives: string[] = Array.isArray(ev.objectives) ? ev.objectives.map(String) : [];
+  const competencyNames = tags.map((t) => t.name).filter(Boolean);
+  const names = competencyNames.length > 0 ? competencyNames : competenciesFromObjectives(objectives);
+
+  return {
+    event: {
+      id: String(ev.id),
+      title: String(ev.title ?? ''),
+      category: ev.category ?? null,
+      competencies: names,
+      competency: names[0] ?? null,
+      startDate: String(ev.scheduled_date ?? ''),
+      endDate: ev.end_date ?? null,
+      speaker: ev.instructor_name ?? null,
+      location: ev.location ?? null,
+      objectives,
+      description: ev.description ?? null,
+      materials: ev.materials ?? null,
+      prerequisites: ev.prerequisites ?? null,
+      status: ev.status,
+      capacity: ev.capacity ?? 0,
+      rosterFinalizedAt: ev.roster_finalized_at ?? null,
+      attendees: [],
+    },
+    competencyIds: (Array.isArray(data.competency_ids) ? data.competency_ids : []).map(String),
+    competencyTags: tags,
+    revision,
+  };
 }
 
 /** Cancelling preserves the event and its roster; it is not a delete. */

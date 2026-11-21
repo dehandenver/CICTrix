@@ -12,6 +12,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { saveCalendarEventTransaction, type CalendarSaveResult } from './trainingCalendar';
 
 const supabase = supabaseClient as any;
 
@@ -124,52 +125,37 @@ export async function upsertCompetencyTag(name: string): Promise<CompetencyTag |
 }
 
 /**
- * Atomically replace the full competency set for a session.
+ * Replace the full competency set for a session through the same
+ * save_training_calendar_event transaction the calendar dialog uses (no event
+ * content, tags only).
  *
- * - Deletes any existing tags not in `tagIds`.
- * - Inserts any new `tagIds` not already present.
- * - A no-op if the set is unchanged.
+ * - Removed tags are deleted and added tags inserted; unchanged joins keep
+ *   their ids and weights.
+ * - A stale `expectedRevision` is refused as a conflict, and the three-day lock
+ *   applies to competency changes exactly as it does to content.
  *
- * This avoids orphan rows: if an admin adds a tag then immediately removes it
- * before saving, the pending chip never touched the DB.
+ * It never writes training_competencies directly, so a failure cannot leave a
+ * half-applied tag set.
  */
 export async function setSessionCompetencies(
   sessionId: string,
   tagIds: string[],
-): Promise<{ ok: boolean; error?: string }> {
-  // 1. Fetch current join rows.
-  const { data: existing, error: fetchErr } = await supabase
-    .from('training_competencies')
-    .select('id, competency_id')
-    .eq('session_id', sessionId);
-  if (fetchErr) return { ok: false, error: fetchErr.message };
-
-  const existingRows = (existing ?? []) as { id: string; competency_id: string }[];
-  const existingIds = new Set(existingRows.map((r) => r.competency_id));
-  const wantedIds = new Set(tagIds.filter(Boolean));
-
-  // 2. Delete rows that are no longer wanted.
-  const toDelete = existingRows.filter((r) => !wantedIds.has(r.competency_id)).map((r) => r.id);
-  if (toDelete.length) {
-    const { error: delErr } = await supabase
-      .from('training_competencies')
-      .delete()
-      .in('id', toDelete);
-    if (delErr) return { ok: false, error: delErr.message };
+  expectedRevision: string,
+): Promise<CalendarSaveResult> {
+  if (!sessionId || !expectedRevision || !expectedRevision.trim()) {
+    return {
+      ok: false,
+      kind: 'validation',
+      error: 'This training has not been loaded, so its competencies cannot be saved. Reload it and try again.',
+    };
   }
-
-  // 3. Insert newly added tags.
-  const toInsert = [...wantedIds]
-    .filter((id) => !existingIds.has(id))
-    .map((competency_id) => ({ session_id: sessionId, competency_id }));
-  if (toInsert.length) {
-    const { error: insErr } = await supabase
-      .from('training_competencies')
-      .insert(toInsert);
-    if (insErr) return { ok: false, error: insErr.message };
-  }
-
-  return { ok: true };
+  return saveCalendarEventTransaction({
+    sessionId,
+    event: null,
+    competencyIds: tagIds,
+    expectedRevision,
+    requestId: null,
+  });
 }
 
 /**

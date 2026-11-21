@@ -10,7 +10,7 @@
  * present / absent / excused across all half-days.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Info } from 'lucide-react';
 import {
   cellKey,
@@ -59,21 +59,73 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
   const days = useMemo(() => trainingDays(startDate, endDate), [startDate, endDate]);
   const todayKey = dayKeyOf(new Date());
 
+  const enrollmentIds = useMemo(
+    () => [...new Set(attendees.map((a) => a.enrollmentId).filter(Boolean))].sort(),
+    [attendees],
+  );
+  const enrollmentIdsKey = enrollmentIds.join(',');
+  const scopeKey = `${startDate}|${endDate ?? ''}|${enrollmentIdsKey}`;
+
   const [attendance, setAttendance] = useState<AttendanceMap>(new Map());
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [excuse, setExcuse] = useState<{
     enrollmentId: string; dayKey: string; session: SessionHalf;
     attendee: string; dayLabel: string; note: string;
   } | null>(null);
 
+  const loadGenRef = useRef(0);
+  const loadedScopeRef = useRef<string | null>(null);
+  const scopeKeyRef = useRef(scopeKey);
+  scopeKeyRef.current = scopeKey;
+
+  const loadAttendanceData = useCallback(
+    async (mode: 'initial' | 'refresh') => {
+      const targetScope = scopeKeyRef.current;
+      const targetIds = enrollmentIdsKey ? enrollmentIdsKey.split(',') : [];
+      const gen = ++loadGenRef.current;
+      if (mode === 'initial' || loadedScopeRef.current !== targetScope) {
+        setHasLoaded(false);
+        setAttendance(new Map());
+      }
+      setLoading(true);
+      setLoadError(null);
+      setMutationError(null);
+      try {
+        const map = await listAttendance(targetIds);
+        if (gen !== loadGenRef.current || targetScope !== scopeKeyRef.current) return;
+        loadedScopeRef.current = targetScope;
+        setAttendance(map);
+        setHasLoaded(true);
+        setLoadError(null);
+      } catch (err) {
+        if (gen !== loadGenRef.current || targetScope !== scopeKeyRef.current) return;
+        setLoadError(err instanceof Error && err.message ? err.message : 'Could not load attendance records.');
+      } finally {
+        if (gen === loadGenRef.current) setLoading(false);
+      }
+    },
+    [enrollmentIdsKey],
+  );
+
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const map = await listAttendance(attendees.map((a) => a.enrollmentId));
-      if (!cancelled) setAttendance(map);
-    })();
-    return () => { cancelled = true; };
-  }, [attendees]);
+    loadedScopeRef.current = null;
+    setHasLoaded(false);
+    setAttendance(new Map());
+    setLoadError(null);
+    setMutationError(null);
+    setBusy(null);
+    setExcuse(null);
+    void loadAttendanceData('initial');
+    return () => {
+      loadGenRef.current += 1;
+    };
+  }, [scopeKey, loadAttendanceData]);
+
+  const staleBlocked = Boolean(loadError);
 
   const cellOf = (enrollmentId: string, dayKey: string, session: SessionHalf) =>
     attendance.get(enrollmentId)?.get(cellKey(dayKey, session))
@@ -88,15 +140,37 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
       return next;
     });
 
-  const commit = async (enrollmentId: string, dayKey: string, session: SessionHalf, status: DayStatus | null, note?: string | null) => {
+  const commit = async (
+    enrollmentId: string,
+    dayKey: string,
+    session: SessionHalf,
+    status: DayStatus | null,
+    note?: string | null,
+  ): Promise<boolean> => {
+    if (!hasLoaded || staleBlocked) return false;
+    const gen = loadGenRef.current;
+    const targetScope = scopeKeyRef.current;
     setBusy(`${enrollmentId}:${dayKey}:${session}`);
-    const res = await setDayAttendance({ enrollmentId, dayKey, session, status, note });
-    setBusy(null);
-    if (!res.ok) { alert(res.error); return; }
-    applyLocal(enrollmentId, dayKey, session, status, status === 'Excused' ? (note ?? '') : null);
+    setMutationError(null);
+    try {
+      const res = await setDayAttendance({ enrollmentId, dayKey, session, status, note });
+      if (gen !== loadGenRef.current || targetScope !== scopeKeyRef.current) return false;
+      if (res.ok !== true) {
+        setMutationError(res.error || 'Could not save attendance.');
+        return false;
+      }
+      applyLocal(enrollmentId, dayKey, session, status, status === 'Excused' ? (note ?? '') : null);
+      return true;
+    } finally {
+      if (gen === loadGenRef.current && targetScope === scopeKeyRef.current) {
+        setBusy(null);
+      }
+    }
   };
 
   const clickStatus = (enrollmentId: string, dayKey: string, session: SessionHalf, status: DayStatus) => {
+    if (!hasLoaded || staleBlocked) return;
+    setMutationError(null);
     const cell = cellOf(enrollmentId, dayKey, session);
     if (status === 'Excused') {
       const attendee = attendees.find((a) => a.enrollmentId === enrollmentId)?.name ?? '';
@@ -121,8 +195,78 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
     return { p, a, e };
   };
 
+  if (!hasLoaded) {
+    if (loadError) {
+      return (
+        <div
+          role="alert"
+          className="abyan-tokens flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--error-300)] bg-[var(--error-100)] p-4 text-sm text-[var(--error-700)]"
+        >
+          <span>Could not load attendance records: {loadError}</span>
+          <button
+            type="button"
+            onClick={() => void loadAttendanceData('initial')}
+            className="btn btn-sm btn-secondary"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return (
+      <p role="status" className="abyan-tokens p-4 text-sm text-[var(--neutral-500)]">
+        Loading attendance…
+      </p>
+    );
+  }
+
   return (
-    <div className="abyan-table-wrap">
+    <div className="abyan-tokens space-y-3">
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => void loadAttendanceData('refresh')}
+          disabled={loading}
+          className="btn btn-sm btn-secondary"
+        >
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+
+      {loadError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--warning-300)] bg-[var(--warning-100)] p-3 text-sm text-[var(--warning-700)]"
+        >
+          <span>Showing stale attendance data — refresh failed ({loadError}). Editing is disabled until refreshed.</span>
+          <button
+            type="button"
+            onClick={() => void loadAttendanceData('refresh')}
+            disabled={loading}
+            className="btn btn-sm btn-secondary"
+          >
+            Retry refresh
+          </button>
+        </div>
+      )}
+
+      {mutationError && !excuse && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--error-300)] bg-[var(--error-100)] p-3 text-sm text-[var(--error-700)]"
+        >
+          <span>{mutationError}</span>
+          <button
+            type="button"
+            onClick={() => setMutationError(null)}
+            className="btn btn-sm btn-secondary"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div className="abyan-table-wrap">
       <table className="abyan-table w-full text-left">
         <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
           <tr>
@@ -185,7 +329,7 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
                               <button
                                 key={s}
                                 type="button"
-                                disabled={cellBusy}
+                                disabled={cellBusy || staleBlocked}
                                 onClick={() => clickStatus(att.enrollmentId, d.key, half, s)}
                                 title={
                                   s === 'Excused' && active && cell.note
@@ -204,9 +348,10 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
                           {cell.status === 'Excused' && cell.note && (
                             <button
                               type="button"
+                              disabled={staleBlocked}
                               onClick={() => clickStatus(att.enrollmentId, d.key, half, 'Excused')}
                               title="View excuse note"
-                              className="text-amber-500 hover:text-amber-600"
+                              className="text-amber-500 hover:text-amber-600 disabled:opacity-50"
                             >
                               <Info className="h-3 w-3" />
                             </button>
@@ -226,11 +371,12 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
           })}
         </tbody>
       </table>
+      </div>
 
       {/* Excuse note popup */}
       <Modal
         open={Boolean(excuse)}
-        onClose={() => setExcuse(null)}
+        onClose={() => { setExcuse(null); setMutationError(null); }}
         size="sm"
         title="Excuse note"
         subtitle={excuse ? `${excuse.attendee} · ${excuse.dayLabel}` : undefined}
@@ -239,17 +385,30 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
             {cellOf(excuse.enrollmentId, excuse.dayKey, excuse.session).status === 'Excused' && (
               <button
                 type="button"
-                onClick={() => { void commit(excuse.enrollmentId, excuse.dayKey, excuse.session, null); setExcuse(null); }}
+                disabled={staleBlocked || busy !== null}
+                onClick={async () => {
+                  const ok = await commit(excuse.enrollmentId, excuse.dayKey, excuse.session, null);
+                  if (ok) setExcuse(null);
+                }}
                 className="btn btn-md btn-secondary mr-auto"
               >
                 Clear
               </button>
             )}
-            <button type="button" onClick={() => setExcuse(null)} className="btn btn-md btn-secondary">Cancel</button>
             <button
               type="button"
-              disabled={!excuse.note.trim()}
-              onClick={() => { void commit(excuse.enrollmentId, excuse.dayKey, excuse.session, 'Excused', excuse.note); setExcuse(null); }}
+              onClick={() => { setExcuse(null); setMutationError(null); }}
+              className="btn btn-md btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={staleBlocked || busy !== null || !excuse.note.trim()}
+              onClick={async () => {
+                const ok = await commit(excuse.enrollmentId, excuse.dayKey, excuse.session, 'Excused', excuse.note);
+                if (ok) setExcuse(null);
+              }}
               className="btn btn-md btn-primary"
             >
               Save Excuse
@@ -258,19 +417,29 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
         )}
       >
         {excuse && (
-          <>
-            <label htmlFor="excuse-note" className="mb-1.5 block text-[13px] font-medium text-[var(--neutral-800)]">
-              Reason for the excused absence <span className="text-[var(--error-500)]">*</span>
-            </label>
-            <textarea
-              id="excuse-note"
-              rows={3}
-              value={excuse.note}
-              onChange={(e) => setExcuse({ ...excuse, note: e.target.value })}
-              placeholder="e.g. Medical appointment, with certificate"
-              className="w-full rounded-lg border border-[var(--neutral-200)] p-2.5 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-[3px] focus:ring-[rgba(54,62,232,.15)]"
-            />
-          </>
+          <div className="space-y-3">
+            {mutationError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-[var(--error-300)] bg-[var(--error-100)] p-2.5 text-sm text-[var(--error-700)]"
+              >
+                {mutationError}
+              </div>
+            )}
+            <div>
+              <label htmlFor="excuse-note" className="mb-1.5 block text-[13px] font-medium text-[var(--neutral-800)]">
+                Reason for the excused absence <span className="text-[var(--error-500)]">*</span>
+              </label>
+              <textarea
+                id="excuse-note"
+                rows={3}
+                value={excuse.note}
+                onChange={(e) => setExcuse({ ...excuse, note: e.target.value })}
+                placeholder="e.g. Medical appointment, with certificate"
+                className="w-full rounded-lg border border-[var(--neutral-200)] p-2.5 text-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-[3px] focus:ring-[rgba(54,62,232,.15)]"
+              />
+            </div>
+          </div>
         )}
       </Modal>
     </div>

@@ -143,28 +143,38 @@ export async function listTrainingArchive(office?: string | null): Promise<Archi
     .order('from_date', { ascending: false });
   if (error) {
     console.error('Error loading training archive:', error);
-    return [];
+    throw new Error(error.message || 'Could not load training archive.');
   }
   const rows = (trainings ?? []) as any[];
   if (!rows.length) return [];
 
-  const trainingIds = rows.map((r) => String(r.id));
-
-  const [{ data: emps }, competencyByTraining, attendanceByTraining] = await Promise.all([
-    supabase
-      .from('employees')
-      .select('id, employee_number, first_name, middle_name, last_name, position, department, date_hired, status')
-      .in('id', [...new Set(rows.map((r) => String(r.employee_id)).filter(Boolean))]),
-    loadCompetencyTags(trainingIds),
-    loadAttendancePercents(rows),
-  ]);
+  const { data: emps, error: empErr } = await supabase
+    .from('employees')
+    .select('id, employee_number, first_name, middle_name, last_name, position, department, date_hired, status')
+    .in('id', [...new Set(rows.map((r) => String(r.employee_id)).filter(Boolean))]);
+  if (empErr) {
+    console.error('Error loading archive employees:', empErr);
+    throw new Error(empErr.message || 'Could not load employees for training archive.');
+  }
   const empById = new Map<string, any>((emps ?? []).map((e: any) => [String(e.id), e]));
 
-  const byEmployee = new Map<string, ArchiveEmployee>();
-  for (const r of rows) {
+  const scopedRows = rows.filter((r) => {
     const e = empById.get(String(r.employee_id));
-    if (!e) continue; // orphaned training row — skip rather than show "unknown"
-    if (office && String(e.department ?? '') !== office) continue;
+    if (!e) return false;
+    return !office || String(e.department ?? '') === office;
+  });
+  if (!scopedRows.length) return [];
+
+  const trainingIds = scopedRows.map((r) => String(r.id));
+  const [competencyByTraining, attendanceByTraining] = await Promise.all([
+    loadCompetencyTags(trainingIds),
+    loadAttendancePercents(scopedRows),
+  ]);
+
+  const byEmployee = new Map<string, ArchiveEmployee>();
+  for (const r of scopedRows) {
+    const e = empById.get(String(r.employee_id));
+    if (!e) continue;
     const key = String(r.employee_id);
     if (!byEmployee.has(key)) {
       byEmployee.set(key, {
@@ -207,7 +217,7 @@ async function loadCompetencyTags(trainingIds: string[]): Promise<Map<string, st
     .in('employee_training_id', trainingIds);
   if (error) {
     console.error('Error loading training competency tags:', error);
-    return byTraining;
+    throw new Error(error.message || 'Could not load training competency tags.');
   }
   for (const row of (data ?? []) as any[]) {
     const id = String(row.employee_training_id);
@@ -272,17 +282,29 @@ export type ArchiveOffice = {
  * it is no longer active, so history never disappears.
  */
 export async function listArchiveOfficeDirectory(): Promise<ArchiveOffice[]> {
-  const [{ data: depts }, { data: trainings }] = await Promise.all([
+  const [{ data: depts, error: deptErr }, { data: trainings, error: trainErr }] = await Promise.all([
     supabase.from('departments').select('name, is_active').is(DIVISION_PARENT_COLUMN, null),
     supabase.from('employee_training').select('employee_id, from_date'),
   ]);
+  if (deptErr) {
+    console.error('Error loading archive departments:', deptErr);
+    throw new Error(deptErr.message || 'Could not load archive departments.');
+  }
+  if (trainErr) {
+    console.error('Error loading archive trainings directory:', trainErr);
+    throw new Error(trainErr.message || 'Could not load archive training records.');
+  }
   const activeOffices = (depts ?? []).filter((d: any) => d.is_active).map((d: any) => String(d.name));
 
   const rows = (trainings ?? []) as any[];
   const empIds = [...new Set(rows.map((t) => String(t.employee_id)).filter(Boolean))];
-  const { data: emps } = empIds.length
+  const { data: emps, error: empErr } = empIds.length
     ? await supabase.from('employees').select('id, department').in('id', empIds)
-    : { data: [] as any[] };
+    : { data: [] as any[], error: null };
+  if (empErr) {
+    console.error('Error loading archive employee offices:', empErr);
+    throw new Error(empErr.message || 'Could not load archive employee offices.');
+  }
   const deptByEmp = new Map<string, string>((emps ?? []).map((e: any) => [String(e.id), String(e.department ?? '')]));
 
   const agg = new Map<string, { emps: Set<string>; count: number; latest: string | null }>();
