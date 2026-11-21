@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ABYAN HRIS — /apply Qualifications (Option B: Compact Collapsible List)</title>
+  <style>
+    body { margin: 0; padding: 24px; background: #F1F5F9; font-family: Poppins, system-ui, -apple-system, 'Segoe UI', sans-serif; color: #28343D; }
+    .wrap { max-width: 960px; margin: 0 auto; display: grid; gap: 24px; }
+    .card { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 24px; }
+    .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .head-left { display: flex; align-items: center; gap: 12px; }
+    .chip { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: #EEF0FF; color: #363EE8; font-weight: 700; font-size: 13px; }
+    .title { color: #040E6B; font-weight: 600; font-size: 18px; line-height: 24px; margin: 0; }
+    .sub { color: #515F69; font-size: 13px; margin: 2px 0 0; }
+    .pill { background: #E0E5FF; color: #191FA8; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 999px; }
+    .collapsed { border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; background: #F8FAFC; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .collapsed-title { color: #040E6B; font-weight: 600; font-size: 14px; }
+    .collapsed-meta { color: #515F69; font-size: 13px; margin-top: 2px; }
+    .actions { display: flex; gap: 12px; font-size: 13px; font-weight: 600; flex-shrink: 0; }
+    .act-edit { color: #363EE8; }
+    .act-remove { color: #B42323; }
+    .expanded { border: 1.5px solid #363EE8; border-radius: 10px; padding: 16px; margin-bottom: 14px; background: #FFFFFF; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px; }
+    .label { font-size: 13px; color: #28343D; font-weight: 500; margin-bottom: 6px; }
+    .req { color: #E05252; }
+    .input { border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #28343D; background: #FFFFFF; }
+    .checks { display: flex; gap: 20px; margin-bottom: 14px; font-size: 13px; color: #28343D; }
+    .btn-outline { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #363EE8; color: #363EE8; background: #FFFFFF; font-weight: 600; font-size: 14px; padding: 10px 18px; border-radius: 999px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Page 3: Educational background -->
+    <section class="card">
+      <div class="head">
+        <div class="head-left">
+          <span class="chip">ED</span>
+          <div>
+            <h2 class="title">Page 3 — Educational background</h2>
+            <p class="sub">Exposes School / Institution so hire completion seeds PDS Section III.</p>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;gap:14px;max-width:560px;">
+        <div>
+          <div class="label">Highest Educational Attainment</div>
+          <div class="input">College Graduate</div>
+        </div>
+        <div>
+          <div class="label">Degree / Course</div>
+          <div class="input">Bachelor of Science in Public Administration</div>
+        </div>
+        <div>
+          <div class="label">School / Institution <span class="req">*</span></div>
+          <div class="input" style="border:1.5px solid #363EE8;background:#FAFBFF;">West Visayas State University</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Page 4: Relevant work experience (Option B — Compact Collapsible List) -->
+    <section class="card">
+      <div class="head">
+        <div class="head-left">
+          <span class="chip">WE</span>
+          <div>
+            <h2 class="title">Page 4 — Relevant work experience (Option B)</h2>
+            <p class="sub">Optional for fresh graduates · Syncs directly to PDS Section V if hired</p>
+          </div>
+        </div>
+        <span class="pill">Total: 4 yrs 7 mos</span>
+      </div>
+
+      <div class="collapsed">
+        <div>
+          <div class="collapsed-title">Administrative Aide IV · City Government of Iloilo</div>
+          <div class="collapsed-meta">Mar 2024 – Present · Government service</div>
+        </div>
+        <div class="actions">
+          <span class="act-edit">Edit</span>
+          <span class="act-remove">Remove</span>
+        </div>
+      </div>
+
+      <div class="expanded">
+        <div class="head" style="margin-bottom:12px;">
+          <span style="color:#363EE8;font-weight:600;font-size:13px;">Editing Entry 2</span>
+          <span class="act-edit" style="font-size:13px;font-weight:600;">Done</span>
+        </div>
+        <div class="grid2">
+          <div>
+            <div class="label">Date From <span class="req">*</span></div>
+            <div class="input">2022-04-01</div>
+          </div>
+          <div>
+            <div class="label">Date To <span class="req">*</span></div>
+            <div class="input">2024-02-28</div>
+          </div>
+        </div>
+        <div class="checks">
+          <span>&#9744; Currently employed here</span>
+          <span>&#9745; Government service</span>
+        </div>
+        <div class="grid2">
+          <div>
+            <div class="label">Position Held <span class="req">*</span></div>
+            <div class="input">Records Clerk</div>
+          </div>
+          <div>
+            <div class="label">Company / Organization <span class="req">*</span></div>
+            <div class="input">Iloilo Provincial Capitol</div>
+          </div>
+        </div>
+        <div>
+          <div class="label">Description of Duties <span class="req">*</span></div>
+          <div class="input" style="color:#515F69;">Encoded incoming correspondence and maintained filing index.</div>
+        </div>
+      </div>
+
+      <span class="btn-outline">+ Add work experience</span>
+    </section>
+  </div>
+</body>
+</html>
