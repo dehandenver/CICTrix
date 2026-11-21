@@ -1,3 +1,11 @@
+---
+title: Applicant-to-PDS Qualification Carryover Summary
+date: 2026-11-22
+status: Done
+summary: Shipped migration PR #112 (2e8b15c) and frontend PR #113 (30e4539) to dehandenver/CICTrix main; migration 20261121163818 applied on fyzdfgxaaowjzbjpwrii (135 total) and Vercel Production deployed cleanly (7968751350).
+plan: 2026-11-21-applicant-to-pds-carryover.md
+---
+
 # Applicant-to-PDS Qualification Carryover
 
 **Plan:** `docs/plans/2026-11-21-applicant-to-pds-carryover.md`
@@ -30,3 +38,8 @@
 - Python hiring tests (`backend/test_external_hiring.py`, `backend/test_promotional_hiring.py`): `30` tests passed (`OK`).
 - `DESIGN_IDENTITY.md` §16 UI checklist: passed on all touched UI components.
 - Note on `npm run build`: `tsc` passed and Vite transformed 3,157 modules cleanly before hitting a local Windows Defender `%TEMP%` unlink lock on `esbuild` temp cleanup (`Access is denied`).
+
+## Production Rollout Closure (2026-11-22)
+
+- **PR #112 (`2e8b15c`):** Merged `20261121163818_applicant_pds_carryover.sql` to `dehandenver/CICTrix` `main`; applied cleanly on `fyzdfgxaaowjzbjpwrii` (`135` total migrations) and Vercel Production (`7968711677`) succeeded.
+- **PR #113 (`30e4539`):** Merged `/apply` Option B UI, validation, prefill, Interviewer view, and smoke/unit coverage to `dehandenver/CICTrix` `main`; Vercel Production (`7968751350`) succeeded (`https://abyan-hris-iloilo-70det9188-dehandenvers-projects.vercel.app`).
