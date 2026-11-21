@@ -1,23 +1,17 @@
 /**
  * Succession → Eligibility Points.
  *
- * Sets what each eligibility type contributes to a candidate's Eligibility
- * score, and the raw total that earns the full 15% weight. The succession
- * specification (§D) puts those numbers in the administrator's hands rather
- * than in the code, which is the only reason this screen exists.
- *
- * Built to the shape of OfficeWeightingPanel — the other "admin edits the
- * weights" surface — so the two read as one system: icon header, consequence
- * notice, then a bordered table edited in place.
+ * Manages the recognized civil service and professional eligibility catalog
+ * and shows the fixed V2 scoring tiers (0 / 7.5 / 15 pts out of the 15%
+ * Eligibility weight).
  */
 
-import { failureText } from '../lib/friendlyErrors';
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Award, Check, Plus, Trash2 } from 'lucide-react';
+import { Award, Check, Info, Plus, Trash2 } from 'lucide-react';
+import { failureText } from '../lib/friendlyErrors';
 import {
   deleteEligibilityType,
   listEligibilityTypes,
-  setPointsForFullMarks,
   upsertEligibilityType,
   type EligibilityType,
 } from '../lib/api/eligibilityTypes';
@@ -25,15 +19,32 @@ import {
 /** How long a "Saved" tick stays up before fading, in ms. */
 const SAVED_FLASH_MS = 2000;
 
+const V2_ELIGIBILITY_TIERS = [
+  {
+    label: '0 Recognized Eligibilities',
+    points: '0.0 / 15 pts',
+    description: 'No recognized, position-relevant, unexpired credentials on file.',
+  },
+  {
+    label: '1 Recognized Eligibility',
+    points: '7.5 / 15 pts',
+    description: 'One distinct recognized, position-relevant, unexpired credential.',
+  },
+  {
+    label: '2+ Distinct Recognized Eligibilities',
+    points: '15.0 / 15 pts',
+    description: 'Two or more distinct recognized, position-relevant, unexpired credentials.',
+  },
+] as const;
+
 export const EligibilityPointsPanel = () => {
   const [types, setTypes] = useState<EligibilityType[]>([]);
-  const [cap, setCap] = useState('100');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
-  // Which add/remove/cap write is in flight; blocks a second click from sending another.
+  // Which add/remove write is in flight; blocks a second click from sending another.
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -45,7 +56,6 @@ export const EligibilityPointsPanel = () => {
       return;
     }
     setTypes(res.data);
-    if (res.data.length > 0) setCap(String(res.data[0].pointsForFullMarks));
     setError(null);
     setLoading(false);
   }, []);
@@ -63,7 +73,7 @@ export const EligibilityPointsPanel = () => {
     const res = await upsertEligibilityType({
       id: t.id,
       name: patch.name ?? t.name,
-      points: patch.points ?? t.points,
+      points: t.points,
       pointsForFullMarks: t.pointsForFullMarks,
       isActive: patch.isActive ?? t.isActive,
       sortOrder: t.sortOrder,
@@ -77,20 +87,6 @@ export const EligibilityPointsPanel = () => {
     flashSaved(t.id);
   };
 
-  const saveCap = async () => {
-    if (busyAction) return;
-    const value = Number(cap);
-    setError(null);
-    setBusyAction('cap');
-    const res = await setPointsForFullMarks(value);
-    setBusyAction(null);
-    if (res.ok === false) {
-      setError(failureText('save the points for full marks', res.error));
-      return;
-    }
-    setTypes((prev) => prev.map((t) => ({ ...t, pointsForFullMarks: value })));
-  };
-
   const addType = async () => {
     const name = newName.trim();
     if (!name || busyAction) return;
@@ -98,8 +94,6 @@ export const EligibilityPointsPanel = () => {
     setBusyAction('add');
     const res = await upsertEligibilityType({
       name,
-      points: 0,
-      pointsForFullMarks: Number(cap) || 100,
       isActive: true,
       sortOrder: types.length + 1,
     });
@@ -113,9 +107,8 @@ export const EligibilityPointsPanel = () => {
   };
 
   const removeType = async (t: EligibilityType) => {
-    // Deleting a type does not delete anybody's eligibility record; those keep
-    // their text and simply stop scoring, which the breakdown reports as "no
-    // points configured". Said here so the action does not read as destructive.
+    // Deleting a type does not delete employee eligibility records; those keep
+    // their credential text and are treated as unrecognized (0 pts).
     if (busyAction) return;
     setError(null);
     setBusyAction(`remove:${t.id}`);
@@ -130,139 +123,134 @@ export const EligibilityPointsPanel = () => {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2.5">
-        <Award className="h-6 w-6 text-blue-600" />
+      <div className="flex items-center gap-3">
+        <Award className="h-6 w-6 shrink-0 text-blue-600" strokeWidth={1.75} />
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Eligibility Points</h2>
           <p className="text-sm text-slate-500">
-            What each eligibility contributes to a candidate&rsquo;s Eligibility score in succession ranking
+            Manage recognized civil service and professional eligibilities and review the V2 scoring tiers
           </p>
         </div>
       </div>
 
-      <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-        <p className="text-xs text-amber-800">
-          Changing these re-ranks every succession candidate. An employee&rsquo;s points are the sum across all
-          their valid eligibilities, capped at the full-marks total below, then scaled to the 15% Eligibility
-          weight. The seeded values are placeholders — set them deliberately before relying on a ranking.
+      <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" strokeWidth={1.75} />
+        <p className="text-sm text-slate-700">
+          In Reviewed Scoring (V2), eligibility contributes 15% of a candidate&rsquo;s total score using fixed tiers
+          based on distinct recognized, position-relevant, unexpired credentials (0 valid = 0 / 15 pts, 1 valid =
+          7.5 / 15 pts, 2 or more distinct valid = 15 / 15 pts). Toggling a type inactive or removing it marks that
+          credential unrecognized (0 pts) without deleting employee records.
         </p>
       </div>
 
+      <section aria-label="V2 fixed scoring tiers" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {V2_ELIGIBILITY_TIERS.map((tier) => (
+          <div key={tier.label} className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-xs font-medium text-slate-500">{tier.label}</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{tier.points}</p>
+            <p className="mt-1 text-xs text-slate-600">{tier.description}</p>
+          </div>
+        ))}
+      </section>
+
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-400">Loading eligibility points…</p>
+        <p className="text-sm text-slate-500">Loading eligibility types…</p>
       ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3.5">
-            <label htmlFor="elig-cap" className="text-sm font-semibold text-slate-900">
-              Points for full marks
-            </label>
-            <input
-              id="elig-cap"
-              type="number"
-              min={1}
-              value={cap}
-              onChange={(e) => setCap(e.target.value)}
-              onBlur={() => void saveCap()}
-              className="w-24 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <p className="text-xs text-slate-500">
-              The raw total that earns the whole 15%. This is the cap that stops a long list of minor
-              credentials reaching full marks.
-            </p>
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <th scope="col" className="px-4 py-2.5 text-xs font-semibold text-slate-900">
+                    Eligibility type
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 text-xs font-semibold text-slate-900">
+                    Recognized (Active)
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 text-right text-xs font-semibold text-slate-900">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {types.map((t) => (
+                  <tr key={t.id}>
+                    <td className="px-4 py-3">
+                      <span className={`text-sm font-semibold ${t.isActive ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {t.name}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={t.isActive}
+                          aria-label={`${t.name} is recognized (active)`}
+                          disabled={savingId === t.id}
+                          onChange={(e) => void saveType(t, { isActive: e.target.checked })}
+                          className="h-[18px] w-[18px] cursor-pointer"
+                        />
+                        {savingId === t.id && <span className="text-xs text-slate-500">Saving…</span>}
+                        {savedId === t.id && (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                            <Check className="h-3.5 w-3.5" strokeWidth={1.75} /> Saved
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => void removeType(t)}
+                        disabled={busyAction !== null}
+                        aria-busy={busyAction === `remove:${t.id}` || undefined}
+                        aria-label={`Remove ${t.name}`}
+                        title="Remove this type. Employee records keep their eligibility; it becomes unrecognized (0 pts)."
+                        className="btn btn-secondary btn-sm"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} /> Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {types.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-6 text-center text-sm text-slate-500">
+                      No recognized eligibility types configured. Every employee eligibility on record will be marked
+                      unrecognized (0 pts) until one is added.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <div className="grid grid-cols-12 border-b border-slate-100 bg-slate-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              <div className="col-span-6">Eligibility type</div>
-              <div className="col-span-2">Points</div>
-              <div className="col-span-2">Active</div>
-              <div className="col-span-2 text-right">Actions</div>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {types.map((t) => (
-                <div key={t.id} className="grid grid-cols-12 items-center px-5 py-3.5">
-                  <div className="col-span-6 min-w-0">
-                    <span className={`truncate text-sm font-semibold ${t.isActive ? 'text-slate-900' : 'text-slate-400'}`}>
-                      {t.name}
-                    </span>
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      type="number"
-                      min={0}
-                      defaultValue={t.points}
-                      aria-label={`Points for ${t.name}`}
-                      disabled={savingId === t.id}
-                      onBlur={(e) => {
-                        const next = Number(e.target.value);
-                        if (Number.isFinite(next) && next !== t.points) void saveType(t, { points: next });
-                      }}
-                      className="w-20 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-                    />
-                  </div>
-                  <div className="col-span-2 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={t.isActive}
-                      aria-label={`${t.name} is active`}
-                      disabled={savingId === t.id}
-                      onChange={(e) => void saveType(t, { isActive: e.target.checked })}
-                      className="h-4 w-4"
-                    />
-                    {savingId === t.id && <span className="text-xs text-slate-400">Saving…</span>}
-                    {savedId === t.id && (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                        <Check className="h-3.5 w-3.5" /> Saved
-                      </span>
-                    )}
-                  </div>
-                  <div className="col-span-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => void removeType(t)}
-                      disabled={busyAction !== null}
-                      aria-busy={busyAction === `remove:${t.id}` || undefined}
-                      aria-label={`Remove ${t.name}`}
-                      title="Remove this type. Employee records keep their eligibility; it stops scoring."
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {types.length === 0 && (
-                <p className="px-5 py-6 text-center text-sm text-slate-400">
-                  No eligibility types configured. Every eligibility on record will score zero until one is added.
-                </p>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') void addType(); }}
-                placeholder="Add an eligibility type…"
-                aria-label="New eligibility type name"
-                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <button
-                type="button"
-                onClick={() => void addType()}
-                disabled={!newName.trim() || busyAction !== null}
-                aria-busy={busyAction === 'add' || undefined}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[#363EE8] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#191FA8] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Plus className="h-4 w-4" /> Add type
-              </button>
-            </div>
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3">
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void addType(); }}
+              placeholder="Add an eligibility type…"
+              aria-label="New eligibility type name"
+              className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800"
+            />
+            <button
+              type="button"
+              onClick={() => void addType()}
+              disabled={!newName.trim() || busyAction !== null}
+              aria-busy={busyAction === 'add' || undefined}
+              className="btn btn-primary btn-md"
+            >
+              <Plus className="h-4 w-4" strokeWidth={1.75} /> Add type
+            </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

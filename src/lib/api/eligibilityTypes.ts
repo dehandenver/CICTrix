@@ -1,13 +1,11 @@
 /**
- * Eligibility types and the points each one contributes (succession spec §D).
+ * Recognized eligibility types for V2 succession scoring.
  *
- * The spec puts the points in the administrator's hands: "the RSP/HR
- * administrator should be able to configure the points assigned to each
- * eligibility type". So the scale lives in `eligibility_types`, not in code,
- * and this module is the only way in and out of it.
- *
- * Scoring itself is in successionCriteria.ts, which takes the configuration as
- * an argument. That keeps the rules testable without a database.
+ * In Reviewed Scoring (V2), eligibility uses fixed tiers (0 / 7.5 / 15 pts)
+ * based on distinct recognized, position-relevant, unexpired credentials.
+ * This module manages the `eligibility_types` catalog while keeping legacy
+ * numeric columns defaulted so the existing DB schema stays satisfied without
+ * a migration.
  */
 
 import { supabase as supabaseClient } from '../supabase';
@@ -52,26 +50,26 @@ export async function listEligibilityTypes(): Promise<Result<EligibilityType[]>>
 export async function upsertEligibilityType(input: {
   id?: string;
   name: string;
-  points: number;
-  pointsForFullMarks: number;
+  points?: number;
+  pointsForFullMarks?: number;
   isActive: boolean;
   sortOrder: number;
 }): Promise<Result<EligibilityType>> {
   const name = input.name.trim();
   if (!name) return { ok: false, error: 'A type needs a name.' };
-  if (!Number.isFinite(input.points) || input.points < 0) {
+  const points = input.points ?? 0;
+  const pointsForFullMarks = input.pointsForFullMarks ?? 100;
+  if (!Number.isFinite(points) || points < 0) {
     return { ok: false, error: 'Points must be zero or more.' };
   }
-  if (!Number.isFinite(input.pointsForFullMarks) || input.pointsForFullMarks <= 0) {
-    // A cap of zero would divide by zero in the scorer and make every
-    // candidate's eligibility score meaningless rather than merely wrong.
+  if (!Number.isFinite(pointsForFullMarks) || pointsForFullMarks <= 0) {
     return { ok: false, error: 'Points for full marks must be greater than zero.' };
   }
 
   const payload = {
     name,
-    points: input.points,
-    points_for_full_marks: input.pointsForFullMarks,
+    points,
+    points_for_full_marks: pointsForFullMarks,
     is_active: input.isActive,
     sort_order: input.sortOrder,
   };
@@ -90,27 +88,6 @@ export async function upsertEligibilityType(input: {
     const { data, error } = await supabase.from('eligibility_types').insert([payload]).select().single();
     if (error) return { ok: false, error: error.message ?? 'Failed to add the type.' };
     return { ok: true, data: fromRow(data) };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-/**
- * The cap applies to every row, so changing it means changing all of them.
- * Writing it per row keeps the configuration in one table instead of adding a
- * single-row settings table beside it.
- */
-export async function setPointsForFullMarks(value: number): Promise<Result<number>> {
-  if (!Number.isFinite(value) || value <= 0) {
-    return { ok: false, error: 'Points for full marks must be greater than zero.' };
-  }
-  try {
-    const { error } = await supabase
-      .from('eligibility_types')
-      .update({ points_for_full_marks: value })
-      .not('id', 'is', null);
-    if (error) return { ok: false, error: error.message ?? 'Failed to save the cap.' };
-    return { ok: true, data: value };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
