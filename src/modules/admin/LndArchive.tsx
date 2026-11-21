@@ -12,7 +12,7 @@ import { useBackClosesView } from '../../hooks/useHistoryBack';
  */
 
 import { Archive, Building2, CalendarClock, ChevronRight, ExternalLink, FileText, Search } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BackButton } from '../../components/BackButton';
 import { EmptyState } from '../../components/EmptyState';
@@ -39,11 +39,14 @@ export const LndArchive = ({
 }) => {
   const [offices, setOffices] = useState<ArchiveOffice[]>([]);
   const [loadingOffices, setLoadingOffices] = useState(true);
+  const [officesError, setOfficesError] = useState<string | null>(null);
   const showOfficesLoader = useDelayedLoading(loadingOffices);
   const [selectedOffice, setSelectedOffice] = useState<string | null>(initialOffice);
   useBackClosesView(selectedOffice !== null, () => setSelectedOffice(null), 'lnd-archive-office');
   const [employees, setEmployees] = useState<ArchiveEmployee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [employeesError, setEmployeesError] = useState<string | null>(null);
+  const [employeesRefreshError, setEmployeesRefreshError] = useState<string | null>(null);
   const showEmployeesLoader = useDelayedLoading(loadingEmployees);
 
   const [officeSearch, setOfficeSearch] = useState('');
@@ -51,36 +54,83 @@ export const LndArchive = ({
   const [empSearch, setEmpSearch] = useState('');
   const [competencyFilter, setCompetencyFilter] = useState<string>('');
   const focusRef = useRef<HTMLDivElement | null>(null);
+  const officesGenRef = useRef(0);
+  const employeesGenRef = useRef(0);
+  const selectedOfficeRef = useRef<string | null>(selectedOffice);
+  selectedOfficeRef.current = selectedOffice;
   const navigate = useNavigate();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  const loadOffices = useCallback(async () => {
+    const gen = ++officesGenRef.current;
+    setLoadingOffices(true);
+    setOfficesError(null);
+    try {
       const data = await listArchiveOfficeDirectory();
-      if (!cancelled) {
-        setOffices(data);
-        setLoadingOffices(false);
+      if (gen !== officesGenRef.current) return;
+      setOffices(data);
+    } catch (err) {
+      if (gen !== officesGenRef.current) return;
+      setOfficesError(err instanceof Error && err.message ? err.message : 'Could not load archive offices.');
+    } finally {
+      if (gen === officesGenRef.current) setLoadingOffices(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOffices();
+    return () => {
+      officesGenRef.current += 1;
+    };
+  }, [loadOffices]);
+
+  const loadEmployees = useCallback(async (office: string, mode: 'initial' | 'refresh') => {
+    const gen = ++employeesGenRef.current;
+    setLoadingEmployees(true);
+    if (mode === 'initial') {
+      setEmployees([]);
+      setEmployeesError(null);
+      setEmployeesRefreshError(null);
+    } else {
+      setEmployeesRefreshError(null);
+    }
+    try {
+      const data = await listTrainingArchive(office);
+      if (gen !== employeesGenRef.current || selectedOfficeRef.current !== office) return;
+      setEmployees(data);
+      setEmployeesError(null);
+      setEmployeesRefreshError(null);
+    } catch (err) {
+      if (gen !== employeesGenRef.current || selectedOfficeRef.current !== office) return;
+      const msg = err instanceof Error && err.message ? err.message : 'Could not load training records.';
+      if (mode === 'refresh') {
+        setEmployeesRefreshError(msg);
+      } else {
+        setEmployees([]);
+        setEmployeesError(msg);
       }
-    })();
-    return () => { cancelled = true; };
+    } finally {
+      if (gen === employeesGenRef.current) setLoadingEmployees(false);
+    }
   }, []);
 
   // Load an office's employees whenever one is selected (incl. via deep-link).
   useEffect(() => {
-    if (!selectedOffice) return;
-    let cancelled = false;
-    setLoadingEmployees(true);
+    selectedOfficeRef.current = selectedOffice;
+    employeesGenRef.current += 1;
+    setEmployees([]);
+    setEmployeesError(null);
+    setEmployeesRefreshError(null);
+    if (!selectedOffice) {
+      setLoadingEmployees(false);
+      return;
+    }
     setEmpSearch('');
     setCompetencyFilter('');
-    (async () => {
-      const data = await listTrainingArchive(selectedOffice);
-      if (!cancelled) {
-        setEmployees(data);
-        setLoadingEmployees(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedOffice]);
+    void loadEmployees(selectedOffice, 'initial');
+    return () => {
+      employeesGenRef.current += 1;
+    };
+  }, [selectedOffice, loadEmployees]);
 
   // Scroll a deep-linked employee into view once their office's cards render.
   useEffect(() => {
@@ -145,7 +195,7 @@ export const LndArchive = ({
   );
 
   return (
-    <div className="space-y-6 p-8">
+    <div className="abyan-tokens space-y-6 p-8">
       <section>
         <p className="text-sm font-medium text-gray-500">
           <span className="text-blue-600">L&D</span> <span className="mx-1 text-gray-400">/</span> Archive
@@ -194,6 +244,16 @@ export const LndArchive = ({
           {loadingOffices || showOfficesLoader ? (
             <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white" aria-busy="true">
               <SkeletonList show={showOfficesLoader} label="Loading offices…" />
+            </div>
+          ) : officesError ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--error-300)] bg-[var(--error-100)] p-4 text-sm text-[var(--error-700)]"
+            >
+              <span>Could not load archive offices: {officesError}</span>
+              <button type="button" onClick={() => void loadOffices()} className="btn btn-sm btn-secondary">
+                Retry
+              </button>
             </div>
           ) : visibleOffices.length === 0 ? (
             <EmptyState icon={Archive} title="No offices" description="No offices match your search." />
@@ -248,6 +308,14 @@ export const LndArchive = ({
           <BackButton onBack={() => setSelectedOffice(null)} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => selectedOffice && void loadEmployees(selectedOffice, employees.length > 0 ? 'refresh' : 'initial')}
+                disabled={loadingEmployees}
+                className="btn btn-sm btn-secondary mr-auto"
+              >
+                {loadingEmployees ? 'Refreshing…' : 'Refresh'}
+              </button>
               <div className="relative max-w-sm flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
@@ -271,9 +339,40 @@ export const LndArchive = ({
             </div>
           </div>
 
-          {loadingEmployees ? (
+          {employeesRefreshError && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--warning-300)] bg-[var(--warning-100)] p-3 text-sm text-[var(--warning-700)]"
+            >
+              <span>Showing stale training records — refresh failed ({employeesRefreshError}).</span>
+              <button
+                type="button"
+                onClick={() => selectedOffice && void loadEmployees(selectedOffice, 'refresh')}
+                disabled={loadingEmployees}
+                className="btn btn-sm btn-secondary"
+              >
+                Retry refresh
+              </button>
+            </div>
+          )}
+
+          {loadingEmployees && employees.length === 0 ? (
             <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white" aria-busy="true">
               <SkeletonList show={showEmployeesLoader} label="Loading employees…" />
+            </div>
+          ) : employeesError ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--error-300)] bg-[var(--error-100)] p-4 text-sm text-[var(--error-700)]"
+            >
+              <span>Could not load training records for {selectedOffice}: {employeesError}</span>
+              <button
+                type="button"
+                onClick={() => selectedOffice && void loadEmployees(selectedOffice, 'initial')}
+                className="btn btn-sm btn-secondary"
+              >
+                Retry
+              </button>
             </div>
           ) : visibleEmployees.length === 0 ? (
             <EmptyState
