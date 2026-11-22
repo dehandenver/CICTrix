@@ -543,14 +543,14 @@ const SuccessionPlanTableView = () => {
                                       <table className="abyan-table is-compact w-full">
                                         <thead>
                                           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                            <th scope="col" className="is-center">Rank</th>
+                                            <th scope="col" className="is-center w-[1%]">Rank</th>
                                             <th scope="col" className="min-w-[170px]">Candidate / Present Position</th>
                                             {V2_CRITERIA_COLUMNS.map((c) => (
                                               <th
                                                 key={c.key}
                                                 scope="col"
                                                 aria-sort={ariaSortFor(pos.id, c.key)}
-                                                className="is-num"
+                                                className="is-num w-[1%]"
                                               >
                                                 <button
                                                   type="button"
@@ -571,7 +571,7 @@ const SuccessionPlanTableView = () => {
                                             <th
                                               scope="col"
                                               aria-sort={ariaSortFor(pos.id, 'total')}
-                                              className="is-num"
+                                              className="is-num w-[1%]"
                                             >
                                               <button
                                                 type="button"
@@ -585,7 +585,9 @@ const SuccessionPlanTableView = () => {
                                                 </span>
                                               </button>
                                             </th>
-                                            <th scope="col" className="is-action">Actions</th>
+                                            <th scope="col" className="is-action w-[1%]">
+                                              <span className="sr-only">Actions</span>
+                                            </th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -671,9 +673,10 @@ const SuccessionPlanTableView = () => {
                                                             },
                                                           })
                                                         }
-                                                        className="btn btn-sm btn-secondary whitespace-nowrap"
+                                                        className="btn btn-sm btn-secondary !h-auto !py-1.5 !px-3 !leading-tight !whitespace-normal !rounded-xl flex-col !gap-0 text-center"
                                                       >
-                                                        Review Evidence
+                                                        <span>Review</span>{' '}
+                                                        <span>Evidence</span>
                                                       </button>
                                                     </td>
                                                   </tr>
