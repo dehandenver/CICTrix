@@ -399,8 +399,14 @@ const SuccessionPlanTableView = () => {
       </p>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        <div className="abyan-table-wrap">
-          <table className="abyan-table w-full min-w-[21rem]">
+        <div className="abyan-table-wrap is-flush">
+          <table className="abyan-table w-full table-fixed min-w-[21rem]">
+            <colgroup>
+              <col className="w-[46%]" />
+              <col className="w-[18%]" />
+              <col className="w-[14%]" />
+              <col className="w-[22%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th scope="col" className={TH}>Department</th>
@@ -466,7 +472,7 @@ const SuccessionPlanTableView = () => {
 
                     {open && (
                       <tr className="last:border-0">
-                        <td colSpan={4} className="border-y-2 border-slate-300 bg-slate-100 px-5 py-5 shadow-inner">
+                        <td colSpan={4} className="border-y-2 border-slate-300 bg-slate-100 !px-4 !py-4 shadow-inner">
                           {loadingDept[dept.departmentId] && <SkeletonList show rows={3} label="Loading positions…" />}
                           {!loadingDept[dept.departmentId] && positionsFailed[dept.departmentId] && (
                             <p role="alert" className="text-sm font-medium text-[var(--error-700)]">
@@ -489,7 +495,7 @@ const SuccessionPlanTableView = () => {
                               <div
                                 key={pos.id}
                                 id={positionAnchor(pos.id)}
-                                className={`-mx-2 mb-5 rounded-xl px-2 py-1 transition-[background-color,box-shadow] duration-200 ease-out last:mb-0 ${
+                                className={`mb-5 rounded-xl px-1 py-1 transition-[background-color,box-shadow] duration-200 ease-out last:mb-0 ${
                                   highlighted === pos.id ? 'bg-[var(--color-primary-50)] ring-2 ring-[var(--color-primary)]' : ''
                                 }`}
                               >
@@ -534,43 +540,54 @@ const SuccessionPlanTableView = () => {
                                     )}
 
                                     <div className="abyan-table-wrap overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                                      <table className="abyan-table w-full min-w-[900px]">
+                                      <table className="abyan-table is-compact w-full">
                                         <thead>
                                           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                            <th scope="col" className="px-3 py-2.5 text-center">Rank</th>
-                                            <th scope="col" className="px-3 py-2.5">Candidate / Present Position</th>
+                                            <th scope="col" className="is-center w-[1%]">Rank</th>
+                                            <th scope="col" className="min-w-[170px]">Candidate / Present Position</th>
                                             {V2_CRITERIA_COLUMNS.map((c) => (
                                               <th
                                                 key={c.key}
                                                 scope="col"
                                                 aria-sort={ariaSortFor(pos.id, c.key)}
-                                                className="px-3 py-2.5 text-right"
+                                                className="is-num w-[1%]"
                                               >
                                                 <button
                                                   type="button"
                                                   onClick={() => toggleSort(pos.id, c.key)}
-                                                  className="font-semibold uppercase tracking-wide hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] rounded"
+                                                  className="inline-flex flex-col items-end font-semibold uppercase tracking-wide hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] rounded"
                                                   title={`Sort by ${c.label}`}
                                                 >
-                                                  {c.label} ({c.weight}%){sortIndicator(pos.id, c.key)}
+                                                  <span>
+                                                    {c.label}
+                                                    {sortIndicator(pos.id, c.key)}
+                                                  </span>{' '}
+                                                  <span className="text-[11px] font-medium text-[var(--neutral-600,#515F69)]">
+                                                    ({c.weight}%)
+                                                  </span>
                                                 </button>
                                               </th>
                                             ))}
                                             <th
                                               scope="col"
                                               aria-sort={ariaSortFor(pos.id, 'total')}
-                                              className="px-3 py-2.5 text-right"
+                                              className="is-num w-[1%]"
                                             >
                                               <button
                                                 type="button"
                                                 onClick={() => toggleSort(pos.id, 'total')}
-                                                className="font-bold uppercase tracking-wide text-slate-900 hover:text-[var(--color-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] rounded"
+                                                className="inline-flex flex-col items-end font-bold uppercase tracking-wide text-slate-900 hover:text-[var(--color-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] rounded"
                                                 title="Sort by total score"
                                               >
-                                                Total Score{sortIndicator(pos.id, 'total')}
+                                                <span>Total</span>{' '}
+                                                <span>
+                                                  Score{sortIndicator(pos.id, 'total')}
+                                                </span>
                                               </button>
                                             </th>
-                                            <th scope="col" className="px-3 py-2.5 text-right">Actions</th>
+                                            <th scope="col" className="is-action w-[1%]">
+                                              <span className="sr-only">Actions</span>
+                                            </th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -595,12 +612,12 @@ const SuccessionPlanTableView = () => {
                                               return (
                                                 <Fragment key={r.candidate.employeeId}>
                                                   <tr className={`align-top hover:bg-slate-50 ${detailOpen ? 'bg-slate-50' : ''}`}>
-                                                    <td className="px-3 py-2.5 text-center">
+                                                    <td className="is-center is-top">
                                                       <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-bold tabular-nums text-slate-700">
                                                         {r.rank}
                                                       </span>
                                                     </td>
-                                                    <td className="px-3 py-2.5">
+                                                    <td className="is-top">
                                                       <button
                                                         type="button"
                                                         onClick={() => toggleDetail(pos.id, r.candidate.employeeId)}
@@ -623,27 +640,27 @@ const SuccessionPlanTableView = () => {
                                                         {meta?.presentPosition ?? '—'}
                                                       </div>
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
+                                                    <td className="is-num is-top whitespace-nowrap text-sm text-slate-700">
                                                       {r.contributions.performance.toFixed(1)} / 30
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
+                                                    <td className="is-num is-top whitespace-nowrap text-sm text-slate-700">
                                                       {r.contributions.experience.toFixed(1)} / 20
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
+                                                    <td className="is-num is-top whitespace-nowrap text-sm text-slate-700">
                                                       {r.contributions.training.toFixed(1)} / 20
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
+                                                    <td className="is-num is-top whitespace-nowrap text-sm text-slate-700">
                                                       {r.contributions.education.toFixed(1)} / 15
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
+                                                    <td className="is-num is-top whitespace-nowrap text-sm text-slate-700">
                                                       {r.contributions.eligibility.toFixed(1)} / 15
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right text-sm tabular-nums">
+                                                    <td className="is-num is-top whitespace-nowrap text-sm">
                                                       <span className="font-bold text-slate-900">
                                                         {r.total.toFixed(1)} / 100
                                                       </span>
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right">
+                                                    <td className="is-action is-top">
                                                       <button
                                                         type="button"
                                                         onClick={() =>
@@ -656,9 +673,10 @@ const SuccessionPlanTableView = () => {
                                                             },
                                                           })
                                                         }
-                                                        className="btn btn-sm btn-secondary"
+                                                        className="btn btn-sm btn-secondary !h-auto !py-1.5 !px-3 !leading-tight !whitespace-normal !rounded-xl flex-col !gap-0 text-center"
                                                       >
-                                                        Review Evidence
+                                                        <span>Review</span>{' '}
+                                                        <span>Evidence</span>
                                                       </button>
                                                     </td>
                                                   </tr>
