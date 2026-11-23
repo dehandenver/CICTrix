@@ -5,6 +5,7 @@ import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Dialog } from '../../components/Dialog';
+import { useFeedback } from '../../components/action-feedback';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -73,6 +74,55 @@ type AppointmentType = 'original' | 'promotional';
 
 const SCORE_SETUP_STORAGE_KEY = 'cictrix_rsp_score_setup';
 const INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY = 'cictrix_interviewer_score_snapshot';
+const EVALUATION_DRAFT_STORAGE_PREFIX = 'cictrix_interviewer_eval_draft:';
+
+interface StoredEvaluationDraft {
+  evaluation: EvaluationData;
+  pcptScores: {
+    appearance: number;
+    voice: number;
+    personality: number;
+    alertness: number;
+    confidence: number;
+    composure: number;
+  };
+  activeTab: 'pcpt' | 'oral';
+  savedAt: string;
+}
+
+const draftStorageKey = (applicantId: string) =>
+  `${EVALUATION_DRAFT_STORAGE_PREFIX}${String(applicantId).trim()}`;
+
+const readEvaluationDraft = (applicantId?: string): StoredEvaluationDraft | null => {
+  if (!applicantId) return null;
+  try {
+    const raw = localStorage.getItem(draftStorageKey(applicantId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredEvaluationDraft>;
+    if (!parsed || typeof parsed !== 'object' || !parsed.evaluation || !parsed.pcptScores) return null;
+    return parsed as StoredEvaluationDraft;
+  } catch {
+    return null;
+  }
+};
+
+const writeEvaluationDraft = (applicantId: string, draft: StoredEvaluationDraft): boolean => {
+  try {
+    localStorage.setItem(draftStorageKey(applicantId), JSON.stringify(draft));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const clearEvaluationDraft = (applicantId?: string) => {
+  if (!applicantId) return;
+  try {
+    localStorage.removeItem(draftStorageKey(applicantId));
+  } catch {
+    // Ignore storage removal errors
+  }
+};
 
 /** Where a submitted evaluation moves the applicant. */
 const EVALUATED_STATUS = 'For Evaluation' as const;
@@ -171,12 +221,14 @@ export function EvaluationForm() {
   // Back returns to where the evaluation was opened from (the applicants list
   // or the dashboard), falling back to the dashboard on a direct visit.
   const goBack = useHistoryBack('/interviewer/dashboard');
+  const feedback = useFeedback();
   
   const [applicant, setApplicant] = useState<Applicant | null>(null);
   const [, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftRestoredAt, setDraftRestoredAt] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [statusOutcome, setStatusOutcome] = useState<StatusTransitionResult | null>(null);
   const [activeTab, setActiveTab] = useState<'pcpt' | 'oral'>('pcpt');
@@ -253,11 +305,78 @@ export function EvaluationForm() {
       setAppointmentType(type);
       // Original applicants → Oral only; Promotional → PCPT only
       setActiveTab(type === 'promotional' ? 'pcpt' : 'oral');
+
+      const draft = readEvaluationDraft(id);
+      if (draft) {
+        const { name, locked } = resolveInterviewerIdentity();
+        setEvaluation((prev) => ({
+          ...prev,
+          ...draft.evaluation,
+          interviewer_name: locked && name ? name : (draft.evaluation.interviewer_name || prev.interviewer_name),
+        }));
+        setPcptScores((prev) => ({ ...prev, ...draft.pcptScores }));
+        setDraftRestoredAt(draft.savedAt || new Date().toISOString());
+      } else {
+        setDraftRestoredAt(null);
+      }
+
       fetchApplicantData();
     }
     // Loader is re-created each render and is not an input; refetch only when the id changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const handleSaveDraft = () => {
+    if (!id) {
+      goBack();
+      return;
+    }
+    const savedAt = new Date().toISOString();
+    const ok = writeEvaluationDraft(id, {
+      evaluation,
+      pcptScores,
+      activeTab,
+      savedAt,
+    });
+    if (!ok) {
+      setError('Could not save your draft in this browser. Check storage settings and try again.');
+      return;
+    }
+    setError(null);
+    feedback.success('Draft saved', 'Your scores and notes will be restored when you return to this applicant.');
+    goBack();
+  };
+
+  const handleDiscardDraft = () => {
+    clearEvaluationDraft(id);
+    setDraftRestoredAt(null);
+    const { name } = resolveInterviewerIdentity();
+    setEvaluation({
+      interviewer_name: name || '',
+      communication_skills_score: 0,
+      confidence_score: 0,
+      comprehension_score: 0,
+      personality_score: 0,
+      job_knowledge_score: 0,
+      overall_impression_score: 0,
+      communication_skills_remarks: '',
+      confidence_remarks: '',
+      comprehension_remarks: '',
+      personality_remarks: '',
+      job_knowledge_remarks: '',
+      overall_impression_remarks: '',
+      interview_notes: '',
+      recommendation: '',
+    });
+    setPcptScores({
+      appearance: 0,
+      voice: 0,
+      personality: 0,
+      alertness: 0,
+      confidence: 0,
+      composure: 0,
+    });
+  };
 
   const hasOralEvaluation = appointmentType === 'original';
 
@@ -486,6 +605,9 @@ export function EvaluationForm() {
         oralAverage,
       });
 
+      clearEvaluationDraft(id);
+      setDraftRestoredAt(null);
+
       // Mirror only what the server confirmed, and only onto this application:
       // applications that share an email are separate applications.
       if (outcome.kind === 'advanced') {
@@ -562,6 +684,21 @@ export function EvaluationForm() {
 
       {applicant && (
         <div className="evaluation-content">
+          {draftRestoredAt && (
+            <div
+              role="status"
+              className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-900"
+            >
+              <span>Saved draft restored. Continue editing or discard it to start fresh.</span>
+              <button
+                type="button"
+                onClick={handleDiscardDraft}
+                className="btn btn-sm btn-secondary"
+              >
+                Discard Draft
+              </button>
+            </div>
+          )}
           <div className="evaluation-tabs" style={{ gridTemplateColumns: '1fr' }}>
             {appointmentType === 'promotional' && (
               <button
@@ -824,7 +961,7 @@ export function EvaluationForm() {
                   )}
 
                   <div className="oral-form-actions">
-                    <Button type="button" variant="secondary" onClick={goBack}>
+                    <Button type="button" variant="secondary" onClick={handleSaveDraft}>
                       Save Draft
                     </Button>
                     <Button type="submit" loading={submitting} className="submit-btn">
@@ -1127,7 +1264,7 @@ export function EvaluationForm() {
                 )}
 
                 <div className="oral-form-actions">
-                  <Button type="button" variant="secondary" onClick={goBack}>
+                  <Button type="button" variant="secondary" onClick={handleSaveDraft}>
                     Save Draft
                   </Button>
                   <Button type="submit" loading={submitting} className="submit-btn">

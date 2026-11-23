@@ -294,4 +294,33 @@ describe('ApplicationStatusPage with one application', () => {
     await act(() => vi.advanceTimersByTimeAsync(100));
     expect(screen.getByRole('heading', { name: 'Application Details' })).toBeInTheDocument();
   });
+
+  it('renders contract-signing deadline, instructions, and approved badge for For Contract Signing', async () => {
+    db.applications = [
+      {
+        ...application('signing-1', 'City Accountant', 'For Contract Signing', '2026-10-10T08:00:00Z'),
+        signing_deadline: '2026-11-30',
+        signing_instructions: 'Bring two valid IDs to Room 302.',
+      },
+    ];
+    renderTracker();
+
+    expect(await screen.findByText('For Contract Signing')).toBeInTheDocument();
+    expect(screen.getByText('Bring two valid IDs to Room 302.')).toBeInTheDocument();
+    expect(screen.getByText(/Report on or before/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Your application has been received\. We will begin reviewing it shortly\./i)).not.toBeInTheDocument();
+  });
+
+  it('renders the regret letter when an archived application is Not Selected', async () => {
+    db.applications = [
+      {
+        ...application('not-selected-1', 'Accountant II', 'Not Selected', '2026-10-10T08:00:00Z'),
+        archived_at: '2026-11-01T09:00:00Z',
+      },
+    ];
+    renderTracker();
+
+    expect(await screen.findByText(/Dear Patricia Ann Cordero/i)).toBeInTheDocument();
+    expect(screen.getByText(/we have chosen to move forward with another candidate/i)).toBeInTheDocument();
+  });
 });

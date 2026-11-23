@@ -117,6 +117,7 @@ const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
   'Interview/Exam Scheduled': { label: 'In Review', tone: 'in-review' },
   'For Evaluation': { label: 'In Review', tone: 'in-review' },
   'Qualified': { label: 'Qualified', tone: 'in-review' },
+  'For Contract Signing': { label: 'For Contract Signing', tone: 'approved' },
   'Selected': { label: 'Selected', tone: 'approved' },
   'Not Selected': { label: 'Not Selected', tone: 'rejected' },
   'Submitted': { label: 'New', tone: 'received' },
@@ -173,6 +174,9 @@ const getNoticeMessage = (status: string, tone: BadgeTone, reason?: string | nul
   }
   if (status === 'Under Review') {
     return 'Your application and uploaded documents are currently under review by our recruitment team.';
+  }
+  if (normalizeStatus(status) === 'For Contract Signing') {
+    return APPLICANT_MESSAGES['For Contract Signing'];
   }
   if (tone === 'rejected') {
     const base = 'Your application has been disqualified and will no longer proceed in the selection process.';
@@ -441,6 +445,9 @@ export const ApplicationStatusPage = () => {
     missed_activity_type: row.missed_activity_type ? String(row.missed_activity_type) : null,
     missed_activity_date: row.missed_activity_date ? String(row.missed_activity_date) : null,
     missed_activity_time: row.missed_activity_time ? String(row.missed_activity_time) : null,
+    signing_deadline: row.signing_deadline ? String(row.signing_deadline) : null,
+    signing_instructions: row.signing_instructions ? String(row.signing_instructions) : null,
+    archived_at: row.archived_at ? String(row.archived_at) : null,
     plantilla_label: row.plantilla_label ? String(row.plantilla_label) : null,
     hired_elsewhere_plantilla_label: row.hired_elsewhere_plantilla_label ? String(row.hired_elsewhere_plantilla_label) : null,
   });

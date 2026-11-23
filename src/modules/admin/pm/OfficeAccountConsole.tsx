@@ -315,11 +315,18 @@ export const OfficeAccountConsole: React.FC = () => {
     void refreshPendingApprovals();
   };
 
-  const refreshPendingApprovals = async () => {
+  const refreshPendingApprovals = async (roleOverride?: ActiveOfficeRole | null) => {
+    const activeRole = roleOverride !== undefined ? roleOverride : officeRole;
+    if (!activeRole) {
+      setPendingApprovals([]);
+      setApprovalsLoading(false);
+      return;
+    }
     setApprovalsLoading(true);
-    const res = await listPendingApprovals(
-      officeRole ? { officeId: officeRole.officeId, officeName: officeRole.officeName } : null
-    );
+    const res = await listPendingApprovals({
+      officeId: activeRole.officeId,
+      officeName: activeRole.officeName,
+    });
     setApprovalsLoading(false);
     if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
     setPendingApprovals(res.data);
@@ -424,7 +431,7 @@ export const OfficeAccountConsole: React.FC = () => {
         // never stored, and never inferred from the employee's job title.
         const role = await getActiveOfficeRole(employeeId);
         setOfficeRole(role);
-        if (role) void refreshPendingApprovals();
+        if (role) void refreshPendingApprovals(role);
       } catch {
         // session missing or malformed — keep defaults (no office role)
       } finally {
