@@ -6,7 +6,19 @@ import type { ApplicantFormData } from '../../types/applicant.types';
 
 type InsertResult = { data: Record<string, unknown> | null; error: Record<string, unknown> | null };
 
-const { insertApplicant } = vi.hoisted(() => ({ insertApplicant: vi.fn() }));
+const { insertApplicant, fileCheckBypass } = vi.hoisted(() => ({
+  insertApplicant: vi.fn(),
+  fileCheckBypass: { enabled: false },
+}));
+
+vi.mock('../../utils/validation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../utils/validation')>();
+  return {
+    ...actual,
+    validateFiles: (...args: Parameters<typeof actual.validateFiles>) =>
+      fileCheckBypass.enabled ? null : actual.validateFiles(...args),
+  };
+});
 
 vi.mock('../../lib/supabase', async () => {
   const { supabaseStub: stub } = await import('../../test/supabaseStub');
@@ -95,8 +107,13 @@ const formData = (overrides: Partial<ApplicantFormData> = {}): ApplicantFormData
   ...overrides,
 });
 
-/** Opens the wizard on the review step, as if the applicant had refreshed there. */
-const seedReviewDraft = (slotNumbers: number[], overrides: Partial<ApplicantFormData> = {}) => {
+/** Opens the wizard on the review step (bypassing file check for dialog/label tests). */
+const seedReviewDraft = (
+  slotNumbers: number[],
+  overrides: Partial<ApplicantFormData> = {},
+  options: { bypassFileCheck?: boolean } = { bypassFileCheck: true },
+) => {
+  fileCheckBypass.enabled = Boolean(options.bypassFileCheck);
   const choices = slotNumbers.map(choice);
   const draft: ApplyDrafts = {
     version: 2,
@@ -165,6 +182,7 @@ describe('ApplicantWizard confirmation and labels', () => {
     sessionStorage.clear();
     localStorage.clear();
     insertApplicant.mockReset();
+    fileCheckBypass.enabled = false;
     window.scrollTo = vi.fn();
     Element.prototype.scrollIntoView = vi.fn();
     // The wizard logs failed submissions on purpose; keep the output readable.
@@ -462,5 +480,16 @@ describe('ApplicantWizard confirmation and labels', () => {
     expect(screen.getByText('End date cannot be earlier than start date')).toBeInTheDocument();
     expect(screen.getByText('Entry 2')).toBeInTheDocument();
     expect(screen.getByText('Page 4 of 5')).toBeInTheDocument();
+  });
+
+  it('redirects a reloaded Step 3 review draft with no files back to Page 5 Documents and blocks submission', () => {
+    // Use real validateFiles (no bypass): simulates reloading on Step 3 where File objects were dropped.
+    seedReviewDraft([27], {}, { bypassFileCheck: false });
+    renderWizard();
+
+    expect(screen.getByText('Page 5 of 5')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/uploaded documents cannot be kept across page reloads/i);
+    expect(screen.queryByRole('button', { name: 'Submit Application' })).not.toBeInTheDocument();
+    expect(insertApplicant).not.toHaveBeenCalled();
   });
 });

@@ -9,7 +9,7 @@
      the Logout control. Public pages keep the same top-right anchor. */
   top: 76px;
   right: 16px;
-  z-index: 600;
+  z-index: 1200;
   display: flex;
   flex-direction: column;
   gap: 12px;

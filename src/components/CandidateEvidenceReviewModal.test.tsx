@@ -192,5 +192,73 @@ describe('CandidateEvidenceReviewModal', () => {
     expect(await screen.findByText(new RegExp(`Failed reading ${failingTable}`))).toBeInTheDocument();
     expect(screen.queryByText('No work experience on file for this candidate.')).not.toBeInTheDocument();
     expect(screen.queryByText('No training records on file for this candidate.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Review' })).toBeDisabled();
+  });
+
+  it('starts reviewed count at 0 / N for unreviewed records and preserves user selections on save error', async () => {
+    (supabase.from as any).mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue(
+          table === 'employee_work_experience'
+            ? {
+                data: [
+                  {
+                    id: 'work-1',
+                    position_title: 'Junior Programmer',
+                    company_name: 'City Hall',
+                    from_date: '2021-01-01',
+                    to_date: '2024-01-01',
+                    is_present: false,
+                  },
+                ],
+                error: null,
+              }
+            : table === 'employee_eligibility'
+              ? {
+                  data: [
+                    {
+                      id: 'el-1',
+                      eligibility_type: 'CSC Professional',
+                      validity_date: null,
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: [], error: null },
+        ),
+      }),
+    }));
+
+    vi.spyOn(successionReviews, 'fetchSuccessionReviews').mockResolvedValue([]);
+    vi.spyOn(successionReviews, 'batchSaveSuccessionReviews').mockRejectedValue(
+      new Error('Database write failed'),
+    );
+
+    render(
+      <CandidateEvidenceReviewModal
+        isOpen={true}
+        onClose={vi.fn()}
+        candidate={mockCandidate}
+        criticalPosition={mockPosition}
+        onReviewSaved={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Junior Programmer')).toBeInTheDocument();
+    // Neither record has been reviewed yet — must NOT show 2 / 2.
+    expect(screen.getByText('Reviewed: 0 / 2 items')).toBeInTheDocument();
+
+    // Check both checkboxes on the work item (Relevant + City Hall) -> 1 / 2 reviewed
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText('Reviewed: 1 / 2 items')).toBeInTheDocument();
+
+    // Trigger a save failure -> inline error appears, evidence list & checkboxes remain intact
+    fireEvent.click(screen.getByRole('button', { name: 'Save Review' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Database write failed');
+    expect(screen.getByText('Junior Programmer')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')[0]).toBeChecked();
+    expect(screen.getAllByRole('checkbox')[1]).toBeChecked();
   });
 });
