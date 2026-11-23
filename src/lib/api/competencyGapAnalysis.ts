@@ -1,6 +1,7 @@
 import { IPCRRatingRecord } from '../../modules/admin/pm/SummaryOfRatings';
 import { supabase } from '../supabase';
 import { listDepartments } from './departments';
+import { fetchAllRows } from './fetchAllRows';
 import { PROFICIENCY_NUMERIC, readAllRequirementRows, type ProficiencyLevel } from './pmCompetency';
 
 // Raw row shape mirroring the view
@@ -22,16 +23,21 @@ export interface GapAnalysisRow {
 
 // 1. raw fetch — gives downstream code the full grid
 export async function getGapAnalysisRows(): Promise<GapAnalysisRow[]> {
-  const { data, error } = await supabase
-    .from('v_competency_gap_analysis')
-    .select('*');
+  const { data, error } = await fetchAllRows<GapAnalysisRow>((from, to) =>
+    supabase
+      .from('v_competency_gap_analysis')
+      .select('*')
+      .order('employee_num', { ascending: true })
+      .order('competency_id', { ascending: true })
+      .range(from, to),
+  );
 
   if (error) {
     console.error('Error fetching v_competency_gap_analysis:', error);
     throw error;
   }
 
-  return (data || []) as GapAnalysisRow[];
+  return data || [];
 }
 
 // 1b. the Competency Map, keyed by `${positionTitle}|${competencyId}` → level.
@@ -64,9 +70,13 @@ async function getRequiredLevelMap(): Promise<Map<string, ProficiencyLevel>> {
 export const normDeptKey = (value: unknown) => String(value ?? '').trim().toLowerCase();
 
 export async function getActiveHeadcountByDepartment(): Promise<Map<string, { name: string; count: number }>> {
-  const { data, error } = await supabase
-    .from('employees_with_department')
-    .select('department, current_department, status');
+  const { data, error } = await fetchAllRows<any>((from, to) =>
+    supabase
+      .from('employees_with_department')
+      .select('department, current_department, status')
+      .order('id', { ascending: true })
+      .range(from, to),
+  );
 
   if (error) {
     console.error('Error fetching employees_with_department:', error);

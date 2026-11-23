@@ -52,6 +52,7 @@ vi.mock('../lib/supabase', () => {
   const from = (table: string) => {
     const filters: Array<{ op: 'eq' | 'in'; col: string; val: unknown }> = [];
     let isSingle = false;
+    let sliceRange: [number, number] | null = null;
 
     const execute = async () => {
       if (table === 'employee_work_experience' && store.workReadError) {
@@ -73,7 +74,8 @@ vi.mock('../lib/supabase', () => {
         return { data: matched[0], error: null };
       }
 
-      return { data: matched, error: null };
+      const rows = sliceRange ? matched.slice(sliceRange[0], sliceRange[1] + 1) : matched;
+      return { data: rows, error: null };
     };
 
     const chain: any = {
@@ -90,6 +92,10 @@ vi.mock('../lib/supabase', () => {
         return chain;
       },
       order: () => chain,
+      range: (fromIdx: number, toIdx: number) => {
+        sliceRange = [fromIdx, toIdx];
+        return chain;
+      },
       limit: () => chain,
       single: () => {
         isSingle = true;

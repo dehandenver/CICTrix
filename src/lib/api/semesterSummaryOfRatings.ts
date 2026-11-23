@@ -28,6 +28,7 @@ import type { IPCRRatingRecord } from '../../modules/admin/pm/SummaryOfRatings';
 import { supabase as supabaseClient } from '../supabase';
 import { getTransitionState } from './semesterTransition';
 import { getActiveOfficeNameSet } from './departments';
+import { fetchAllRows } from './fetchAllRows';
 import { listCompetencyStandards, PROFICIENCY_NUMERIC, readAllRequirementRows, type ProficiencyLevel } from './pmCompetency';
 
 const supabase = supabaseClient as any;
@@ -125,20 +126,32 @@ export async function getSemesterRatingRecords(newCycleId: number): Promise<IPCR
   const [requiredMap, { data: finalizedRows }, { data: possessedRows }, { data: emps }, activeOffices] =
     await Promise.all([
       buildRequiredMap(),
-      supabase
-        .from('target_settings')
-        .select('employee_id')
-        .eq('status', 'approved')
-        .eq('phase2_status', 'completed')
-        .eq('cycle_id', newCycleId),
-      supabase
-        .from('employee_competencies')
-        .select('employee_id, proficiency_level, competencies ( name )')
-        .eq('cycle_id', newCycleId),
-      supabase
-        .from('employees_with_department')
-        .select('id, employee_id, full_name, current_position, department, status')
-        .eq('status', 'Active'),
+      fetchAllRows<any>((from, to) =>
+        supabase
+          .from('target_settings')
+          .select('employee_id')
+          .eq('status', 'approved')
+          .eq('phase2_status', 'completed')
+          .eq('cycle_id', newCycleId)
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
+      fetchAllRows<any>((from, to) =>
+        supabase
+          .from('employee_competencies')
+          .select('employee_id, proficiency_level, competencies ( name )')
+          .eq('cycle_id', newCycleId)
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
+      fetchAllRows<any>((from, to) =>
+        supabase
+          .from('employees_with_department')
+          .select('id, employee_id, full_name, current_position, department, status')
+          .eq('status', 'Active')
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
       getActiveOfficeNameSet(),
     ]);
 

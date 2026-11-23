@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { fetchAllRows } from './api/fetchAllRows';
 
 const SYNC_FLAG_KEY = 'cictrix_hired_applicant_sync_done';
 const EMPLOYEE_SYNC_FLAG_KEY = 'cictrix_newly_hired_employee_sync_done';
@@ -211,10 +212,14 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
       return;
     }
 
-    // 2. Fetch existing employees to find who is missing
-    const { data: existingEmployees, error: empErr } = await (supabase as any)
-      .from('employees')
-      .select('id, application_id, employee_number, email');
+    // 2. Fetch existing employees to find who is missing (paged past 1,000 rows)
+    const { data: existingEmployees, error: empErr } = await fetchAllRows<any>((from, to) =>
+      (supabase as any)
+        .from('employees')
+        .select('id, application_id, employee_number, email')
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
 
     if (empErr) {
       console.warn('[hiredApplicantSync] employees fetch failed:', empErr);

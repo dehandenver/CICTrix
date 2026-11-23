@@ -91,6 +91,7 @@ import {
   EXAM_SCORES_KEY,
   CATEGORY_SCORES_UPDATED_EVENT,
   isUuid,
+  pcptRawToConvertedScore,
   calcModalScore,
   calcOverallScore,
   deriveDefaultCategoryScores,
@@ -950,6 +951,26 @@ describe('applicantScores service layer', () => {
 
       const examCache = JSON.parse(localStorage.getItem(EXAM_SCORES_KEY) ?? '{}');
       expect(examCache['Administrative Aide']?.['mock-1']).toBe('70');
+    });
+  });
+
+  describe('pcptRawToConvertedScore', () => {
+    it('is strictly non-decreasing across raw 0..40 and never lets 16-19 beat 20-25', () => {
+      let prev = pcptRawToConvertedScore(0);
+      expect(prev).toBe(0);
+      for (let raw = 1; raw <= 40; raw++) {
+        const score = pcptRawToConvertedScore(raw);
+        expect(score).toBeGreaterThanOrEqual(prev);
+        prev = score;
+      }
+      expect(pcptRawToConvertedScore(19)).toBeLessThan(pcptRawToConvertedScore(20));
+      expect(pcptRawToConvertedScore(19)).toBe(9.5);
+      expect(pcptRawToConvertedScore(20)).toBe(10);
+      expect(pcptRawToConvertedScore(23)).toBe(12);
+      expect(pcptRawToConvertedScore(26)).toBe(14);
+      expect(pcptRawToConvertedScore(29)).toBe(16);
+      expect(pcptRawToConvertedScore(32)).toBe(18);
+      expect(pcptRawToConvertedScore(35)).toBe(20);
     });
   });
 });

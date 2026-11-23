@@ -18,6 +18,7 @@
  * self-approval block for Phase 1 (dual-role users).
  */
 import { supabase as supabaseClient } from '../supabase';
+import { fetchAllRows, fetchInChunks, FETCH_IN_CHUNK_SIZE } from './fetchAllRows';
 import { categoryAverage, computeOverallScore } from './ipcrWorkspace';
 import { resolveOfficeWeights } from './officeWeighting';
 import { bucketForScore } from './performanceEvaluations';
@@ -132,28 +133,40 @@ async function cycleTitles(cycleIds: number[]): Promise<Map<number, string>> {
  */
 export async function listRatableTargets(scope?: OfficeScope | null): Promise<Result<RatableTarget[]>> {
   try {
-    const { data: settings, error } = await supabase
-      .from('target_settings')
-      .select('id, employee_id, cycle_id, phase2_status')
-      .eq('status', 'approved')
-      .order('approved_at', { ascending: false });
-    if (error) return { ok: false, error: error.message };
+    const { data: settings, error } = await fetchAllRows<any>((from, to) =>
+      supabase
+        .from('target_settings')
+        .select('id, employee_id, cycle_id, phase2_status, approved_at')
+        .eq('status', 'approved')
+        .order('approved_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    if (error) return { ok: false, error: (error as any)?.message ?? String(error) };
     if (!settings?.length) return { ok: true, data: [] };
 
-    const empIds = [...new Set(settings.map((s: any) => s.employee_id))];
-    const { data: emps } = await supabase
-      .from('employees_with_department')
-      .select('id, full_name, current_department, current_position')
-      .in('id', empIds);
+    const empIds = [...new Set(settings.map((s: any) => String(s.employee_id)))];
+    const { data: emps } = await fetchInChunks<any, string>(empIds, (chunk, from, to) =>
+      supabase
+        .from('employees_with_department')
+        .select('id, full_name, current_department, current_position')
+        .in('id', chunk)
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
     const empMap = new Map((emps ?? []).map((e: any) => [e.id, e]));
     const titles = await cycleTitles(settings.map((s: any) => s.cycle_id));
 
     // Progress = rated indicators / total indicators, per target setting.
-    const settingIds = settings.map((s: any) => s.id);
-    const { data: mfoRows } = await supabase
-      .from('mfos')
-      .select('target_setting_id, success_indicators(id, success_indicator_ratings(quality, efficiency, timeliness))')
-      .in('target_setting_id', settingIds);
+    const settingIds = settings.map((s: any) => String(s.id));
+    const { data: mfoRows } = await fetchInChunks<any, string>(settingIds, (chunk, from, to) =>
+      supabase
+        .from('mfos')
+        .select('target_setting_id, success_indicators(id, success_indicator_ratings(quality, efficiency, timeliness))')
+        .in('target_setting_id', chunk)
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
     const counts = new Map<string, { total: number; rated: number }>();
     for (const m of (mfoRows ?? []) as any[]) {
       const c = counts.get(m.target_setting_id) ?? { total: 0, rated: 0 };
@@ -739,22 +752,30 @@ export async function openSelfRatingPeriod(params: {
   try {
     // Open/re-open: anything not currently open and not still-submitted becomes
     // 'open' (includes 'closed', so a closed period can be re-opened).
-    let query = supabase
-      .from('target_settings')
-      .select('id, employee_id')
-      .eq('status', 'approved')
-      .in('phase2_status', ['locked', 'not_started', 'closed']);
-    if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
-    const { data: locked, error } = await query;
-    if (error) return { ok: false, error: error.message };
+    const { data: locked, error } = await fetchAllRows<any>((from, to) => {
+      let query = supabase
+        .from('target_settings')
+        .select('id, employee_id')
+        .eq('status', 'approved')
+        .in('phase2_status', ['locked', 'not_started', 'closed'])
+        .order('id', { ascending: true })
+        .range(from, to);
+      if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
+      return query;
+    });
+    if (error) return { ok: false, error: (error as any)?.message ?? String(error) };
     const rows = (locked ?? []) as any[];
     if (!rows.length) return { ok: true, data: { employeeIds: [] } };
 
-    const { error: upErr } = await supabase
-      .from('target_settings')
-      .update({ phase2_status: 'open', phase2_opened_at: nowIso(), phase2_opened_by: params.openedBy, updated_at: nowIso() })
-      .in('id', rows.map((r) => r.id));
-    if (upErr) return { ok: false, error: upErr.message };
+    const idsToOpen = rows.map((r) => r.id);
+    for (let start = 0; start < idsToOpen.length; start += FETCH_IN_CHUNK_SIZE) {
+      const chunk = idsToOpen.slice(start, start + FETCH_IN_CHUNK_SIZE);
+      const { error: upErr } = await supabase
+        .from('target_settings')
+        .update({ phase2_status: 'open', phase2_opened_at: nowIso(), phase2_opened_by: params.openedBy, updated_at: nowIso() })
+        .in('id', chunk);
+      if (upErr) return { ok: false, error: upErr.message };
+    }
 
     return { ok: true, data: { employeeIds: rows.map((r) => String(r.employee_id)) } };
   } catch (err) {
@@ -775,24 +796,32 @@ export async function closeSelfRatingPeriod(params: {
   closedBy: string;
 }): Promise<Result<{ employeeIds: string[] }>> {
   try {
-    let query = supabase
-      .from('target_settings')
-      .select('id, employee_id')
-      .eq('status', 'approved')
-      .in('phase2_status', ['open', 'in_progress'])
-      // A sheet returned for revision stays open until the employee resubmits.
-      .is('phase2_returned_at', null);
-    if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
-    const { data: openRows, error } = await query;
-    if (error) return { ok: false, error: error.message };
+    const { data: openRows, error } = await fetchAllRows<any>((from, to) => {
+      let query = supabase
+        .from('target_settings')
+        .select('id, employee_id')
+        .eq('status', 'approved')
+        .in('phase2_status', ['open', 'in_progress'])
+        // A sheet returned for revision stays open until the employee resubmits.
+        .is('phase2_returned_at', null)
+        .order('id', { ascending: true })
+        .range(from, to);
+      if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
+      return query;
+    });
+    if (error) return { ok: false, error: (error as any)?.message ?? String(error) };
     const rows = (openRows ?? []) as any[];
     if (!rows.length) return { ok: true, data: { employeeIds: [] } };
 
-    const { error: upErr } = await supabase
-      .from('target_settings')
-      .update({ phase2_status: 'closed', phase2_closed_at: nowIso(), phase2_closed_by: params.closedBy, updated_at: nowIso() })
-      .in('id', rows.map((r) => r.id));
-    if (upErr) return { ok: false, error: upErr.message };
+    const idsToClose = rows.map((r) => r.id);
+    for (let start = 0; start < idsToClose.length; start += FETCH_IN_CHUNK_SIZE) {
+      const chunk = idsToClose.slice(start, start + FETCH_IN_CHUNK_SIZE);
+      const { error: upErr } = await supabase
+        .from('target_settings')
+        .update({ phase2_status: 'closed', phase2_closed_at: nowIso(), phase2_closed_by: params.closedBy, updated_at: nowIso() })
+        .in('id', chunk);
+      if (upErr) return { ok: false, error: upErr.message };
+    }
 
     return { ok: true, data: { employeeIds: rows.map((r) => String(r.employee_id)) } };
   } catch (err) {

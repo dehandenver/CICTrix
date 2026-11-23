@@ -49,6 +49,7 @@ beforeEach(() => {
   client.from.mockReset().mockImplementation((table: string) => {
     const entry: Query = { table, columns: '', filters: [] };
     let ordering: string | undefined;
+    let sliceRange: [number, number] | null = null;
     const query = {
       select: (columns: string, options?: { count: string }) => {
         entry.columns = columns;
@@ -57,17 +58,20 @@ beforeEach(() => {
       },
       in: (column: string, values: unknown[]) => { entry.filters.push({ column, values }); return query; },
       eq: (column: string, value: unknown) => { entry.filters.push({ column, values: [value] }); return query; },
-      order: (column: string) => { ordering = column; return query; },
+      order: (column: string) => { if (!ordering) ordering = column; return query; },
+      range: (from: number, to: number) => { sliceRange = [from, to]; return query; },
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => {
         queries.push(entry);
         if (rejections.has(table)) return Promise.reject(new Error('Private network detail')).then(resolve, reject);
         const failed = errors.has(table) || (table === 'employees' && entry.columns.includes('department_id'));
         let data = (tables[table] ?? []).filter((row) => entry.filters.every((f) => f.values.includes(row[f.column])));
         if (ordering) data = [...data].sort((a, b) => String(b[ordering!]).localeCompare(String(a[ordering!])));
+        const total = data.length;
+        if (sliceRange) data = data.slice(sliceRange[0], sliceRange[1] + 1);
         return Promise.resolve(resolve({
           data: failed ? null : data,
           error: failed ? { code: '42703', message: 'Private database detail' } : null,
-          count: table === 'department_weighting_configs' && configCount !== undefined ? configCount : data.length,
+          count: table === 'department_weighting_configs' && configCount !== undefined ? configCount : total,
         }));
       },
     };

@@ -36,6 +36,7 @@ import {
   fetchApplicantCategoryScores,
   fetchApplicantScoreSummaries,
   isUuid,
+  pcptRawToConvertedScore,
   saveApplicantCategoryScores,
   savePositionWrittenExamScores,
   type ApplicantCategoryScores,
@@ -303,16 +304,6 @@ const calcModalScore = (
   return eff(scores.education) +
          eff(scores.experience) +
          eff(scores.oralExam);
-};
-
-const pcptRawToConvertedScore = (raw: number) => {
-  if (raw >= 35) return 20;
-  if (raw >= 32) return 18;
-  if (raw >= 29) return 16;
-  if (raw >= 26) return 14;
-  if (raw >= 23) return 12;
-  if (raw >= 20) return 10;
-  return +Math.max(0, Math.min(20, (raw / 30) * 20)).toFixed(1);
 };
 
 // Capped at the 30-point share: a saved score above the current total (e.g.

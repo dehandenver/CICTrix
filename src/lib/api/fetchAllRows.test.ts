@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fetchAllRows, FETCH_ALL_PAGE_SIZE } from './fetchAllRows';
+import { fetchAllRows, fetchInChunks, FETCH_ALL_PAGE_SIZE } from './fetchAllRows';
 
 const tableOf = (size: number) => Array.from({ length: size }, (_, i) => i);
 
@@ -49,5 +49,48 @@ describe('fetchAllRows', () => {
       .mockResolvedValueOnce({ data: null, error: failure });
 
     await expect(fetchAllRows(readPage)).resolves.toEqual({ data: null, error: failure });
+  });
+});
+
+describe('fetchInChunks', () => {
+  it('deduplicates keys, splits into chunks, and pages each chunk past 1,000 rows', async () => {
+    const keys = ['k1', 'k2', 'k1', 'k3', 'k4', 'k5'];
+    const db = new Map<string, string[]>([
+      ['k1', ['r1a', 'r1b']],
+      ['k2', ['r2a']],
+      ['k3', Array.from({ length: 5 }, (_, i) => `r3-${i}`)],
+      ['k4', []],
+      ['k5', ['r5a']],
+    ]);
+    const chunksSeen: string[][] = [];
+    const readChunkPage = vi.fn(async (chunk: string[], from: number, to: number) => {
+      if (from === 0) chunksSeen.push(chunk);
+      const matching = chunk.flatMap((k) => db.get(k) ?? []);
+      // Simulate a small server cap of 2 rows per page
+      return { data: matching.slice(from, Math.min(to + 1, from + 2)), error: null };
+    });
+
+    const { data, error } = await fetchInChunks(keys, readChunkPage, 2);
+
+    expect(error).toBeNull();
+    expect(chunksSeen).toEqual([['k1', 'k2'], ['k3', 'k4'], ['k5']]);
+    expect(data).toEqual(['r1a', 'r1b', 'r2a', 'r3-0', 'r3-1', 'r3-2', 'r3-3', 'r3-4', 'r5a']);
+  });
+
+  it('returns empty without calling readChunkPage when values is empty', async () => {
+    const readChunkPage = vi.fn();
+    await expect(fetchInChunks([], readChunkPage)).resolves.toEqual({ data: [], error: null });
+    expect(readChunkPage).not.toHaveBeenCalled();
+  });
+
+  it('aborts and returns null data if any chunk fails', async () => {
+    const failure = { message: 'db down' };
+    const readChunkPage = vi
+      .fn()
+      .mockResolvedValueOnce({ data: ['ok'], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: null, error: failure });
+
+    await expect(fetchInChunks(['a', 'b'], readChunkPage, 1)).resolves.toEqual({ data: null, error: failure });
   });
 });

@@ -47,6 +47,7 @@ import {
 } from '../../lib/api/documentRequests';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { getAllEmployees, type Employee } from '../../lib/api/employees';
+import { listAllIpcrSubmissions, listAllProbationarySchedules } from '../../lib/api/ipcrSubmissions';
 import { createDocumentRequest } from '../../lib/employeeDocuments';
 import {
   getEvaluationStatusCounts,
@@ -635,19 +636,19 @@ export const PMDashboard = ({
     try {
       const [empResult, subRes, schedRes] = await Promise.all([
         getAllEmployees({ status: 'Active' }),
-        (supabase as any).from('ipcr_submissions').select('*'),
-        (supabase as any).from('probationary_ipcr_schedules').select('*'),
+        listAllIpcrSubmissions('*'),
+        listAllProbationarySchedules(),
       ]);
 
       if (loadId !== latestIpcrLoadId.current) return;
-      if (!empResult.success) {
+      if (!empResult.success || !subRes.ok || !schedRes.ok) {
         setIpcrStatuses(null);
         return;
       }
 
       const employees: Employee[] = empResult.data || [];
-      const submissions = subRes.error ? [] : (subRes.data ?? []);
-      const schedules = schedRes.error ? [] : (schedRes.data ?? []);
+      const submissions = subRes.data;
+      const schedules = schedRes.data;
 
       const getMonthsOfService = (hireDate: string) => {
         const hired = new Date(hireDate);

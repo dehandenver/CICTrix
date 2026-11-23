@@ -13,6 +13,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { fetchAllRows, fetchInChunks } from './fetchAllRows';
 import { listCompetencyStandards, PROFICIENCY_NUMERIC, readAllRequirementRows, type ProficiencyLevel } from './pmCompetency';
 
 const supabase = supabaseClient as any;
@@ -211,11 +212,15 @@ export async function getPublishedRecords(
       }));
     } else {
       // Fallback: employees with approved target settings for this cycle
-      const { data: targetRows } = await supabase
-        .from('target_settings')
-        .select('id, employee_id, status')
-        .eq('cycle_id', cycleId)
-        .eq('status', 'approved');
+      const { data: targetRows } = await fetchAllRows<any>((from, to) =>
+        supabase
+          .from('target_settings')
+          .select('id, employee_id, status')
+          .eq('cycle_id', cycleId)
+          .eq('status', 'approved')
+          .order('id', { ascending: true })
+          .range(from, to),
+      );
 
       eligibleEmpIds = new Set(((targetRows ?? []) as any[]).map((r: any) => String(r.employee_id)));
     }
@@ -242,31 +247,51 @@ export async function getPublishedRecords(
         .select('id, title')
         .eq('id', cycleId)
         .maybeSingle(),
-      supabase
-        .from('performance_evaluations')
-        .select('employee_id, final_score, status, rejection_reason')
-        .eq('cycle_id', cycleId)
-        .in('employee_id', empIdArray),
-      supabase
-        .from('employee_competencies')
-        .select('employee_id, proficiency_level, competencies ( name )')
-        .eq('cycle_id', cycleId)
-        .in('employee_id', empIdArray),
-      supabase
-        .from('competency_assessment_runs')
-        .select('employee_id, status, stage')
-        .eq('cycle_id', cycleId)
-        .eq('stage', 'assessing')
-        .in('employee_id', empIdArray),
-      supabase
-        .from('employee_competency_summaries')
-        .select('employee_id, recommendations')
-        .eq('cycle_id', cycleId)
-        .in('employee_id', empIdArray),
-      supabase
-        .from('employees_with_department')
-        .select('id, employee_id, full_name, current_position, department, status')
-        .in('id', empIdArray),
+      fetchInChunks<any, string>(empIdArray, (chunk, from, to) =>
+        supabase
+          .from('performance_evaluations')
+          .select('employee_id, final_score, status, rejection_reason')
+          .eq('cycle_id', cycleId)
+          .in('employee_id', chunk)
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
+      fetchInChunks<any, string>(empIdArray, (chunk, from, to) =>
+        supabase
+          .from('employee_competencies')
+          .select('employee_id, proficiency_level, competencies ( name )')
+          .eq('cycle_id', cycleId)
+          .in('employee_id', chunk)
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
+      fetchInChunks<any, string>(empIdArray, (chunk, from, to) =>
+        supabase
+          .from('competency_assessment_runs')
+          .select('employee_id, status, stage')
+          .eq('cycle_id', cycleId)
+          .eq('stage', 'assessing')
+          .in('employee_id', chunk)
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
+      fetchInChunks<any, string>(empIdArray, (chunk, from, to) =>
+        supabase
+          .from('employee_competency_summaries')
+          .select('employee_id, recommendations')
+          .eq('cycle_id', cycleId)
+          .in('employee_id', chunk)
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
+      fetchInChunks<any, string>(empIdArray, (chunk, from, to) =>
+        supabase
+          .from('employees_with_department')
+          .select('id, employee_id, full_name, current_position, department, status')
+          .in('id', chunk)
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
     ]);
 
     const periodTitle = cycleRow?.title ?? `Cycle ${cycleId}`;

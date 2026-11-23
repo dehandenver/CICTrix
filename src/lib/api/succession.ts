@@ -16,6 +16,7 @@
 
 import { supabase as supabaseClient } from '../supabase';
 import { DIVISION_PARENT_COLUMN } from './departments';
+import { fetchInChunks, FETCH_IN_CHUNK_SIZE } from './fetchAllRows';
 import { categoryAverage, computeOverallScore } from './ipcrWorkspace';
 import { bucketForScore } from './performanceEvaluations';
 import { embeddedRating } from './ipcrRatings';
@@ -180,11 +181,18 @@ async function departmentsByEmployee(employeeIds: string[]): Promise<Map<string,
   const failure = 'Unable to resolve employee departments for IPCR scoring. Please try again.';
   try {
     // Neither employees nor employees_with_department has a department_id.
-    const { data: employees, error: empError } = await supabase
-      .from('employees')
-      .select('id, department')
-      .in('id', employeeIds);
-    if (empError || !Array.isArray(employees)) throw new Error(failure);
+    // Chunk by unique primary key so large pools never hit PostgREST URI or 1,000-row limits.
+    const uniqueIds = [...new Set(employeeIds)].filter(Boolean);
+    const employees: any[] = [];
+    for (let start = 0; start < uniqueIds.length; start += FETCH_IN_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(start, start + FETCH_IN_CHUNK_SIZE);
+      const { data: chunkRows, error: empError } = await supabase
+        .from('employees')
+        .select('id, department')
+        .in('id', chunk);
+      if (empError || !Array.isArray(chunkRows)) throw new Error(failure);
+      employees.push(...chunkRows);
+    }
 
     const nameByEmployee = new Map<string, string>();
     for (const employee of employees) {
@@ -329,19 +337,24 @@ export async function getLatestOverallScores(
   const ids = [...new Set(employeeIds)].filter(Boolean);
   if (!ids.length) return result;
 
-  let settingsQuery = supabase
-    .from('target_settings')
-    .select('id, employee_id, cycle_id, approved_at')
-    .eq('status', 'approved')
-    .eq('phase2_status', 'completed')
-    .in('employee_id', ids)
-    .order('approved_at', { ascending: false });
-  if (cycleId != null) settingsQuery = settingsQuery.eq('cycle_id', cycleId);
-  const { data: settings } = await settingsQuery;
+  const { data: settings } = await fetchInChunks<any, string>(ids, (chunk, from, to) => {
+    let settingsQuery = supabase
+      .from('target_settings')
+      .select('id, employee_id, cycle_id, approved_at')
+      .eq('status', 'approved')
+      .eq('phase2_status', 'completed')
+      .in('employee_id', chunk)
+      .order('approved_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (cycleId != null) settingsQuery = settingsQuery.eq('cycle_id', cycleId);
+    return settingsQuery;
+  });
   const rows = (settings ?? []) as any[];
   if (!rows.length) return result;
 
-  // Keep only the most recent completed record per employee (rows are desc).
+  // Keep only the most recent completed record per employee (sort desc by approved_at across chunks).
+  rows.sort((a, b) => String(b.approved_at ?? '').localeCompare(String(a.approved_at ?? '')));
   const latestByEmployee = new Map<string, any>();
   for (const s of rows) {
     const key = String(s.employee_id);
@@ -350,12 +363,16 @@ export async function getLatestOverallScores(
 
   const settingIds = [...latestByEmployee.values()].map((s) => s.id);
   const [{ data: mfoRows }, titles, deptByEmployee] = await Promise.all([
-    supabase
-      .from('mfos')
-      .select(
-        'target_setting_id, function_type, success_indicators(id, success_indicator_ratings(quality, efficiency, timeliness))',
-      )
-      .in('target_setting_id', settingIds),
+    fetchInChunks<any, string>(settingIds, (chunk, from, to) =>
+      supabase
+        .from('mfos')
+        .select(
+          'target_setting_id, function_type, success_indicators(id, success_indicator_ratings(quality, efficiency, timeliness))',
+        )
+        .in('target_setting_id', chunk)
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
     cycleTitles([...latestByEmployee.values()].map((s) => s.cycle_id)),
     departmentsByEmployee([...latestByEmployee.keys()]),
   ]);

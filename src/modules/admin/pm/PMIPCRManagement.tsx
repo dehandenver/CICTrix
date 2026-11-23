@@ -25,7 +25,11 @@ import { useAsyncAction, useFeedback } from '../../../components/action-feedback
 import { useDepartmentNames } from '../../../hooks/useDepartmentOptions';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import { type IpcrStage, stagePillStyle } from '../../../lib/api/ipcrStages';
-import { type IpcrPhase } from '../../../lib/api/ipcrSubmissions';
+import {
+  listAllIpcrSubmissions,
+  listAllProbationarySchedules,
+  type IpcrPhase,
+} from '../../../lib/api/ipcrSubmissions';
 import { getAllEmployees, type Employee } from '../../../lib/api/employees';
 import { getEmployeeIPCR, type IPCRRowDraft, bucketForScore } from '../../../lib/api/performanceEvaluations';
 import { computeOverallScore } from '../../../lib/api/ipcrWorkspace';
@@ -1744,23 +1748,28 @@ export const PMIPCRManagement = () => {
     try {
       const [empResult, subRes, schedRes] = await Promise.all([
         getAllEmployees({ status: 'Active' }),
-        supabase.from('ipcr_submissions').select('id, employee_id, period, phase, stage, updated_at'),
-        supabase.from('probationary_ipcr_schedules').select('*'),
+        listAllIpcrSubmissions('id, employee_id, period, phase, stage, updated_at'),
+        listAllProbationarySchedules(),
       ]);
 
       if (loadId !== latestLoadId.current) return;
 
-      if (!empResult.success) {
+      if (!empResult.success || subRes.ok === false || schedRes.ok === false) {
+        const failureMsg = !empResult.success
+          ? 'Failed to load employees.'
+          : subRes.ok === false
+            ? `Failed to load IPCR submissions: ${subRes.error}`
+            : `Failed to load probationary IPCR schedules: ${(schedRes as { ok: false; error: string }).error}`;
         if (!isBackground) {
-          setLoadError('Failed to load employees.');
+          setLoadError(failureMsg);
         } else {
-          console.warn('[PMIPCRManagement] Silent background reload failed:', empResult.error);
+          console.warn('[PMIPCRManagement] Silent background reload failed:', failureMsg);
         }
         return;
       }
 
-      const submissions: any[] = subRes.error ? [] : (subRes.data ?? []);
-      const schedules: any[] = schedRes.error ? [] : (schedRes.data ?? []);
+      const submissions: any[] = subRes.data;
+      const schedules: any[] = schedRes.data;
       // Exact key: employee::period::phase. But `period` is written in several
       // vocabularies across the codebase (cycle title vs semester vs
       // probationary label), while this screen derives its own label from the

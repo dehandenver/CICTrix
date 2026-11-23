@@ -13,6 +13,7 @@
 
 import { supabase as supabaseClient } from '../supabase';
 import { getActiveOfficeNameSet } from './departments';
+import { fetchAllRows } from './fetchAllRows';
 import { getLndSourcePeriodKey, normalizeSemesterKey } from './semesterTransition';
 
 const supabase = supabaseClient as any;
@@ -141,10 +142,14 @@ const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100)
  */
 export async function computeNeedsAssessment(): Promise<CompetencyNeed[]> {
   const [{ data: emps, error: eErr }, activeOffices] = await Promise.all([
-    supabase
-      .from('employees_with_department')
-      .select('id, department, status')
-      .eq('status', 'Active'),
+    fetchAllRows<any>((from, to) =>
+      supabase
+        .from('employees_with_department')
+        .select('id, department, status')
+        .eq('status', 'Active')
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
     getActiveOfficeNameSet(),
   ]);
   if (eErr) {
@@ -192,11 +197,15 @@ export async function computeNeedsAssessment(): Promise<CompetencyNeed[]> {
   const resolveCompetency = (name: string) => canonicalMap.get(normKey(name)) ?? name;
 
   const [{ data: matches, error: mErr }, lndPeriodKey] = await Promise.all([
-    supabase
-      .from('ipcr_competency_matches')
-      .select('employee_id, competency, rating_period')
-      .not('competency', 'is', null)
-      .not('employee_id', 'is', null),
+    fetchAllRows<any>((from, to) =>
+      supabase
+        .from('ipcr_competency_matches')
+        .select('employee_id, competency, rating_period')
+        .not('competency', 'is', null)
+        .not('employee_id', 'is', null)
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
     getLndSourcePeriodKey(),
   ]);
   if (mErr) {
