@@ -4,6 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DRAFTS_KEY, type ApplyDrafts, type PlantillaChoice } from '../modules/applicant/flow/applicationDrafts';
 import type { ApplicantFormData } from '../types/applicant.types';
 
+// This smoke test starts on the Review step via sessionStorage to exercise
+// qualification carryover through external hire -> PDS -> evidence review.
+vi.mock('../utils/validation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/validation')>();
+  return { ...actual, validateFiles: () => null };
+});
+
 type Row = Record<string, unknown>;
 
 const store = vi.hoisted(() => ({

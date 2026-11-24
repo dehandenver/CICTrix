@@ -48,6 +48,7 @@ vi.mock('./supabase', () => {
 
   const from = (table: string) => {
     const operation: Operation = { table, action: 'select', filters: [] };
+    let sliceRange: [number, number] | null = null;
     remote.operations.push(operation);
 
     const execute = () => {
@@ -71,7 +72,8 @@ vi.mock('./supabase', () => {
         for (const row of matched) Object.assign(row, operation.payload);
       }
 
-      return { data: matched, error: null };
+      const rows = sliceRange ? matched.slice(sliceRange[0], sliceRange[1] + 1) : matched;
+      return { data: rows, error: null };
     };
 
     const builder: any = {
@@ -106,6 +108,10 @@ vi.mock('./supabase', () => {
         return builder;
       },
       order: () => builder,
+      range: (from: number, to: number) => {
+        sliceRange = [from, to];
+        return builder;
+      },
       then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
         Promise.resolve(execute()).then(resolve, reject),
     };

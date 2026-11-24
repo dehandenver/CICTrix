@@ -848,7 +848,7 @@ export const RaterManagementPage = () => {
       {undoRemoval && (
         <div
           role="status"
-          className="fixed bottom-6 right-6 z-[200] flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+          className="fixed bottom-6 right-6 z-[1200] flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg"
         >
           {/* Colour set on the span itself: globals.css colours every <span>
               directly, so it would not inherit the toast's white (§17 item 8). */}
@@ -867,7 +867,7 @@ export const RaterManagementPage = () => {
       )}
 
       {toast && !undoRemoval && (
-        <div className="fixed bottom-6 right-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
+        <div role="status" className="fixed bottom-6 right-6 z-[1200] rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
           {toast}
         </div>
       )}

@@ -424,11 +424,13 @@ select:focus {
 }
 
 /* ─── BUTTONS (General) ─────────────────────────────────────────────────────*/
-button {
+/* Zero-specificity :where() fallback so Tailwind utilities (.text-white, .bg-*,
+   .hover:*) and .btn variants are never overridden to dark text on hover. */
+:where(button) {
   color: var(--text-primary);
 }
 
-button:hover {
+:where(button:hover) {
   background-color: var(--bg-control);
   color: var(--text-primary);
 }

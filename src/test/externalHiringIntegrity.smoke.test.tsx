@@ -57,6 +57,7 @@ vi.mock('../lib/supabase', () => {
     let updatePatch: Row = {};
     let isSingle = false;
     let isMaybeSingle = false;
+    let sliceRange: [number, number] | null = null;
 
     const matchRows = (rows: Row[]) =>
       rows.filter((row) =>
@@ -147,7 +148,8 @@ vi.mock('../lib/supabase', () => {
       if (isMaybeSingle) {
         return { data: matched[0] ? applyProjection(matched[0], selectedCols) : null, error: null };
       }
-      return { data: matched.map((r) => applyProjection(r, selectedCols)), error: null };
+      const sliced = sliceRange ? matched.slice(sliceRange[0], sliceRange[1] + 1) : matched;
+      return { data: sliced.map((r) => applyProjection(r, selectedCols)), error: null };
     };
 
     const chain: any = {
@@ -192,6 +194,10 @@ vi.mock('../lib/supabase', () => {
         return chain;
       },
       order: () => chain,
+      range: (fromIdx: number, toIdx: number) => {
+        sliceRange = [fromIdx, toIdx];
+        return chain;
+      },
       limit: () => chain,
       single: () => {
         isSingle = true;

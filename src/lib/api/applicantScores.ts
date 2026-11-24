@@ -183,7 +183,9 @@ export function pcptRawToConvertedScore(raw: number): number {
   if (raw >= 26) return 14;
   if (raw >= 23) return 12;
   if (raw >= 20) return 10;
-  return +Math.max(0, Math.min(20, (raw / 30) * 20)).toFixed(1);
+  // Scale linearly in [0, 10) below raw 20 so converted scores stay monotonic
+  // and meet the raw=20 bracket (10 pts) smoothly without inverting 16–19 > 20.
+  return +Math.max(0, Math.min(10, (raw / 20) * 10)).toFixed(1);
 }
 
 export function oralRawToConvertedScore(raw: number): number {

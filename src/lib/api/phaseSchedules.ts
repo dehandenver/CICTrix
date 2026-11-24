@@ -9,6 +9,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { todayManilaIso } from '../../utils/manilaDate';
 
 const supabase = supabaseClient as any;
 
@@ -35,10 +36,8 @@ export interface PhaseSchedule {
   updated_at: string;
 }
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
-
-/** Derive Open/Closed from a schedule row for a given date (default today). */
-export function effectiveState(row: Pick<PhaseSchedule, 'mode' | 'start_date' | 'deadline_date'> | null, on = todayIso()): EffectiveState {
+/** Derive Open/Closed from a schedule row for a given date (default today in Asia/Manila). */
+export function effectiveState(row: Pick<PhaseSchedule, 'mode' | 'start_date' | 'deadline_date'> | null, on = todayManilaIso()): EffectiveState {
   if (!row) return 'Closed';
   if (row.mode === 'Open') return 'Open';
   if (row.mode === 'Closed') return 'Closed';

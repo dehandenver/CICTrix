@@ -11,6 +11,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { fetchAllRows } from './fetchAllRows';
 import type { IpcrStage } from './ipcrStages';
 import { fetchTargetRowsForEmployee, lockTargetSet } from './lockedTargets';
 
@@ -256,5 +257,52 @@ export async function resolveTargetSettingMeta(targetSettingId: string): Promise
   } catch (err) {
     console.warn('[ipcrSubmissions] resolveTargetSettingMeta failed:', err);
     return null;
+  }
+}
+
+/**
+ * Paginated read of all rows in `ipcr_submissions` (avoids the 1,000-row
+ * PostgREST cap and propagates read errors instead of returning empty).
+ */
+export async function listAllIpcrSubmissions(
+  columns = 'id, employee_id, period, phase, stage, updated_at',
+): Promise<{ ok: true; data: any[] } | { ok: false; error: string }> {
+  try {
+    const { data, error } = await fetchAllRows<any>((from, to) =>
+      supabase
+        .from('ipcr_submissions')
+        .select(columns)
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    if (error) {
+      return { ok: false, error: (error as any)?.message ?? 'Failed to load IPCR submissions.' };
+    }
+    return { ok: true, data: data ?? [] };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Paginated read of all rows in `probationary_ipcr_schedules`.
+ */
+export async function listAllProbationarySchedules(): Promise<
+  { ok: true; data: any[] } | { ok: false; error: string }
+> {
+  try {
+    const { data, error } = await fetchAllRows<any>((from, to) =>
+      supabase
+        .from('probationary_ipcr_schedules')
+        .select('*')
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    if (error) {
+      return { ok: false, error: (error as any)?.message ?? 'Failed to load probationary IPCR schedules.' };
+    }
+    return { ok: true, data: data ?? [] };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

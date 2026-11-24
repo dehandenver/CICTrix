@@ -60,7 +60,8 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
 }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [workList, setWorkList] = useState<RawWork[]>([]);
   const [trainingList, setTrainingList] = useState<RawTraining[]>([]);
@@ -84,7 +85,8 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
 
     let isMounted = true;
     setLoading(true);
-    setError(null);
+    setLoadError(null);
+    setSaveError(null);
 
     async function loadData() {
       try {
@@ -143,7 +145,7 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
         setDecisions(initialDecisions);
       } catch (err: any) {
         if (isMounted) {
-          setError(err.message || 'Failed to load candidate evidence');
+          setLoadError(err.message || 'Failed to load candidate evidence');
         }
       } finally {
         if (isMounted) setLoading(false);
@@ -181,7 +183,7 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
   const handleSave = async () => {
     try {
       setSaving(true);
-      setError(null);
+      setSaveError(null);
 
       const reqSnapshot = criticalPosition.requirements as unknown as Record<string, unknown>;
       const inputs: SaveEvidenceReviewInput[] = [];
@@ -278,7 +280,7 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
       onReviewSaved();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to save review decisions');
+      setSaveError(err.message || 'Failed to save review decisions');
     } finally {
       setSaving(false);
     }
@@ -292,19 +294,19 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
     let count = 0;
     for (const w of workList) {
       const d = decisions[`work:${w.id}`];
-      if (d?.isRelevant !== null && d?.isCityHall !== null) count++;
+      if (d != null && d.isRelevant !== null && d.isCityHall !== null) count++;
     }
     for (const t of trainingList) {
       const d = decisions[`training:${t.id}`];
-      if (d?.isRelevant !== null && d?.isCityHall !== null) count++;
+      if (d != null && d.isRelevant !== null && d.isCityHall !== null) count++;
     }
     for (const ed of educationList) {
       const d = decisions[`education:${ed.id}`];
-      if (d?.isRelevant !== null && d?.matchesRequirement !== null) count++;
+      if (d != null && d.isRelevant !== null && d.matchesRequirement !== null) count++;
     }
     for (const el of eligibilityList) {
       const d = decisions[`eligibility:${el.id}`];
-      if (d?.isRelevant !== null) count++;
+      if (d != null && d.isRelevant !== null) count++;
     }
     return count;
   }, [workList, trainingList, educationList, eligibilityList, decisions]);
@@ -332,7 +334,8 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            disabled={saving}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
             aria-label="Close"
           >
             ✕
@@ -364,10 +367,15 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {loading ? (
             <div className="py-12 text-center text-sm text-slate-500">Loading evidence records...</div>
-          ) : error ? (
-            <div className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          ) : loadError ? (
+            <div role="alert" className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{loadError}</div>
           ) : (
             <>
+              {saveError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {saveError}
+                </div>
+              )}
               {/* 1. Work Experience */}
               <section>
                 <div className="mb-2 flex items-center justify-between">
@@ -612,7 +620,7 @@ export const CandidateEvidenceReviewModal: React.FC<CandidateEvidenceReviewModal
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving || loading}
+              disabled={saving || loading || Boolean(loadError)}
               className="rounded-lg bg-[var(--p,#363EE8)] px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[var(--p7,#191FA8)] disabled:opacity-50"
             >
               {saving ? 'Saving Decisions...' : 'Save Review'}

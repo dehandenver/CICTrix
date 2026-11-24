@@ -9,6 +9,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { todayManilaIso } from '../../utils/manilaDate';
 
 const supabase = supabaseClient as any;
 
@@ -30,8 +31,6 @@ export interface IdpFormConfig {
 
 export type IdpResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
-
 export const EMPTY_IDP_CONFIG: IdpFormConfig = {
   scope: 'system',
   formUrl: '',
@@ -51,7 +50,7 @@ export const EMPTY_IDP_CONFIG: IdpFormConfig = {
  */
 export function effectiveIdpState(
   config: Pick<IdpFormConfig, 'mode' | 'opensAt' | 'closesAt'> | null,
-  on: string = todayIso(),
+  on: string = todayManilaIso(),
 ): IdpState {
   if (!config) return 'Closed';
   if (config.mode === 'Open') return 'Open';
@@ -164,7 +163,7 @@ export async function saveIdpConfig(
 }
 
 /** Human-readable reason the form is not available, for the employee page. */
-export function closedReason(config: IdpFormConfig, on: string = todayIso()): string {
+export function closedReason(config: IdpFormConfig, on: string = todayManilaIso()): string {
   if (config.mode === 'Closed') return 'The IDP form is currently closed by Learning & Development.';
   if (config.mode === 'Open') return '';
   if (!config.opensAt || !config.closesAt) {

@@ -20,7 +20,9 @@ import { getActiveCyclePeriod } from './compliance';
 import { sendNotification, type IpcrPhase } from './ipcrSubmissions';
 import { openSelfRatingPeriod, closeSelfRatingPeriod } from './ipcrRatings';
 import { createNotifications } from './employeeNotifications';
+import { fetchAllRows } from './fetchAllRows';
 import { supabase as supabaseClient } from '../supabase';
+import { todayManilaIso } from '../../utils/manilaDate';
 
 const supabase = supabaseClient as any;
 
@@ -57,9 +59,16 @@ export async function getSystemPhaseStates(): Promise<SystemPhaseStates> {
 
 /** Active employees, for the notification fan-out. Failure here is not fatal. */
 async function activeEmployeeIds(): Promise<{ ids: string[] } | { error: string }> {
-  const { data, error } = await supabase.from('employees').select('id').eq('status', 'Active');
-  if (error) return { error: error.message ?? 'Failed to list active employees.' };
-  return { ids: (data ?? []).map((e: any) => String(e.id)) };
+  const { data, error } = await fetchAllRows<{ id: string }>((from, to) =>
+    supabase
+      .from('employees')
+      .select('id')
+      .eq('status', 'Active')
+      .order('id', { ascending: true })
+      .range(from, to),
+  );
+  if (error) return { error: (error as any)?.message ?? 'Failed to list active employees.' };
+  return { ids: (data ?? []).map((e) => String(e.id)) };
 }
 
 export async function openPhase(input: {
@@ -70,7 +79,7 @@ export async function openPhase(input: {
     const isPhase1 = input.phase === 'phase1';
     const dbPhase: PhaseKey = isPhase1 ? 'target_setting' : 'rating';
     const notifPhase: IpcrPhase = isPhase1 ? 'target' : 'rating';
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayManilaIso();
 
     // 1. The switch. Nothing has changed if this fails.
     const upsertRes = await upsertSchedule({
@@ -162,7 +171,7 @@ export async function closePhase(input: {
     const isPhase1 = input.phase === 'phase1';
     const dbPhase: PhaseKey = isPhase1 ? 'target_setting' : 'rating';
     const notifPhase: IpcrPhase = isPhase1 ? 'target' : 'rating';
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayManilaIso();
 
     const phaseStates = await getSystemPhaseStates();
     const wasClosed = phaseStates[dbPhase] === 'Closed';

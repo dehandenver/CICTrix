@@ -151,7 +151,7 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
   const inOffice = useCallback(
     (recs: PipelineRecFull[]) => {
       const want = officeName?.trim().toLowerCase();
-      if (!want) return recs;
+      if (!want) return [];
       return recs.filter((r) => (r.department ?? '').trim().toLowerCase() === want);
     },
     [officeName],
@@ -159,24 +159,38 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
 
   // Poll the recommendation pipeline so L&D approvals appear without a refresh.
   useEffect(() => {
-    const load = async () => setPipeline(inOffice(await listAllRecommendations()));
+    if (!officeName?.trim()) {
+      setPipeline([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const rows = await listAllRecommendations();
+      if (!cancelled) setPipeline(inOffice(rows));
+    };
     void load();
     timer.current = window.setInterval(() => void load(), POLL_MS);
-    return () => { if (timer.current) window.clearInterval(timer.current); };
-  }, [inOffice]);
+    return () => {
+      cancelled = true;
+      if (timer.current) window.clearInterval(timer.current);
+    };
+  }, [officeName, inOffice]);
 
   // Candidates a head may add are their own staff — the same scope as the
   // recommendations they are added to.
   useEffect(() => {
+    if (!officeName?.trim()) {
+      setEmployees([]);
+      return;
+    }
     let cancelled = false;
     (async () => {
-      let query = supabase
+      const { data } = await supabase
         .from('employees_with_department')
         .select('id, full_name, department, status')
         .eq('status', 'Active')
+        .eq('department', officeName)
         .order('full_name', { ascending: true });
-      if (officeName) query = query.eq('department', officeName);
-      const { data } = await query;
       if (cancelled) return;
       setEmployees((data ?? []).map((e: any) => ({ id: String(e.id), name: (e.full_name ?? '').trim() || 'Unnamed', department: e.department ?? null })));
     })();

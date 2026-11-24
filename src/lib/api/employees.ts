@@ -13,6 +13,7 @@
 
 import { supabase as supabaseClient } from '../../lib/supabase';
 import { DIVISION_PARENT_COLUMN, getDepartmentIdByName } from './departments';
+import { fetchAllRows } from './fetchAllRows';
 
 // Cast to `any` to bypass the auto-generated Supabase types resolving to `never`
 // for tables that exist at runtime but aren't reflected in the local type defs.
@@ -44,24 +45,26 @@ export async function getAllEmployees(filters?: {
   search?: string;
 }) {
   try {
-    let query = supabase.from('employees_with_department').select('*');
+    const { data, error } = await fetchAllRows<Employee>((from, to) => {
+      let query = supabase.from('employees_with_department').select('*');
 
-    if (filters?.status) {
-      query = query.eq('status', filters.status);
-    }
+      if (filters?.status) {
+        query = query.eq('status', filters.status);
+      }
 
-    if (filters?.department) {
-      query = query.eq('department', filters.department);
-    }
+      if (filters?.department) {
+        query = query.eq('department', filters.department);
+      }
 
-    if (filters?.search) {
-      const searchTerm = `%${filters.search}%`;
-      query = query.or(
-        `full_name.ilike.${searchTerm},email.ilike.${searchTerm},employee_id.ilike.${searchTerm}`
-      );
-    }
+      if (filters?.search) {
+        const searchTerm = `%${filters.search}%`;
+        query = query.or(
+          `full_name.ilike.${searchTerm},email.ilike.${searchTerm},employee_id.ilike.${searchTerm}`
+        );
+      }
 
-    const { data, error } = await query.order('full_name');
+      return query.order('full_name').order('id', { ascending: true }).range(from, to);
+    });
 
     if (error) throw error;
     return { success: true, data: data || [] };
@@ -135,10 +138,14 @@ export async function getEmployeesByPosition(position: string, department: strin
  */
 export async function getPositions() {
   try {
-    const { data: employees, error } = await supabase
-      .from('employees_with_department')
-      .select('current_position, department')
-      .eq('status', 'Active');
+    const { data: employees, error } = await fetchAllRows<any>((from, to) =>
+      supabase
+        .from('employees_with_department')
+        .select('current_position, department')
+        .eq('status', 'Active')
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
 
     if (error) throw error;
 
@@ -366,19 +373,22 @@ export async function searchEmployees(searchTerm: string) {
 export async function getEmployeeStatistics() {
   try {
     const [totalResult, activeResult, onLeaveResult, resignedResult] = await Promise.all([
-      supabase.from('employees').select('id'),
-      supabase.from('employees').select('id').eq('status', 'Active'),
-      supabase.from('employees').select('id').eq('status', 'On Leave'),
-      supabase.from('employees').select('id').eq('status', 'Resigned'),
+      supabase.from('employees').select('id', { count: 'exact', head: true }),
+      supabase.from('employees').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
+      supabase.from('employees').select('id', { count: 'exact', head: true }).eq('status', 'On Leave'),
+      supabase.from('employees').select('id', { count: 'exact', head: true }).eq('status', 'Resigned'),
     ]);
+
+    const firstError = totalResult.error ?? activeResult.error ?? onLeaveResult.error ?? resignedResult.error;
+    if (firstError) throw firstError;
 
     return {
       success: true,
       data: {
-        total: totalResult.data?.length || 0,
-        active: activeResult.data?.length || 0,
-        onLeave: onLeaveResult.data?.length || 0,
-        resigned: resignedResult.data?.length || 0,
+        total: totalResult.count ?? 0,
+        active: activeResult.count ?? 0,
+        onLeave: onLeaveResult.count ?? 0,
+        resigned: resignedResult.count ?? 0,
       },
     };
   } catch (error) {

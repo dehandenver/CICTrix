@@ -17,6 +17,7 @@ let queries: Query[];
 
 function queryFor(table: string) {
   const filters: Filter[] = [];
+  let sliceRange: [number, number] | null = null;
   const query = {
     select: () => query,
     eq: (column: string, value: unknown) => {
@@ -28,14 +29,19 @@ function queryFor(table: string) {
       return query;
     },
     order: () => query,
+    range: (from: number, to: number) => {
+      sliceRange = [from, to];
+      return query;
+    },
     then: (resolve: (result: QueryResult) => unknown) => {
       queries.push({ table, filters });
       const isBatch = table === 'critical_positions' && filters.some((f) => f.column === 'id');
       const message = errors.get(isBatch ? 'batch' : table);
       const source = isBatch ? batchPositions ?? tables[table] : tables[table];
-      const data = (source ?? []).filter((row) =>
+      const filtered = (source ?? []).filter((row) =>
         filters.every((f) => f.values.includes(row[f.column])),
       );
+      const data = sliceRange ? filtered.slice(sliceRange[0], sliceRange[1] + 1) : filtered;
       return Promise.resolve(
         resolve({
           data: message ? null : data,

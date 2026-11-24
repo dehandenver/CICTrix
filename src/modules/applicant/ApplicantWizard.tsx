@@ -192,20 +192,42 @@ export const ApplicantWizard: React.FC = () => {
   // Hydrate from sessionStorage so a refresh keeps the applicant on the same
   // step with the same answers for every plantilla.
   const persisted = useMemo(() => loadDrafts(), []);
+  const hydratedApps = useMemo<Record<string, AppState>>(
+    () => Object.fromEntries(Object.entries(persisted.drafts).map(([key, formData]) => [key, blankApp(formData)])),
+    [persisted],
+  );
+  // File objects cannot serialize to sessionStorage. If the applicant reloaded
+  // while on Step 3 (Review), force them back to the Documents page whenever
+  // required attachments are now missing so they cannot submit empty files.
+  const firstReloadMissingFileKey = useMemo(() => {
+    if (persisted.step !== 'review') return null;
+    for (const [key, app] of Object.entries(hydratedApps)) {
+      if (validateApp(app).fileError) return key;
+    }
+    return null;
+  }, [persisted.step, hydratedApps]);
+  const reviewMissingFilesAfterReload = firstReloadMissingFileKey !== null;
   const location = useLocation();
   const navigate = useNavigate();
 
   const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>(persisted.entryMode);
-  const [step, setStep] = useState<'fill' | 'review'>(persisted.step);
+  const [step, setStep] = useState<'fill' | 'review'>(
+    reviewMissingFilesAfterReload ? 'fill' : persisted.step,
+  );
   /** Page of Step 2 (flow/formPages.ts). Answers live in `apps`, so paging never loses data. */
-  const [formPage, setFormPage] = useState(() => clampFormPage(persisted.formPage));
+  const [formPage, setFormPage] = useState(() =>
+    reviewMissingFilesAfterReload ? FORM_PAGE_COUNT : clampFormPage(persisted.formPage),
+  );
+  const [reloadFileNotice, setReloadFileNotice] = useState<string>(
+    reviewMissingFilesAfterReload
+      ? 'Your form answers were restored after reloading, but uploaded documents cannot be kept across page reloads. Please re-attach your required files before submitting.'
+      : '',
+  );
   const [posting, setPosting] = useState<ApplyDrafts['posting']>(persisted.posting);
   const [choices, setChoices] = useState<PlantillaChoice[]>(persisted.choices);
   const [lockedPosition, setLockedPosition] = useState(persisted.lockedPosition);
-  const [apps, setApps] = useState<Record<string, AppState>>(() =>
-    Object.fromEntries(Object.entries(persisted.drafts).map(([key, formData]) => [key, blankApp(formData)])),
-  );
-  const [activeKey, setActiveKey] = useState(persisted.activeKey);
+  const [apps, setApps] = useState<Record<string, AppState>>(() => hydratedApps);
+  const [activeKey, setActiveKey] = useState(firstReloadMissingFileKey ?? persisted.activeKey);
   const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<PortalAccountIdentity | null>(
     persisted.authenticatedEmployeeAccount,
   );
@@ -734,6 +756,7 @@ export const ApplicantWizard: React.FC = () => {
       setFormPage(firstPageWithErrors(first.errors, first.fileError) ?? FORM_PAGE_COUNT);
       return;
     }
+    setReloadFileNotice('');
     setStep('review');
     window.scrollTo({ top: 0 });
   };
@@ -1123,9 +1146,47 @@ export const ApplicantWizard: React.FC = () => {
   const isRetry = failedKeys.length > 0;
   const confirmBatchCount = confirmBatch?.keys.length ?? 0;
 
+  const validateTargetsForSubmit = (targets: string[]): boolean => {
+    const failedSummary: Array<{ key: string; count: number }> = [];
+    const nextApps: Record<string, AppState> = { ...apps };
+    let firstInvalidKey: string | null = null;
+    let firstInvalidHasFileError = false;
+
+    for (const key of targets) {
+      const app = apps[key];
+      if (!app) continue;
+      const result = validateApp(app);
+      if (result.count > 0) {
+        failedSummary.push({ key, count: result.count });
+        nextApps[key] = { ...app, errors: result.errors, fileError: result.fileError };
+        if (!firstInvalidKey) {
+          firstInvalidKey = key;
+          firstInvalidHasFileError = Boolean(result.fileError) && Object.keys(result.errors).length === 0;
+        }
+      }
+    }
+
+    if (failedSummary.length === 0) return true;
+
+    setApps(nextApps);
+    setReviewAttempted(true);
+    setValidationSummary(failedSummary);
+    setConfirmBatch(null);
+    if (firstInvalidKey) setActiveKey(firstInvalidKey);
+    setStep('fill');
+    setFormPage(firstInvalidHasFileError ? FORM_PAGE_COUNT : 1);
+    if (firstInvalidHasFileError) {
+      setReloadFileNotice(
+        'Please attach all required documents before submitting your application.',
+      );
+    }
+    return false;
+  };
+
   const handleSubmitAll = async () => {
     const targets = confirmBatch?.keys ?? [];
     if (targets.length === 0) return;
+    if (!validateTargetsForSubmit(targets)) return;
     setIsSubmitting(true);
     setOutcomes((prev) => ({ ...prev, ...Object.fromEntries(targets.map((key) => [key, { status: 'submitting' } as SubmitOutcome])) }));
 
@@ -1700,6 +1761,12 @@ export const ApplicantWizard: React.FC = () => {
                       <p className="af-alert-body">{copyNotice}</p>
                     </div>
                   )}
+                  {reloadFileNotice && (
+                    <div className="af-alert af-alert-error" role="alert" style={{ marginBottom: 24 }}>
+                      <AlertCircle size={20} strokeWidth={1.75} aria-hidden="true" />
+                      <p className="af-alert-body">{reloadFileNotice}</p>
+                    </div>
+                  )}
                   {prefillNotice[currentKey] && activeType === 'promotion' && (
                     <div className="af-alert af-alert-info" role="status" style={{ marginBottom: 24 }}>
                       <Info size={20} strokeWidth={1.75} aria-hidden="true" />
@@ -1981,7 +2048,11 @@ export const ApplicantWizard: React.FC = () => {
                 <button
                   type="button"
                   className="btn btn-md btn-primary"
-                  onClick={() => setConfirmBatch(isRetry ? { keys: failedKeys, mode: 'retry' } : { keys: pendingKeys, mode: 'submit' })}
+                  onClick={() => {
+                    const targets = isRetry ? failedKeys : pendingKeys;
+                    if (!validateTargetsForSubmit(targets)) return;
+                    setConfirmBatch(isRetry ? { keys: failedKeys, mode: 'retry' } : { keys: pendingKeys, mode: 'submit' });
+                  }}
                   disabled={!declared || isSubmitting || pendingKeys.length === 0}
                   aria-describedby={!declared ? 'af-declaration-title' : undefined}
                 >
