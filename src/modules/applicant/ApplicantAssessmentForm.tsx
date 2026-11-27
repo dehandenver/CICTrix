@@ -343,6 +343,12 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
             <>
               <Input
                 label="Employee ID"
+                name="employee_id"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                enterKeyHint="next"
                 placeholder="Enter your employee ID"
                 value={formData.employee_id}
                 onChange={(e) => onChange('employee_id', e.target.value)}
@@ -352,6 +358,12 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
               <Input
                 label="Employee Portal Username"
+                name="employee_username"
+                autoComplete="username"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                enterKeyHint="next"
                 placeholder="Enter your portal username"
                 value={formData.employee_username}
                 onChange={(e) => onChange('employee_username', e.target.value)}
@@ -361,6 +373,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
               <Input
                 label="Current Position"
+                name="current_position"
+                autoComplete="organization-title"
+                enterKeyHint="next"
                 placeholder="Enter your current position"
                 value={formData.current_position}
                 onChange={(e) => onChange('current_position', e.target.value)}
@@ -370,6 +385,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
               <Input
                 label="Current Department"
+                name="current_department"
+                autoComplete="organization"
+                enterKeyHint="next"
                 placeholder="Enter your current department"
                 value={formData.current_department}
                 onChange={(e) => onChange('current_department', e.target.value)}
@@ -381,6 +399,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
           <Input
             label="First Name"
+            name="first_name"
+            autoComplete="given-name"
+            enterKeyHint="next"
             placeholder="Enter your first name"
             value={formData.first_name}
             onChange={(e) => onChange('first_name', e.target.value)}
@@ -390,6 +411,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
           <Input
             label="Middle Name"
+            name="middle_name"
+            autoComplete="additional-name"
+            enterKeyHint="next"
             placeholder="Enter your middle name"
             value={formData.middle_name}
             onChange={(e) => onChange('middle_name', e.target.value)}
@@ -398,6 +422,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
           <Input
             label="Last Name"
+            name="last_name"
+            autoComplete="family-name"
+            enterKeyHint="next"
             placeholder="Enter your last name"
             value={formData.last_name}
             onChange={(e) => onChange('last_name', e.target.value)}
@@ -451,7 +478,14 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
         <div className="af-fields">
           <Input
             label="Email Address"
+            name="email"
             type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            enterKeyHint="next"
             placeholder="your.email@example.com"
             value={formData.email}
             onChange={(e) => onChange('email', e.target.value)}
@@ -461,7 +495,11 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
           <Input
             label="Contact Number"
+            name="contact_number"
             type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            enterKeyHint="next"
             placeholder="+63 912 345 6789"
             value={formData.contact_number}
             onChange={(e) => onChange('contact_number', e.target.value)}
@@ -472,6 +510,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           <div className="af-field-full">
             <Input
               label="Address"
+              name="address"
+              autoComplete="street-address"
+              enterKeyHint="next"
               placeholder="Enter your complete address"
               value={formData.address}
               onChange={(e) => onChange('address', e.target.value)}

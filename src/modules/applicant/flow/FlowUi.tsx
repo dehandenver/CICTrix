@@ -2,7 +2,7 @@
  * Building blocks shared by Job Details (Step 1) and the application wizard
  * (Steps 2–3). Styles: src/styles/applicant-flow.css.
  */
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { Check, ChevronRight, X } from 'lucide-react';
 import abyanLogo from '../../../assets/abyan-logo.png';
 import type { ChoiceStatus } from './applicationDrafts';
@@ -125,7 +125,7 @@ export const FormSection = ({
   </section>
 );
 
-// ── Confirm modal (§9.10: 480px, Cancel left, Confirm right) ────────────────
+// ── Confirm modal (native <dialog>, §9.10: 480px desktop / full-screen sheet < 640px) ──
 
 export const ConfirmModal = ({
   open,
@@ -148,63 +148,101 @@ export const ConfirmModal = ({
   onConfirm: () => void;
   onCancel: () => void;
 }) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const titleId = useRef(`af-modal-${Math.random().toString(36).slice(2, 9)}`).current;
+  const titleId = useId();
 
   useEffect(() => {
-    if (!open) return;
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    // The safe choice gets focus, so an accidental Enter never confirms.
-    cancelRef.current?.focus();
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      if (!dialog.open) {
+        if (typeof dialog.showModal === 'function') {
+          dialog.showModal();
+        } else {
+          dialog.setAttribute('open', '');
+        }
+      }
+      // Safe action receives initial focus so accidental Enter never confirms.
+      cancelRef.current?.focus();
+    } else if (dialog.open) {
+      if (typeof dialog.close === 'function') {
+        dialog.close();
+      } else {
+        dialog.removeAttribute('open');
+      }
+    }
+  }, [open]);
 
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onCancel();
-      if (event.key !== 'Tab' || !panelRef.current) return;
-      // Keep Tab inside the dialog.
-      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  // Fallback light-dismiss when native <dialog closedby="any"> is unsupported (e.g. Safari).
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!open || !dialog || busy) return;
+    if (typeof HTMLDialogElement !== 'undefined' && 'closedBy' in HTMLDialogElement.prototype) return;
+
+    const isOutside = (event: PointerEvent) => {
+      const r = dialog.getBoundingClientRect();
+      return event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom;
     };
-    document.addEventListener('keydown', onKey);
+
+    let pressedOutside = false;
+    const onPointerDown = (event: PointerEvent) => {
+      pressedOutside = isOutside(event);
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (pressedOutside && isOutside(event)) {
+        onCancel();
+      }
+      pressedOutside = false;
+    };
+
+    dialog.addEventListener('pointerdown', onPointerDown);
+    dialog.addEventListener('pointerup', onPointerUp);
     return () => {
-      document.removeEventListener('keydown', onKey);
-      previouslyFocused?.focus?.();
+      dialog.removeEventListener('pointerdown', onPointerDown);
+      dialog.removeEventListener('pointerup', onPointerUp);
     };
   }, [open, busy, onCancel]);
 
   if (!open) return null;
 
+  const closedByAttrs = { closedby: busy ? 'none' : 'any' } as Record<string, string>;
+
   return (
-    <div className="af-modal-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel(); }}>
-      <div className="af-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panelRef}>
-        <div className="af-modal-head">
-          <h2 className="af-title-s" id={titleId}>{title}</h2>
-          <button type="button" className="af-modal-close" onClick={onCancel} aria-label="Close" disabled={busy}>
-            <X size={20} strokeWidth={1.75} />
-          </button>
-        </div>
-        {children && <div className="af-body-m">{children}</div>}
-        <div className="af-modal-actions">
-          <button ref={cancelRef} type="button" className="btn btn-md btn-secondary" onClick={onCancel} disabled={busy}>
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={`btn btn-md ${destructive ? 'af-btn-destructive' : 'btn-primary'} ${busy ? 'af-loading' : ''}`}
-            onClick={onConfirm}
-            disabled={busy}
-            aria-busy={busy || undefined}
-          >
-            <span>{confirmLabel}</span>
-          </button>
-        </div>
+    <dialog
+      ref={dialogRef}
+      className="af-dialog"
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onCancel();
+      }}
+      onClose={() => {
+        if (dialogRef.current) dialogRef.current.returnValue = '';
+      }}
+      {...closedByAttrs}
+    >
+      <div className="af-dialog-head">
+        <h1 className="af-dialog-title" id={titleId}>{title}</h1>
+        <button type="button" className="af-dialog-close" onClick={onCancel} aria-label="Close" disabled={busy}>
+          <X size={20} strokeWidth={1.75} aria-hidden="true" />
+        </button>
       </div>
-    </div>
+      {children && <div className="af-dialog-body af-body-m">{children}</div>}
+      <div className="af-modal-actions">
+        <button ref={cancelRef} type="button" autoFocus className="btn btn-md btn-secondary" onClick={onCancel} disabled={busy}>
+          {cancelLabel}
+        </button>
+        <button
+          type="button"
+          className={`btn btn-md ${destructive ? 'af-btn-destructive' : 'btn-primary'} ${busy ? 'af-loading' : ''}`}
+          onClick={onConfirm}
+          disabled={busy}
+          aria-busy={busy || undefined}
+        >
+          <span>{confirmLabel}</span>
+        </button>
+      </div>
+    </dialog>
   );
 };

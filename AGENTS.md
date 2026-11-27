@@ -88,6 +88,8 @@ New module folders only (a directory of related files imported as a unit; not si
 
 ## UI / UX design
 
+- **Modern Web Guidance is mandatory.** Launch the `modern-web-guidance` skill (`npx.cmd -y modern-web-guidance@latest search` + `retrieve`) **first** during any UI change or related HTML/CSS, layout, responsiveness, accessibility, form, dialog, popover, navigation, or client-side DOM/UX work in this system. Verify compliance with the retrieved guides before finishing and include the `### Modern Web Guidance` disclosure section when delivering changes.
+
 **Show, don't describe.** An open visual question (layout, color, spacing, motion, comparing options) is answered with the `ui-preview` skill, not text. Skip it for small changes, or when the user says "skip the preview".
 
 - `DESIGN_IDENTITY.md` (repo root) is the source of truth for color, type, spacing, components, and status badges. Read it before any UI work. Tokens live in `src/styles/abyan-tokens.css`. Use the tokens, not hard-coded hex; use the `.btn` classes; use the §10 status map for badges. Run its §16 PR checklist before calling a UI change done.

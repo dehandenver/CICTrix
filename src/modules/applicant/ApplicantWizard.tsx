@@ -236,6 +236,15 @@ export const ApplicantWizard: React.FC = () => {
   const [reviewAttempted, setReviewAttempted] = useState(false);
   const [validationSummary, setValidationSummary] = useState<Array<{ key: string; count: number }>>([]);
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
+  const copyTriggerRef = useRef<HTMLButtonElement>(null);
+  const copyMenuRef = useRef<HTMLUListElement>(null);
+  const [copyMenuFallbackStyle, setCopyMenuFallbackStyle] = useState<React.CSSProperties | undefined>(undefined);
+  const supportsCopyPopover = useMemo(
+    () =>
+      typeof HTMLElement !== 'undefined' &&
+      Object.prototype.hasOwnProperty.call(HTMLElement.prototype, 'popover'),
+    [],
+  );
   const [pendingCopy, setPendingCopy] = useState<{ from: string; to: string } | null>(null);
   const [copyNotice, setCopyNotice] = useState('');
   const [declared, setDeclared] = useState(false);
@@ -677,9 +686,85 @@ export const ApplicantWizard: React.FC = () => {
     });
   }, [currentKey, apps]);
 
+  const positionCopyMenuFallback = useCallback(() => {
+    const supportsAnchor =
+      typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('position-area', 'block-end');
+    if (supportsAnchor) {
+      setCopyMenuFallbackStyle(undefined);
+      return;
+    }
+    const trigger = copyTriggerRef.current;
+    const menu = copyMenuRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const width = menuRect.width || Math.min(260, window.innerWidth - 32);
+    const height = menuRect.height || 160;
+    const gap = 6;
+    const top = rect.bottom + gap + height > window.innerHeight
+      ? Math.max(gap, rect.top - gap - height)
+      : rect.bottom + gap;
+    const left = Math.min(
+      Math.max(16, rect.right - width),
+      Math.max(16, window.innerWidth - width - 16),
+    );
+    setCopyMenuFallbackStyle({ top, left });
+  }, []);
+
+  const closeCopyMenu = useCallback(() => {
+    const menu = copyMenuRef.current as (HTMLUListElement & { hidePopover?: () => void }) | null;
+    if (supportsCopyPopover && menu?.hidePopover && copyMenuOpen) {
+      try { menu.hidePopover(); } catch { /* ignore */ }
+    }
+    setCopyMenuOpen(false);
+  }, [supportsCopyPopover, copyMenuOpen]);
+
+  useEffect(() => {
+    const menu = copyMenuRef.current;
+    if (!supportsCopyPopover || !menu) return;
+    const onToggle = (event: Event) => {
+      const nextOpen = (event as ToggleEvent).newState === 'open';
+      setCopyMenuOpen(nextOpen);
+      if (nextOpen) {
+        window.requestAnimationFrame(positionCopyMenuFallback);
+      }
+    };
+    menu.addEventListener('toggle', onToggle);
+    return () => menu.removeEventListener('toggle', onToggle);
+  }, [supportsCopyPopover, positionCopyMenuFallback]);
+
+  useEffect(() => {
+    if (supportsCopyPopover || !copyMenuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setCopyMenuOpen(false);
+        copyTriggerRef.current?.focus();
+      }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && !copyMenuRef.current?.contains(target) && !copyTriggerRef.current?.contains(target)) {
+        setCopyMenuOpen(false);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [supportsCopyPopover, copyMenuOpen]);
+
   const selectTab = (key: string) => {
     setActiveKey(key);
-    setCopyMenuOpen(false);
+    closeCopyMenu();
+    window.requestAnimationFrame(() => {
+      tabRefs.current[key]?.scrollIntoView?.({
+        block: 'nearest',
+        inline: 'nearest',
+        container: 'nearest',
+      } as ScrollIntoViewOptions);
+    });
   };
 
   const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -720,14 +805,14 @@ export const ApplicantWizard: React.FC = () => {
     }));
     setCopyNotice(`Copied answers from ${labelFor(from)}. You can still edit this copy on its own.`);
     setPendingCopy(null);
-    setCopyMenuOpen(false);
+    closeCopyMenu();
   };
 
   const requestCopy = (from: string) => {
     const target = apps[currentKey];
     if (target && (draftHasData(target.formData) || target.files.length > 0)) {
       setPendingCopy({ from, to: currentKey });
-      setCopyMenuOpen(false);
+      closeCopyMenu();
       return;
     }
     copyAnswers(from, currentKey);
@@ -1493,6 +1578,12 @@ export const ApplicantWizard: React.FC = () => {
               <label htmlFor="employee-number">Employee Number</label>
               <input
                 id="employee-number"
+                name="employeeNumber"
+                autoComplete="username"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                enterKeyHint="next"
                 value={employeeNumber}
                 onChange={(event) => setEmployeeNumber(event.target.value)}
                 placeholder="e.g., EMP-2024-001"
@@ -1502,19 +1593,23 @@ export const ApplicantWizard: React.FC = () => {
               <div className="relative">
                 <input
                   id="employee-password"
+                  name="employeePassword"
                   type={showEmployeePassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  enterKeyHint="done"
                   value={employeePassword}
                   onChange={(event) => setEmployeePassword(event.target.value)}
                   placeholder="Enter your employee password"
-                  style={{ paddingRight: '2.5rem' }}
+                  style={{ paddingRight: '2.75rem' }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowEmployeePassword((prev) => !prev)}
+                  aria-pressed={showEmployeePassword}
                   aria-label={showEmployeePassword ? 'Hide password' : 'Show password'}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-10 w-10 items-center justify-center text-slate-400 hover:text-slate-600"
                 >
-                  {showEmployeePassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  {showEmployeePassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
                 </button>
               </div>
 
@@ -1730,26 +1825,35 @@ export const ApplicantWizard: React.FC = () => {
                   {otherKeys.length > 0 && (
                     <div className="af-menu-wrap">
                       <button
+                        ref={copyTriggerRef}
                         type="button"
-                        className="btn btn-sm btn-secondary"
-                        aria-haspopup="menu"
+                        className="btn btn-sm btn-secondary af-menu-trigger"
+                        aria-controls="af-copy-menu"
                         aria-expanded={copyMenuOpen}
-                        onClick={() => setCopyMenuOpen((open) => !open)}
+                        onClick={() => {
+                          if (!supportsCopyPopover) setCopyMenuOpen((open) => !open);
+                        }}
+                        {...(supportsCopyPopover ? ({ popovertarget: 'af-copy-menu' } as Record<string, string>) : {})}
                       >
                         <Copy size={16} strokeWidth={1.75} aria-hidden="true" />
                         Copy Answers From…
                       </button>
-                      {copyMenuOpen && (
-                        <ul className="af-menu" role="menu" onKeyDown={(event) => { if (event.key === 'Escape') setCopyMenuOpen(false); }}>
-                          {otherKeys.map((key) => (
-                            <li key={key} role="none">
-                              <button type="button" role="menuitem" onClick={() => requestCopy(key)} autoFocus={key === otherKeys[0]}>
-                                {choiceLabel(choiceByKey.get(key)!)}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
+                      <ul
+                        ref={copyMenuRef}
+                        id="af-copy-menu"
+                        className={`af-menu${copyMenuFallbackStyle ? ' af-menu--fallback' : ''}`}
+                        style={copyMenuFallbackStyle}
+                        hidden={!supportsCopyPopover && !copyMenuOpen}
+                        {...(supportsCopyPopover ? ({ popover: 'auto' } as Record<string, string>) : {})}
+                      >
+                        {otherKeys.map((key) => (
+                          <li key={key}>
+                            <button type="button" onClick={() => requestCopy(key)}>
+                              {choiceLabel(choiceByKey.get(key)!)}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>

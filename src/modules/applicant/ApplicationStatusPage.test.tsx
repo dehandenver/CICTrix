@@ -125,7 +125,7 @@ const renderTracker = (ref = REF) => render(
 
 const rowButton = (position: string) => screen.getByRole('button', { name: new RegExp(position.replace(/[()/]/g, '.')) });
 const searchFor = (value: string) => {
-  const input = screen.getByRole('textbox');
+  const input = screen.getByRole('searchbox');
   fireEvent.change(input, { target: { value } });
   fireEvent.submit(input.closest('form')!);
 };
