@@ -197,9 +197,11 @@ export const JobDetailsPage = () => {
   }, [job, landingJob, loaded]);
   const selectable = useMemo(() => choices.filter(isSelectable), [choices]);
   // Each vacancy is one plantilla, so there is nothing to choose: the row the
-  // applicant clicked names it, else the posting's first open one.
+  // applicant clicked names it (via route state or `?slot=`), else the posting's first open one.
+  const slotFromQuery = new URLSearchParams(location.search).get('slot') || undefined;
+  const requestedSlotId = landingJob?.plantillaSlotId || slotFromQuery;
   const target: PlantillaChoice | null =
-    choices.find((choice) => choice.key === landingJob?.plantillaSlotId) ?? selectable[0] ?? choices[0] ?? null;
+    choices.find((choice) => choice.key === requestedSlotId) ?? selectable[0] ?? choices[0] ?? null;
   const [summaryOpen, setSummaryOpen] = useState(isDesktop);
 
   const postingKey = job?.id ?? (landingJob ? String(landingJob.id) : '');

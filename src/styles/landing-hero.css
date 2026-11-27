@@ -1,11 +1,17 @@
 /* Landing hero looping background (docs/mockups/2026-10-15-landing-hero-loop.html, option A).
-   Only transform and opacity animate. Static under prefers-reduced-motion. */
+   Only transform and opacity animate. Opt-in under prefers-reduced-motion: no-preference. */
 
 .landing-hero-bg {
   --landing-drift-a: 22s;
   --landing-drift-b: 28s;
   --landing-drift-c: 34s;
   --landing-pulse: 9s;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.landing-hero-pulses {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -22,7 +28,6 @@
   height: 320px;
   right: -96px;
   top: -112px;
-  animation: landing-drift-a var(--landing-drift-a) ease-in-out infinite;
 }
 
 .landing-hero-ring--bl {
@@ -31,7 +36,6 @@
   left: -80px;
   bottom: -128px;
   border-color: rgba(255, 255, 255, 0.1);
-  animation: landing-drift-b var(--landing-drift-b) ease-in-out infinite;
 }
 
 /* --color-primary-200 (#C8D1FF) at low alpha */
@@ -41,10 +45,10 @@
   right: 12%;
   bottom: -60px;
   border-color: rgba(200, 209, 255, 0.14);
-  animation: landing-drift-a var(--landing-drift-c) ease-in-out infinite reverse;
 }
 
 .landing-hero-pulse {
+  display: none;
   position: absolute;
   left: 50%;
   top: 50%;
@@ -54,12 +58,35 @@
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.18);
   opacity: 0;
-  animation: landing-pulse var(--landing-pulse) ease-out infinite;
 }
 
-/* Three ripples evenly staggered across one pulse cycle */
-.landing-hero-pulse:nth-child(2) { animation-delay: calc(var(--landing-pulse) / 3); }
-.landing-hero-pulse:nth-child(3) { animation-delay: calc(var(--landing-pulse) * 2 / 3); }
+@media (prefers-reduced-motion: no-preference) {
+  .landing-hero-ring--tr {
+    animation: landing-drift-a var(--landing-drift-a) ease-in-out infinite;
+  }
+
+  .landing-hero-ring--bl {
+    animation: landing-drift-b var(--landing-drift-b) ease-in-out infinite;
+  }
+
+  .landing-hero-ring--br {
+    animation: landing-drift-a var(--landing-drift-c) ease-in-out infinite reverse;
+  }
+
+  .landing-hero-pulse {
+    display: block;
+    animation: landing-pulse var(--landing-pulse) ease-out infinite;
+  }
+
+  /* Three ripples evenly staggered across one pulse cycle */
+  .landing-hero-pulse:nth-child(2) {
+    animation-delay: calc(var(--landing-pulse) / 3);
+  }
+
+  .landing-hero-pulse:nth-child(3) {
+    animation-delay: calc(var(--landing-pulse) * 2 / 3);
+  }
+}
 
 @keyframes landing-drift-a {
   0%, 100% { transform: translate(0, 0); }
@@ -75,9 +102,4 @@
   0% { transform: scale(0.4); opacity: 0; }
   20% { opacity: 1; }
   100% { transform: scale(1.9); opacity: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-hero-ring { animation: none; }
-  .landing-hero-pulse { display: none; }
 }
