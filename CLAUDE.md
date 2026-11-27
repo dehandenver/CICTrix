@@ -100,6 +100,8 @@ my-module/
 
 ## UI / UX Design
 
+- **Modern Web Guidance is mandatory.** Launch the `modern-web-guidance` skill (`npx.cmd -y modern-web-guidance@latest search` + `retrieve`) **first** during any UI change or related HTML/CSS, layout, responsiveness, accessibility, form, dialog, popover, navigation, or client-side DOM/UX work in this system. Verify compliance with the retrieved guides before finishing and include the `### Modern Web Guidance` disclosure section when delivering changes.
+
 **Show, don't describe.** Any open visual design question (layout, color, spacing, motion, comparing options) gets answered by launching the `ui-preview` skill, not by describing it in text. To skip it on a small change, I'll say "skip the preview."
 
 ### Design system
