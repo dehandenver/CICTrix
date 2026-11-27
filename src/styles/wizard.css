@@ -1,7 +1,9 @@
 .applicant-shell {
   min-height: 100vh;
+  min-block-size: 100dvh;
   font-family: var(--font-family);
   background: linear-gradient(180deg, #C8D1FF 0%, #EFF3FF 45%, #FFFFFF 100%);
+  overflow-wrap: break-word;
 }
 
 .applicant-topbar {
@@ -434,11 +436,12 @@
 
 .employee-auth-form input {
   width: 100%;
+  min-height: 44px;
   border: 1px solid var(--neutral-200);
   background: var(--bg-page);
   border-radius: 10px;
   padding: 0.7rem 0.85rem;
-  font-size: 1.05rem;
+  font-size: max(1rem, 1em);
   outline: none;
 }
 

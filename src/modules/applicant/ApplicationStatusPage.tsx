@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle2, ChevronRight, CircleX, FileText, Loader2, Lock, Mail, RefreshCw, Search, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import '../../styles/application-status.css';
 import { ActionFeedback, useFeedback } from '../../components/action-feedback';
 import { describeActionFailure } from '../../lib/friendlyErrors';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
@@ -851,15 +852,15 @@ export const ApplicationStatusPage = () => {
       )}
 
       {/* Application Details */}
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
             <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Application Details</h3>
             <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>
               Reference No. {record.reference_no || '—'}
             </p>
           </div>
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${BADGE_CLASS[badge.tone]}`}>
+          <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${BADGE_CLASS[badge.tone]}`}>
             {badge.tone === 'approved' && <CheckCircle2 size={14} />}
             {badge.tone === 'rejected' && <CircleX size={14} />}
             {badge.label}
@@ -963,10 +964,10 @@ export const ApplicationStatusPage = () => {
             {resubmissionNotices.map((notice) => {
               const n = parseNotice(notice);
               return (
-                <div key={notice.id} className="px-6 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <FileText size={16} style={{ color: '#363EE8' }} />
+                <div key={notice.id} className="px-4 py-4 sm:px-6">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText size={16} className="shrink-0" style={{ color: '#363EE8' }} />
                       <p className="text-sm font-semibold" style={{ color: '#040E6B' }}>{n.document}</p>
                     </div>
                     <span className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold border" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB', color: '#92400E' }}>
@@ -1080,37 +1081,37 @@ export const ApplicationStatusPage = () => {
                   </div>
                   <div className="divide-y bg-white" style={{ borderColor: 'var(--color-primary-50)' }}>
                     {(record.exam_date || record.exam_time) && (
-                      <div className="px-3 py-2 flex items-start gap-2">
-                        <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Written Exam</span>
+                      <div className="px-3 py-2.5 flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2">
+                        <span className="sm:mt-0.5 text-xs font-bold uppercase tracking-wide sm:w-28 shrink-0" style={{ color: '#363EE8' }}>Written Exam</span>
                         <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
                           {[record.exam_date && formatDate(record.exam_date), record.exam_time && formatTime12h(record.exam_time)].filter(Boolean).join(' · ')}
                         </span>
                       </div>
                     )}
                     {(record.oral_exam_date || record.oral_exam_time) && (
-                      <div className="px-3 py-2 flex items-start gap-2">
-                        <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Oral Exam</span>
+                      <div className="px-3 py-2.5 flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2">
+                        <span className="sm:mt-0.5 text-xs font-bold uppercase tracking-wide sm:w-28 shrink-0" style={{ color: '#363EE8' }}>Oral Exam</span>
                         <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
                           {[record.oral_exam_date && formatDate(record.oral_exam_date), record.oral_exam_time && formatTime12h(record.oral_exam_time)].filter(Boolean).join(' · ')}
                         </span>
                       </div>
                     )}
                     {(record.interview_date || record.interview_time) && (
-                      <div className="px-3 py-2 flex items-start gap-2">
-                        <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Interview</span>
+                      <div className="px-3 py-2.5 flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2">
+                        <span className="sm:mt-0.5 text-xs font-bold uppercase tracking-wide sm:w-28 shrink-0" style={{ color: '#363EE8' }}>Interview</span>
                         <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
                           {[record.interview_date && formatDate(record.interview_date), record.interview_time && formatTime12h(record.interview_time)].filter(Boolean).join(' · ')}
                         </span>
                       </div>
                     )}
                     {record.venue && (
-                      <div className="px-3 py-2 flex items-start gap-2">
-                        <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Venue</span>
+                      <div className="px-3 py-2.5 flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2">
+                        <span className="sm:mt-0.5 text-xs font-bold uppercase tracking-wide sm:w-28 shrink-0" style={{ color: '#363EE8' }}>Venue</span>
                         <span className="text-sm font-medium" style={{ color: '#040E6B' }}>{record.venue}</span>
                       </div>
                     )}
                     {record.schedule_instructions && (
-                      <div className="px-3 py-2">
+                      <div className="px-3 py-2.5">
                         <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: '#363EE8' }}>Instructions</p>
                         <p className="text-sm" style={{ color: '#040E6B' }}>{record.schedule_instructions}</p>
                       </div>
@@ -1124,9 +1125,9 @@ export const ApplicationStatusPage = () => {
       </section>
 
       {/* Submitted Documents */}
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
             <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Submitted Documents</h3>
             <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Status of your submitted documents</p>
           </div>
@@ -1183,8 +1184,8 @@ export const ApplicationStatusPage = () => {
                   hasResubmissionRequest && !justUploaded ? 'border-amber-300' : 'border-slate-200'
                 }`}>
                   {/* Document header row */}
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: '#363EE8' }}>
                         <FileText size={18} />
                       </span>
@@ -1264,10 +1265,10 @@ export const ApplicationStatusPage = () => {
                         <button
                           type="button"
                           onClick={() => fileInputRefs.current[reviewKey]?.click()}
-                          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                          className="as-touch-btn inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold text-white transition hover:opacity-90"
                           style={{ backgroundColor: '#363EE8' }}
                         >
-                          <Upload size={12} />
+                          <Upload size={12} aria-hidden="true" />
                           Choose File to Re-upload
                         </button>
                       )}
@@ -1283,35 +1284,35 @@ export const ApplicationStatusPage = () => {
                               window.open(url, '_blank', 'noopener,noreferrer');
                               setTimeout(() => URL.revokeObjectURL(url), 10000);
                             }}
-                            className="flex items-start gap-2 w-full text-left rounded-md px-1 py-0.5 transition hover:bg-amber-50 group"
+                            className="as-touch-btn flex items-start gap-2 w-full text-left rounded-md px-1 py-1 transition hover:bg-amber-50 group"
                           >
-                            <FileText size={14} className="mt-0.5 shrink-0 text-slate-400 group-hover:text-blue-600 transition" />
+                            <FileText size={14} className="mt-0.5 shrink-0 text-slate-400 group-hover:text-blue-600 transition" aria-hidden="true" />
                             <div className="min-w-0">
                               <p className="truncate text-xs font-semibold text-blue-600 underline underline-offset-2 group-hover:text-blue-800">{selectedFile.name}</p>
                               <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)} · {selectedFile.type || 'document'} · <span className="text-blue-500">Click to preview</span></p>
                             </div>
                           </button>
                           <p className="text-xs text-slate-600">Please confirm this is the correct file before submitting.</p>
-                          <div className="flex items-center gap-2 pt-0.5">
+                          <div className="flex flex-wrap items-center gap-2 pt-0.5">
                             <button
                               type="button"
                               onClick={() => { void handleReupload(doc, selectedFile); clearPending(); }}
-                              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                              className="as-touch-btn inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold text-white transition hover:opacity-90"
                               style={{ backgroundColor: '#363EE8' }}
                             >
-                              <CheckCircle2 size={12} /> Confirm &amp; Submit
+                              <CheckCircle2 size={12} aria-hidden="true" /> Confirm &amp; Submit
                             </button>
                             <button
                               type="button"
                               onClick={() => { clearPending(); fileInputRefs.current[reviewKey]?.click(); }}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                              className="as-touch-btn inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
                             >
                               Change File
                             </button>
                             <button
                               type="button"
                               onClick={clearPending}
-                              className="ml-auto text-xs text-slate-400 hover:text-slate-600 transition"
+                              className="as-touch-btn ml-auto inline-flex items-center px-2 text-xs text-slate-500 hover:text-slate-700 transition"
                             >
                               Cancel
                             </button>
@@ -1371,42 +1372,53 @@ export const ApplicationStatusPage = () => {
   ) : null;
 
   return (
-    <div className="abyan-tokens min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+    <div className="abyan-tokens as-page bg-white py-8 sm:py-12" style={{ fontFamily: 'Poppins, sans-serif' }}>
       <div className="mx-auto w-full max-w-5xl">
         {/* Header */}
         <header className="mb-8 text-center">
-          <h1 className="text-4xl font-bold sm:text-5xl" style={{ color: '#040E6B' }}>Application Status Tracker</h1>
+          <h1 className="as-title font-bold" style={{ color: '#040E6B' }}>Application Status Tracker</h1>
           <p className="mt-2 text-base" style={{ color: '#363EE8' }}>Track your application progress in real-time</p>
         </header>
 
         {/* Search card */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-8">
           <h2 className="text-lg font-bold" style={{ color: '#040E6B' }}>Search Application</h2>
           <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Enter your Reference No. to view detailed status</p>
 
-          <form onSubmit={handleSearch} className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => { setQuery(e.target.value); setError(null); }}
-              placeholder="e.g., ABYAN-123-456 or your.email@example.com"
-              className="flex-1 rounded-xl px-4 py-3 text-sm outline-none ring-1 ring-transparent focus:ring-2"
-              style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              aria-busy={loading || undefined}
-              className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
-              style={{ backgroundColor: '#363EE8' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#252AB5'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#363EE8'}
-            >
-              {loading
-                ? <><Loader2 size={16} className="animate-spin" aria-hidden="true" /> Search</>
-                : <><Search size={16} /> Search</>}
-            </button>
-          </form>
+          <search aria-label="Search application status">
+            <form onSubmit={handleSearch} className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <label htmlFor="tracker-search-input" className="as-sr-only">
+                Reference No. or email address
+              </label>
+              <input
+                id="tracker-search-input"
+                name="query"
+                type="search"
+                enterKeyHint="search"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setError(null); }}
+                placeholder="e.g., ABYAN-123-456 or your.email@example.com"
+                className="as-search-input flex-1 rounded-xl px-4 py-3 outline-none ring-1 ring-transparent focus:ring-2"
+                style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}
+              />
+              <button
+                type="submit"
+                disabled={loading}
+                aria-busy={loading || undefined}
+                className="as-touch-btn inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ backgroundColor: '#363EE8' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#252AB5'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#363EE8'}
+              >
+                {loading
+                  ? <><Loader2 size={16} className="animate-spin" aria-hidden="true" /> Search</>
+                  : <><Search size={16} aria-hidden="true" /> Search</>}
+              </button>
+            </form>
+          </search>
 
           {error && (
             <ActionFeedback
