@@ -5,22 +5,42 @@
    with its section number.
    ============================================================================ */
 
+html:has(.af) {
+  scroll-padding-top: 5.5rem;
+}
+@media (max-width: 1023px) {
+  html:has(.af) {
+    scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 .af {
+  --af-target: 36px;
   min-height: 100vh;
+  min-block-size: 100dvh;
   background: var(--bg-page);
   color: var(--neutral-800);
   font-family: var(--font-sans);
+  overflow-wrap: break-word;
+}
+@media (pointer: coarse) {
+  .af { --af-target: 44px; }
 }
 .af *, .af *::before, .af *::after { box-sizing: border-box; }
 
-/* Container: 1280px, 24px gutters, 16px on mobile (§5.1) */
+/* Container: 1280px, 24px gutters, 16px on mobile (§5.1) + safe-area insets */
 .abyan-ds .af-container {
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding-block: 0;
+  padding-inline: max(24px, env(safe-area-inset-left, 0px)) max(24px, env(safe-area-inset-right, 0px));
 }
-@media (max-width: 639px) { .abyan-ds .af-container { padding: 0 16px; } }
+@media (max-width: 639px) {
+  .abyan-ds .af-container {
+    padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+  }
+}
 
 .abyan-ds .af-sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -50,9 +70,9 @@
 @media (max-width: 1023px) { .abyan-ds .af-lockup-sub { display: none; } }
 @media (max-width: 639px) { .abyan-ds .af-lockup img { height: 32px; } .abyan-ds .af-lockup-name { font-size: 20px; } }
 
-.abyan-ds .af-nav { display: flex; align-items: center; gap: 4px; }
+.abyan-ds .af-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .abyan-ds .af-nav a {
-  display: inline-flex; align-items: center; min-height: 40px; padding: 8px 16px;
+  display: inline-flex; align-items: center; min-height: var(--af-target, 40px); padding: 8px 16px;
   border-radius: var(--radius-lg); color: var(--on-blue-muted);
   font: 500 16px/20px var(--font-sans); text-decoration: none;
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
@@ -76,16 +96,17 @@
 .abyan-ds .af-hero h1 {
   margin: 0 0 8px;
   color: var(--color-white);
-  font: 700 36px/40px var(--font-sans);
+  font: 700 clamp(1.75rem, 1.35rem + 1.5vw, 2.25rem)/1.2 var(--font-sans);
+  text-wrap: balance;
 }
-@media (max-width: 639px) { .abyan-ds .af-hero h1 { font-size: 28px; line-height: 34px; } }
 /* Fix #1: white at 90% on the navy gradient (Body L) — passes AA everywhere. */
 .abyan-ds .af-hero-sub {
-  display: flex; align-items: center; gap: 8px; margin: 0;
+  display: flex; align-items: flex-start; gap: 8px; margin: 0;
   color: var(--on-blue-text);
   font: 400 16px/24px var(--font-sans);
+  text-wrap: pretty;
 }
-.abyan-ds .af-hero-sub svg { flex-shrink: 0; }
+.abyan-ds .af-hero-sub svg { flex-shrink: 0; margin-top: 3px; }
 
 /* ── Stepper (NEW COMPONENT — no spec in the guide; built from tokens) ──── */
 .abyan-ds .af-stepper-wrap {
@@ -163,6 +184,9 @@
   padding: 24px;
   min-width: 0;
 }
+@media (max-width: 639px) {
+  .abyan-ds .af-card { padding: 16px; }
+}
 .abyan-ds .af-card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .abyan-ds .af-card-head-text { min-width: 0; flex: 1; }
 .abyan-ds .af-chip {
@@ -192,6 +216,11 @@
 .abyan-ds .af-rows-numbered li { counter-increment: af-doc; display: flex; gap: 10px; color: var(--color-primary-900); }
 .abyan-ds .af-rows-numbered li::before { content: counter(af-doc); width: 16px; flex-shrink: 0; color: var(--neutral-600); font-weight: 400; }
 @media (max-width: 639px) { .abyan-ds .af-row { grid-template-columns: 120px minmax(0, 1fr); } }
+@media (max-width: 419px) {
+  .abyan-ds .af-row { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 6px 0; border-bottom: 1px solid var(--neutral-100); }
+  .abyan-ds .af-row dt,
+  .abyan-ds .af-row dd { padding: 0; border-bottom: 0; }
+}
 
 /* Collapsible posting summary (mobile) */
 .abyan-ds .af-collapse > summary {
@@ -257,7 +286,7 @@
 .abyan-ds .af-choice-line .af-choice-name { flex: 1; min-width: 0; }
 .abyan-ds .af-choice-line .af-choice-meta { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; }
 
-/* Tooltip for disabled items (hover + keyboard focus) */
+/* Tooltip for disabled items (hover + keyboard focus on pointer devices; inline note on touch) */
 .abyan-ds .af-choice[data-tooltip]:hover::after,
 .abyan-ds .af-choice[data-tooltip]:focus-visible::after {
   content: attr(data-tooltip);
@@ -267,12 +296,26 @@
   font: 500 12px/16px var(--font-sans);
   pointer-events: none;
 }
+@media (hover: none) {
+  .abyan-ds .af-choice[aria-disabled='true'][data-tooltip] { flex-wrap: wrap; }
+  .abyan-ds .af-choice[aria-disabled='true'][data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: static;
+    display: block;
+    flex-basis: 100%;
+    margin-top: 6px;
+    padding: 0;
+    background: none;
+    color: var(--neutral-600);
+    font: 500 12px/16px var(--font-sans);
+  }
+}
 
 .abyan-ds .af-counter { color: var(--color-primary-700); }
 
 /* Text button (§9.1 link style) */
 .abyan-ds .af-textbtn {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 4px;
+  display: inline-flex; align-items: center; gap: 6px; min-height: var(--af-target, 36px); padding: 0 4px;
   border: 0; background: none; cursor: pointer; border-radius: var(--radius-md);
   color: var(--color-primary); font: 600 14px/18px var(--font-sans);
 }
@@ -341,10 +384,40 @@
 .abyan-ds .af-strip-title { margin: 0; color: var(--color-primary-900); font: 600 18px/24px var(--font-sans); min-width: 0; }
 .abyan-ds .af-strip .af-stepper { padding: 8px 0; }
 
-/* Tabs on white pages (§9.2) */
-.abyan-ds .af-tabs { display: flex; gap: 4px; overflow-x: auto; margin: 0; scrollbar-width: thin; }
+/* Tabs on white pages (§9.2) with scroll-snap and scroll-driven edge fades (tabs guide) */
+@property --af-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --af-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes af-reveal-fade-start {
+  to { --af-fade-start: var(--af-fade-size); }
+}
+@keyframes af-hide-fade-end {
+  from { --af-fade-end: var(--af-fade-size); }
+}
+.abyan-ds .af-tabs {
+  display: flex; gap: 4px; overflow-x: auto; margin: 0; scrollbar-width: none;
+  scroll-snap-type: inline proximity;
+  scroll-padding-inline: 2.5rem;
+  --af-fade-size: 2.5rem;
+  mask:
+    linear-gradient(black, black) no-clip subtract,
+    linear-gradient(to right, black, transparent) 0 0 / var(--af-fade-start) 100% no-repeat no-clip,
+    linear-gradient(to right, transparent, black) 100% 0 / var(--af-fade-end) 100% no-repeat no-clip;
+  animation: af-reveal-fade-start linear both, af-hide-fade-end linear both;
+  animation-timeline: scroll(self inline);
+  animation-range: 0 var(--af-fade-size), calc(100% - var(--af-fade-size)) 100%;
+}
+.abyan-ds .af-tabs::-webkit-scrollbar { display: none; }
 .abyan-ds .af-tab {
-  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; flex-shrink: 0;
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: none;
+  scroll-snap-align: start;
   min-height: 44px; padding: 10px 16px 8px;
   border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer;
   color: var(--neutral-600); font: 600 14px/18px var(--font-sans); text-align: left;
@@ -368,16 +441,37 @@
 .abyan-ds .af-pages .af-caption { margin: 0 0 8px; }
 .abyan-ds .af-pages-count { color: var(--color-primary-900); font-weight: 600; }
 
-/* Copy-answers dropdown */
+/* Copy-answers viewport-aware popover (viewport-aware-dropdowns guide) */
 .abyan-ds .af-menu-wrap { position: relative; }
+.abyan-ds .af-menu-trigger { anchor-name: --af-copy-trigger; }
 .abyan-ds .af-menu {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
-  min-width: 260px; margin: 0; padding: 6px; list-style: none;
+  min-inline-size: min(260px, calc(100dvw - 2rem));
+  max-inline-size: calc(100dvw - 2rem);
+  margin: 0; padding: 6px; list-style: none;
   background: var(--bg-surface); border: 1px solid var(--neutral-200);
   border-radius: var(--radius-md); box-shadow: var(--shadow-2);
 }
+.abyan-ds .af-menu:not([popover]) {
+  position: absolute; inset-inline-end: 0; inset-block-start: calc(100% + 6px); z-index: 20;
+}
+@supports (position-area: block-end) {
+  .abyan-ds .af-menu[popover] {
+    inset: auto;
+    margin: 0;
+    margin-block-start: 6px;
+    position-anchor: --af-copy-trigger;
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
+}
+.abyan-ds .af-menu--fallback {
+  position: fixed;
+  inset: auto;
+  z-index: 40;
+  margin: 0;
+}
 .abyan-ds .af-menu button {
-  display: block; width: 100%; min-height: 40px; padding: 8px 12px; text-align: left;
+  display: block; width: 100%; min-height: var(--af-target, 40px); padding: 8px 12px; text-align: left;
   border: 0; border-radius: var(--radius-md); background: none; cursor: pointer;
   color: var(--neutral-800); font: 500 14px/18px var(--font-sans);
 }
@@ -407,11 +501,19 @@
   color: var(--neutral-800); font: 500 14px/16px var(--font-sans);
 }
 .af .input, .af .select, .af .af-control, .af select.af-control, .af textarea.af-control {
-  width: 100%; min-height: 44px; padding: 10px 14px;
+  width: 100%; min-height: max(44px, var(--af-target, 44px)); padding: 10px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--neutral-200); border-radius: var(--radius-md);
   color: var(--neutral-800); font: 500 14px/18px var(--font-sans);
   transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+/* Prevent iOS Safari zoom on form focus on phones / touch devices (forms guide) */
+@media (max-width: 639px), (pointer: coarse) {
+  .af .input, .af .select, .af .af-control, .af select.af-control, .af textarea.af-control {
+    font-size: max(1rem, 1em);
+    line-height: 1.4;
+  }
+  .af .btn { min-block-size: var(--af-target, 44px); }
 }
 .af .input.pl-10 { padding-left: 40px; }
 .af textarea.af-control { min-height: 96px; resize: vertical; line-height: 20px; }
@@ -463,7 +565,7 @@
 .abyan-ds .af-option-title { display: block; color: var(--color-primary-900); font: 600 14px/18px var(--font-sans); }
 .abyan-ds .af-option-desc { display: block; margin-top: 2px; color: var(--neutral-600); font: 500 12px/16px var(--font-sans); }
 .abyan-ds .af-inline-radios { display: flex; flex-wrap: wrap; gap: 8px 24px; }
-.abyan-ds .af-inline-radios label { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; cursor: pointer; color: var(--neutral-800); font: 500 14px/18px var(--font-sans); }
+.abyan-ds .af-inline-radios label { display: inline-flex; align-items: center; gap: 8px; min-height: var(--af-target, 36px); cursor: pointer; color: var(--neutral-800); font: 500 14px/18px var(--font-sans); }
 
 /* Notice (info tint panel inside a section) */
 .abyan-ds .af-notice {
@@ -500,7 +602,7 @@
 }
 .abyan-ds .af-doc-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--color-primary-900); font: 600 14px/18px var(--font-sans); }
 .abyan-ds .af-file {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px;
   padding: 10px 12px; border-radius: var(--radius-md); background: var(--success-100);
   min-width: 0;
 }
@@ -523,11 +625,14 @@
 @media (max-width: 1023px) {
   .abyan-ds .af-actionbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
-    margin: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    margin: 0;
+    padding-block-start: 12px;
+    padding-block-end: max(12px, env(safe-area-inset-bottom, 0px));
+    padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
     background: var(--bg-surface); border-top: 1px solid var(--neutral-200);
     box-shadow: 0 -4px 12px rgba(16, 30, 41, .08);
   }
-  .abyan-ds .af-actionbar .btn { flex: 1; }
+  .abyan-ds .af-actionbar .btn { flex: 1; min-block-size: 44px; }
 }
 /* Step 1's continue bar only exists on mobile; on desktop the button sits in the chooser card. */
 .abyan-ds .af-mobile-only { display: none; }
@@ -547,6 +652,10 @@
 .abyan-ds .af-review-card > summary:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-primary); }
 .abyan-ds .af-review-card[open] > summary { border-bottom: 1px solid var(--neutral-200); }
 .abyan-ds .af-review-body { padding: 20px 24px 24px; }
+@media (max-width: 639px) {
+  .abyan-ds .af-review-card > summary { padding: 16px; }
+  .abyan-ds .af-review-body { padding: 16px; }
+}
 .abyan-ds .af-kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 24px; margin: 0; }
 @media (max-width: 1023px) { .abyan-ds .af-kv { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 639px) { .abyan-ds .af-kv { grid-template-columns: minmax(0, 1fr); } }
@@ -566,25 +675,84 @@
 .abyan-ds .af-ref { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .abyan-ds .af-ref-no { color: var(--color-primary-900); font: 700 18px/24px var(--font-sans); letter-spacing: .3px; }
 
-/* ── Modal (§9.10) ──────────────────────────────────────────────────────── */
-.abyan-ds .af-modal-overlay {
-  position: fixed; inset: 0; z-index: 100;
-  display: flex; align-items: center; justify-content: center; padding: 16px;
+/* ── Native <dialog> modal (§9.10 + dialog guide: full-screen mobile sheet < 640px) ── */
+.abyan-ds .af-dialog {
+  width: min(480px, calc(100dvw - 2rem));
+  max-width: 480px;
+  max-block-size: 88dvh;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--neutral-800);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+.abyan-ds .af-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.abyan-ds .af-dialog:modal {
+  overscroll-behavior: contain;
+}
+.abyan-ds .af-dialog::backdrop {
   background: var(--overlay);
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
-.abyan-ds .af-modal {
-  width: 100%; max-width: 480px; padding: 24px;
-  background: var(--bg-surface); border-radius: var(--radius-xl); box-shadow: var(--shadow-3);
+.abyan-ds .af-dialog-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 24px;
+  background: var(--gradient-modal-header);
+  color: var(--color-white);
+  flex-shrink: 0;
 }
-.abyan-ds .af-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.abyan-ds .af-modal-close {
+.abyan-ds .af-dialog-title {
+  margin: 0;
+  color: var(--color-white);
+  font: 700 20px/28px var(--font-sans);
+}
+.abyan-ds .af-dialog-close {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  width: 36px; height: 36px; border: 0; border-radius: var(--radius-md); background: none; cursor: pointer;
-  color: var(--neutral-600);
+  min-inline-size: var(--af-target, 36px); min-block-size: var(--af-target, 36px);
+  border: 0; border-radius: var(--radius-md); background: none; cursor: pointer;
+  color: rgba(255, 255, 255, 0.85);
 }
-.abyan-ds .af-modal-close:hover { background: var(--neutral-100); }
-.abyan-ds .af-modal-close:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--color-primary); }
-.abyan-ds .af-modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+.abyan-ds .af-dialog-close:hover { background: var(--on-blue-hover); color: var(--color-white); }
+.abyan-ds .af-dialog-close:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--on-blue-border); }
+.abyan-ds .af-dialog-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+.abyan-ds .af-modal-actions {
+  display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; flex-wrap: wrap;
+}
+.abyan-ds .af-dialog .af-modal-actions {
+  margin-top: 0;
+  padding: 16px 24px;
+  border-top: 1px solid var(--neutral-200);
+  flex-shrink: 0;
+}
+@media (max-width: 639px) {
+  .abyan-ds .af-dialog[open] {
+    inset: 0;
+    margin: 0;
+    inline-size: 100dvw;
+    max-inline-size: 100dvw;
+    block-size: 100dvh;
+    max-block-size: 100dvh;
+    border-radius: 0;
+  }
+  .abyan-ds .af-dialog-head {
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px 16px;
+  }
+  .abyan-ds .af-dialog-body { padding: 16px; }
+  .abyan-ds .af-dialog .af-modal-actions {
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom, 0px));
+  }
+  .abyan-ds .af-dialog .af-modal-actions .btn { flex: 1 1 auto; min-block-size: 44px; }
+}
 
 /* ── Skeleton + empty state ─────────────────────────────────────────────── */
 .abyan-ds .af-skel {
