@@ -94,6 +94,19 @@ describe('Job Details — the one plantilla a vacancy stands for', () => {
     expect(hero).toHaveTextContent('Plantilla 100');
   });
 
+  it('selects the plantilla named in the ?slot= query string when route state is absent', async () => {
+    const { JobDetailsPage } = await import('./JobDetailsPage');
+    render(
+      <MemoryRouter initialEntries={['/job-details/job-legal-1?slot=slot-c']}>
+        <Routes>
+          <Route path="/job-details/:jobId" element={<JobDetailsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByText(/Please review your application carefully before submission/);
+    expect(document.querySelector('.af-hero-sub')).toHaveTextContent('Plantilla 3');
+  });
+
   it('never shows a plantilla item number or any ABYAN-style code', async () => {
     await renderPage('slot-b');
 
